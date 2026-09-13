@@ -7,10 +7,10 @@ import type { AgentState, SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, YARD_Y } from "./machines.ts";
 import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY } from "./palette.ts";
-import { ROAD_WIDTH, YARD_HALF } from "./park.ts";
-import { PLOT_SIZE } from "./plots.ts";
+import { YARD_HALF } from "./park.ts";
+import { movingCarCount } from "./park-layout.ts";
 import { StaticBuilder } from "./static-builder.ts";
-import { addParkedCars, LotTraffic } from "./traffic.ts";
+import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
 import { LotWorkers, type WorkerSlot } from "./workers.ts";
 
@@ -42,7 +42,6 @@ const WAREHOUSE_SLOTS: [number, number][] = [
   [12.5, 14],
 ];
 const SINK_DEPTH = 12;
-const TRUCK_LANE = PLOT_SIZE / 2 - ROAD_WIDTH / 4; // inner lane of the surrounding roads
 
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
@@ -89,7 +88,6 @@ export class Lot {
   private forklift: Forklift;
   private searchlight: Searchlight;
   private cooling: CoolingTower;
-  private traffic: LotTraffic;
   private workers = new LotWorkers(WORKER_SLOTS);
   private busySubagents = 0;
 
@@ -118,7 +116,6 @@ export class Lot {
     this.searchlight = new Searchlight(builder, [-17, 12], { tower: true, height: 9, reach: 11, aimAt: [-4, 2] });
     this.cooling = new CoolingTower(builder, [12.5, 0.5], 3.6, 8);
     addParkedCars(builder, state.id);
-    this.traffic = new LotTraffic(TRUCK_LANE, state.id);
 
     const parked = createTruck();
     parked.position.set(-9, YARD_Y, 5.8);
@@ -135,7 +132,7 @@ export class Lot {
 
     this.sign = this.createSign();
     this.drawSign();
-    this.body.add(statics, parked, this.stacks.group, this.forklift.group, this.searchlight.group, this.cooling.group, this.traffic.group, this.workers.mesh);
+    this.body.add(statics, parked, this.stacks.group, this.forklift.group, this.searchlight.group, this.cooling.group, this.workers.mesh);
     this.body.position.y = -SINK_DEPTH;
     this.group.add(this.body);
     this.update(state, performance.now());
@@ -151,6 +148,12 @@ export class Lot {
     this.busySubagents = state.subagents.filter((s) => s.status === "busy").length;
     this.updateWarehouses(state.subagents, nowMs);
     if (nameChanged) this.drawSign();
+  }
+
+  // What this lot sends onto the park roads: always some cars, the truck only while busy.
+  traffic(): { cars: number; truck: boolean } {
+    const lotBusy = this.state.status === "busy" && !this.exit;
+    return { cars: movingCarCount(lotBusy, this.busySubagents), truck: lotBusy };
   }
 
   pickables(): THREE.Mesh[] {
@@ -180,7 +183,6 @@ export class Lot {
     this.forklift.tick(dt, forklift);
     this.searchlight.tick(dt, searchlight);
     this.cooling.tick(dt, cooling);
-    this.traffic.tick(dt, busy, this.state.status === "busy" && !this.exit, this.busySubagents);
     this.workers.tick(dt, this.workerBusyFlags());
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);
@@ -193,7 +195,6 @@ export class Lot {
     this.stacks.dispose();
     this.searchlight.dispose();
     this.cooling.dispose();
-    this.traffic.dispose();
     this.workers.mesh.dispose();
     // Three.js only tells the removed object itself, not the label inside it,
     // so the label's HTML element has to be removed by hand.

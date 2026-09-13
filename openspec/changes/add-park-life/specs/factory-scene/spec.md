@@ -24,8 +24,8 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 
 | State | Animation |
 |---|---|
-| idle | windows dark, no smoke or steam, forklift parked, searchlight off, no truck or moving cars on the road, no workers outside, hall slightly faded |
-| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, a truck and cars drive the roads around the lot, workers walk and work in the yard |
+| idle | windows dark, no smoke or steam, forklift parked, searchlight off, sends 2 cars but no truck onto the roads, no workers outside, hall slightly faded |
+| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, its truck and cars drive the park roads, workers walk and work in the yard |
 | editing or writing files | forklift carries pallets between the dock and the parked truck |
 | running a shell command | chimney stack rims glow orange and smoke is fast and thick |
 | reading or searching files | searchlight on the lattice tower turns on and sweeps its beam across the yard |
@@ -33,7 +33,7 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 
 #### Scenario: Agent goes idle
 - **WHEN** a session's status becomes idle
-- **THEN** its windows go dark, all machines stop, its truck and cars leave the road, and its workers walk back inside
+- **THEN** its windows go dark, all machines stop, its truck and extra cars shrink away, and its workers walk back inside
 
 #### Scenario: Agent runs a shell command
 - **WHEN** a session's current tool is a shell command
@@ -69,23 +69,35 @@ Hovering a main hall or a warehouse SHALL show a tooltip with its name, status, 
 ## ADDED Requirements
 
 ### Requirement: Traffic follows activity
-While a session is busy, cars SHALL drive the roads around its lot together with its truck. The number of moving cars SHALL be 2 plus 1 for each busy subagent, with at most 6. Cars SHALL appear and disappear smoothly and SHALL NOT overlap each other or the truck on the same loop. Every yard SHALL also show 3 parked cars, whether the session is busy or idle.
+Every session's lot SHALL send cars onto the park roads, busy or idle. An idle lot SHALL send 2 cars. A busy lot SHALL send 2 cars plus 1 for each busy subagent, with at most 6, and its truck. Vehicles SHALL appear on the roads around their own lot and then drive all roads of the park, not only the roads around their lot. Every road SHALL have one lane per direction; vehicles SHALL keep to the right lane and take a random turn at each crossing, never a U-turn, so traffic drives in both directions. Vehicles SHALL appear and disappear smoothly and SHALL slow down and stop behind the vehicle ahead in their lane instead of overlapping it. Every yard SHALL also show 3 parked cars, whether the session is busy or idle.
 
 #### Scenario: Busy lot without subagents
 - **WHEN** a session is busy and has no busy subagents
-- **THEN** 2 cars and 1 truck drive the roads around its lot
+- **THEN** 2 cars and 1 truck appear on the roads around its lot
 
 #### Scenario: Busy subagents add cars
 - **WHEN** a busy session has 3 busy subagents
-- **THEN** 5 cars drive the roads around its lot
+- **THEN** 5 of its cars drive the park roads
 
 #### Scenario: Many subagents
 - **WHEN** a busy session has 6 busy subagents
-- **THEN** 6 cars drive the roads around its lot
+- **THEN** 6 of its cars drive the park roads
+
+#### Scenario: Traffic reaches other lots
+- **WHEN** a busy lot is next to an idle lot
+- **THEN** the busy lot's truck and cars also drive the roads around the idle lot, in both directions
+
+#### Scenario: No agent is busy
+- **WHEN** every session is idle
+- **THEN** each lot still sends 2 cars that drive the park roads, and no trucks drive
+
+#### Scenario: Vehicle catches up
+- **WHEN** a faster vehicle comes up behind a slower one in the same lane
+- **THEN** it slows down and keeps a gap instead of driving through it
 
 #### Scenario: Lot goes idle
 - **WHEN** a session becomes idle
-- **THEN** its moving cars shrink away, and its 3 parked cars stay in the yard
+- **THEN** its truck and its cars for busy subagents shrink away, 2 of its cars keep driving, and its 3 parked cars stay in the yard
 
 ### Requirement: Workers
 While a session is busy, small workers with hard hats and safety vests SHALL come out of the hall door and walk and work in its yard: 4 in the main yard, and 1 in front of each busy subagent warehouse. Workers SHALL walk along routes that do not cross buildings or machines and pause at each end of their route. When the session or subagent becomes idle, its workers SHALL walk back to their door and disappear.

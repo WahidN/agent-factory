@@ -1,0 +1,2 @@
+{"type":"user","isSidechain":true,"timestamp":"2026-09-13T10:05:00.000Z","message":{"role":"user","content":"Review the diff"}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-09-13T10:05:01.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_s1","name":"Glob","input":{"pattern":"src/**/*.tsx"}}]}}

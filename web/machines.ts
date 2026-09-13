@@ -387,10 +387,11 @@ export class CoolingTower {
 
   private origin: Vec3;
 
-  tick(dt: number, active: number) {
-    if (active > 0.05) {
+  // busy: slow steady steam. active: fast thick steam.
+  tick(dt: number, busy: number, active: number) {
+    if (busy > 0.05) {
       this.emitter.tick(dt, THREE.MathUtils.lerp(1.0, 0.18, active), () =>
-        this.steam.emit(this.origin, 5, 2, this.radius * 1.6, this.radius * 0.9),
+        this.steam.emit(this.origin, 5, 2, this.radius * (1.1 + active * 0.5), this.radius * 0.9),
       );
     }
     this.steam.tick(dt);

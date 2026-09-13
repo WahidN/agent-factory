@@ -25,11 +25,11 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 | State | Animation |
 |---|---|
 | idle | windows dark, no smoke or steam, forklift parked, searchlight off, sends 2 cars but no truck onto the roads, no workers outside, hall slightly faded |
-| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, its truck and cars drive the park roads, workers walk and work in the yard |
+| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, slow steam from the cooling tower, its truck and cars drive the park roads, workers walk and work in the yard |
 | editing or writing files | forklift carries pallets between the dock and the parked truck |
 | running a shell command | chimney stack rims glow orange and smoke is fast and thick |
 | reading or searching files | searchlight on the lattice tower turns on and sweeps its beam across the yard |
-| any other tool | cooling tower releases steam |
+| any other tool | cooling tower steam is fast and thick |
 
 #### Scenario: Agent goes idle
 - **WHEN** a session's status becomes idle
@@ -49,7 +49,7 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 
 #### Scenario: Unknown tool
 - **WHEN** a session's current tool is not in the table
-- **THEN** its cooling tower releases steam
+- **THEN** its cooling tower steam is fast and thick
 
 ### Requirement: Hover details
 Hovering a main hall or a warehouse SHALL show a tooltip with its name, status, and current tool with label. The tooltip SHALL NOT show the working folder.

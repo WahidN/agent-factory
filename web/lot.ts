@@ -182,7 +182,7 @@ export class Lot {
     this.stacks.tick(dt, busy, stacks);
     this.forklift.tick(dt, forklift);
     this.searchlight.tick(dt, searchlight);
-    this.cooling.tick(dt, cooling);
+    this.cooling.tick(dt, busy, cooling);
     this.workers.tick(dt, this.workerBusyFlags());
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);

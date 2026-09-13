@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACCENT_COUNT, accentIndexFor, forkliftPose, movingCarCount, parkBounds, roadLoopPoint } from "../park-layout.ts";
+import { ACCENT_COUNT, accentIndexFor, forkliftPose, movingCarCount, parkBounds } from "../park-layout.ts";
 import { plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
@@ -35,9 +35,9 @@ describe("parkBounds", () => {
 });
 
 describe("movingCarCount", () => {
-  it("sends no cars from an idle lot", () => {
-    expect(movingCarCount(false, 0)).toBe(0);
-    expect(movingCarCount(false, 3)).toBe(0);
+  it("sends 2 cars from an idle lot", () => {
+    expect(movingCarCount(false, 0)).toBe(2);
+    expect(movingCarCount(false, 3)).toBe(2);
   });
 
   it("sends 2 cars plus 1 per busy subagent, up to 6", () => {
@@ -45,38 +45,6 @@ describe("movingCarCount", () => {
     expect(movingCarCount(true, 3)).toBe(5);
     expect(movingCarCount(true, 4)).toBe(6);
     expect(movingCarCount(true, 6)).toBe(6);
-  });
-});
-
-describe("roadLoopPoint", () => {
-  const half = 27.5;
-
-  it("is continuous, including across corners", () => {
-    let previous = roadLoopPoint(0, half);
-    for (let d = 0.5; d <= half * 8; d += 0.5) {
-      const point = roadLoopPoint(d, half);
-      expect(Math.hypot(point.x - previous.x, point.z - previous.z)).toBeLessThanOrEqual(0.5 + 1e-9);
-      previous = point;
-    }
-  });
-
-  it("stays on the square and wraps after one lap", () => {
-    for (let d = 0; d < half * 8; d += 3.3) {
-      const { x, z } = roadLoopPoint(d, half);
-      expect(Math.max(Math.abs(x), Math.abs(z))).toBeCloseTo(half);
-    }
-    const start = roadLoopPoint(10, half);
-    const lap = roadLoopPoint(10 + half * 8, half);
-    expect(lap.x).toBeCloseTo(start.x);
-    expect(lap.z).toBeCloseTo(start.z);
-  });
-
-  it("faces the direction of travel", () => {
-    const a = roadLoopPoint(5, half);
-    const b = roadLoopPoint(6, half);
-    // A model facing +x rotated by heading points along (cos h, -sin h).
-    expect(Math.cos(a.heading)).toBeCloseTo(b.x - a.x);
-    expect(-Math.sin(a.heading)).toBeCloseTo(b.z - a.z);
   });
 });
 

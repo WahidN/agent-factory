@@ -26,26 +26,9 @@ export function parkBounds(indexes: number[]): Bounds {
 
 export const MAX_MOVING_CARS = 6;
 
-// A busy lot sends 2 cars, plus 1 per busy subagent, up to 6. Idle lots send none.
+// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per busy subagent, up to 6.
 export function movingCarCount(lotBusy: boolean, busySubagents: number): number {
-  return lotBusy ? Math.min(MAX_MOVING_CARS, 2 + busySubagents) : 0;
-}
-
-// A square loop of half size `half` around the lot center, driven clockwise
-// as seen from above. `heading` is a rotation around y for a model facing +x.
-export function roadLoopPoint(distance: number, half: number): { x: number; z: number; heading: number } {
-  const side = half * 2;
-  const d = ((distance % (side * 4)) + side * 4) % (side * 4);
-  const along = d % side;
-  const segment = Math.floor(d / side);
-  const corners = [
-    { x: -half, z: -half, dx: 1, dz: 0 },
-    { x: half, z: -half, dx: 0, dz: 1 },
-    { x: half, z: half, dx: -1, dz: 0 },
-    { x: -half, z: half, dx: 0, dz: -1 },
-  ];
-  const c = corners[segment];
-  return { x: c.x + c.dx * along, z: c.z + c.dz * along, heading: Math.atan2(-c.dz, c.dx) };
+  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? busySubagents : 0));
 }
 
 // One forklift trip per phase 0..1: lift at `from`, drive to `to`, lower, drive back empty.

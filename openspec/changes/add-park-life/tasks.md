@@ -27,3 +27,10 @@
 
 - [x] 6.1 Recount WebGL draw calls per frame in agent-browser with 4 lots and 4 warehouses while busy (cars and workers visible); verify it stays under 800
 - [x] 6.2 Run `npm test`, `npx tsc --noEmit --noUnusedLocals --noUnusedParameters`, and `openspec validate add-park-life --strict`; verify all pass, and take a final screenshot
+
+## 7. Park-wide traffic
+
+- [x] 7.1 Create `web/traffic-logic.ts` with the road graph, right-hand lane poses with curved turns, random routing without U-turns, spacing behind the vehicle ahead, and spawning on the lot's own lanes; verify Vitest tests pass
+- [x] 7.2 Replace `LotTraffic` with `ParkTraffic` (3 instanced meshes for the whole park, trucks included), add `Lot.traffic()`, wire it in `web/main.ts`, and remove `roadLoopPoint`; verify in agent-browser that a busy lot's truck and cars drive the roads around an idle neighbour lot, in both directions
+- [x] 7.3 Run `npm test`, `npx tsc --noEmit --noUnusedLocals --noUnusedParameters`, and `openspec validate add-park-life --strict`; verify all pass
+- [x] 7.4 Let idle lots send 2 cars too (`movingCarCount` returns 2 when idle; the truck stays busy only); verify Vitest tests pass and in agent-browser that an idle lot's cars drive the roads

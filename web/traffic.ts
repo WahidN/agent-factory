@@ -1,11 +1,12 @@
-// Cars: parked ones in every yard, and moving ones on the lot's road loop
-// while its session is busy.
+// Cars: parked ones in every yard, and moving ones from every lot that drive
+// all park roads, joined by the truck of each busy lot.
 
 import * as THREE from "three";
 import { createTruck, YARD_Y } from "./machines.ts";
 import { DECALS, standard } from "./palette.ts";
-import { MAX_MOVING_CARS, movingCarCount, roadLoopPoint } from "./park-layout.ts";
+import { MAX_MOVING_CARS } from "./park-layout.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
+import { pickNext, roadGraph, spawnVehicle, stepVehicles, vehiclePose, type Roads, type Vehicle } from "./traffic-logic.ts";
 
 export const CAR_COLORS = ["#c8372d", "#2f5d9e", "#f1f1ee", "#b9bdc1", "#e9b43a", "#2b2f36", "#3f8f6b"];
 
@@ -51,6 +52,7 @@ function carGeometry(paint: boolean): THREE.BufferGeometry {
 
 const carBodyGeometry = carGeometry(true); // white, tinted per instance
 const carDetailGeometry = carGeometry(false);
+const truckGeometry = (createTruck().children[0] as THREE.Mesh).geometry; // all truck parts are baked into one mesh
 const paints = CAR_COLORS.map((color) => standard(color));
 
 function hash(text: string) {
@@ -76,66 +78,103 @@ export function addParkedCars(builder: StaticBuilder, seed: string) {
   }
 }
 
-// The truck plus up to 6 cars on the lot's road loop, evenly spaced so they
-// never overlap. Two instanced meshes draw all the cars.
-export class LotTraffic {
+const MAX_VEHICLES = 120; // for the whole park
+const CAR_LENGTH = 3.8;
+const TRUCK_LENGTH = 12;
+
+// What one lot sends onto the roads. `index` is its plot.
+export type TrafficSource = { id: string; index: number; cars: number; truck: boolean };
+
+type Traveler = { key: string; truck: boolean; color: string; presence: number; vehicle: Vehicle };
+
+// Every lot's cars and every busy lot's truck, driving all park roads. They appear on the
+// roads around their own lot, then wander. Three instanced meshes draw them
+// all: car bodies, car details, and trucks.
+export class ParkTraffic {
   readonly group = new THREE.Group();
-  private truck = createTruck();
-  private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_MOVING_CARS);
-  private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_MOVING_CARS);
-  private presence: number[] = new Array(MAX_MOVING_CARS).fill(0);
-  private distance = Math.random() * 200;
+  private roads: Roads = roadGraph([]);
+  private travelers: Traveler[] = [];
+  private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_VEHICLES);
+  private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_VEHICLES);
+  private trucks = new THREE.InstancedMesh(truckGeometry, BAKED_MATERIAL, MAX_VEHICLES);
   private matrix = new THREE.Matrix4();
   private quaternion = new THREE.Quaternion();
+  private position = new THREE.Vector3();
+  private scale = new THREE.Vector3();
+  private color = new THREE.Color();
   private up = new THREE.Vector3(0, 1, 0);
 
-  constructor(private loopHalf: number, seed: string) {
-    const h = hash(seed);
-    const color = new THREE.Color();
-    for (let i = 0; i < MAX_MOVING_CARS; i++) {
-      this.bodies.setColorAt(i, color.set(CAR_COLORS[(h + i * 5) % CAR_COLORS.length]));
-    }
-    for (const mesh of [this.bodies, this.details]) {
-      mesh.frustumCulled = false; // cars drive far from the mesh origin
+  constructor() {
+    // Instance colors must exist before the first render, or the shader ignores them.
+    for (let i = 0; i < MAX_VEHICLES; i++) this.bodies.setColorAt(i, this.color.set("#ffffff"));
+    for (const mesh of [this.bodies, this.details, this.trucks]) {
+      mesh.count = 0;
+      mesh.frustumCulled = false; // vehicles drive far from the mesh origin
       mesh.castShadow = true;
     }
-    this.truck.scale.setScalar(0.001);
-    this.group.add(this.truck, this.bodies, this.details);
+    this.group.add(this.bodies, this.details, this.trucks);
   }
 
-  // `busy` is the lot's eased busy value; the car count uses the raw states.
-  tick(dt: number, busy: number, lotBusy: boolean, busySubagents: number) {
-    const target = movingCarCount(lotBusy, busySubagents);
-    for (let i = 0; i < MAX_MOVING_CARS; i++) {
-      const goal = i < target ? 1 : 0;
-      const step = dt / 0.5;
-      this.presence[i] = goal > this.presence[i] ? Math.min(1, this.presence[i] + step) : Math.max(0, this.presence[i] - step);
+  // Call when the used cells change. Vehicles on roads that are gone disappear.
+  setRoads(indexes: number[]) {
+    this.roads = roadGraph(indexes);
+    this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
+    for (const t of this.travelers) {
+      if (!this.roads.lanes.has(t.vehicle.next)) t.vehicle = { ...t.vehicle, next: pickNext(this.roads, t.vehicle.lane, Math.random) };
     }
-
-    const moving = Math.max(busy, ...this.presence);
-    this.distance += dt * 9 * (moving > 0 ? 1 : 0);
-    const spacing = (this.loopHalf * 8) / (MAX_MOVING_CARS + 1);
-
-    const truckPoint = roadLoopPoint(this.distance, this.loopHalf);
-    this.truck.position.set(truckPoint.x, 0.05, truckPoint.z);
-    this.truck.rotation.y = truckPoint.heading;
-    this.truck.scale.setScalar(Math.max(0.001, busy));
-    this.truck.visible = busy > 0.01;
-
-    for (let i = 0; i < MAX_MOVING_CARS; i++) {
-      const point = roadLoopPoint(this.distance + (i + 1) * spacing, this.loopHalf);
-      this.quaternion.setFromAxisAngle(this.up, point.heading);
-      const scale = this.presence[i];
-      this.matrix.compose(new THREE.Vector3(point.x, 0.05, point.z), this.quaternion, new THREE.Vector3(scale, scale, scale));
-      this.bodies.setMatrixAt(i, this.matrix);
-      this.details.setMatrixAt(i, this.matrix);
-    }
-    this.bodies.instanceMatrix.needsUpdate = true;
-    this.details.instanceMatrix.needsUpdate = true;
   }
 
-  dispose() {
-    this.bodies.dispose();
-    this.details.dispose();
+  tick(dt: number, sources: TrafficSource[]) {
+    this.updateTravelers(dt, sources);
+    const moved = stepVehicles(this.roads, this.travelers.map((t) => t.vehicle), dt, Math.random);
+    this.travelers.forEach((t, i) => (t.vehicle = moved[i]));
+    this.draw();
+  }
+
+  // Spawns wanted vehicles, and grows or shrinks each one over 0.5 s.
+  private updateTravelers(dt: number, sources: TrafficSource[]) {
+    const wanted = new Set<string>();
+    for (const source of sources) {
+      const h = hash(source.id);
+      for (let slot = 0; slot < source.cars && slot < MAX_MOVING_CARS; slot++) {
+        this.want(wanted, `${source.id}/${slot}`, source.index, false, CAR_COLORS[(h + slot * 5) % CAR_COLORS.length]);
+      }
+      if (source.truck) this.want(wanted, `${source.id}/truck`, source.index, true, "");
+    }
+    const step = dt / 0.5;
+    for (const t of this.travelers) {
+      t.presence = wanted.has(t.key) ? Math.min(1, t.presence + step) : t.presence - step;
+    }
+    this.travelers = this.travelers.filter((t) => t.presence > 0);
+  }
+
+  private want(wanted: Set<string>, key: string, index: number, truck: boolean, color: string) {
+    wanted.add(key);
+    if (this.travelers.length >= MAX_VEHICLES || this.travelers.some((t) => t.key === key)) return;
+    const speed = truck ? 7 : 8 + Math.random() * 3;
+    const vehicles = this.travelers.map((t) => t.vehicle);
+    const vehicle = spawnVehicle(this.roads, vehicles, index, speed, truck ? TRUCK_LENGTH : CAR_LENGTH, Math.random);
+    if (vehicle) this.travelers.push({ key, truck, color, presence: 0, vehicle });
+  }
+
+  private draw() {
+    let cars = 0;
+    let trucks = 0;
+    for (const t of this.travelers) {
+      const pose = vehiclePose(this.roads, t.vehicle);
+      this.quaternion.setFromAxisAngle(this.up, pose.heading);
+      this.matrix.compose(this.position.set(pose.x, 0.05, pose.z), this.quaternion, this.scale.setScalar(Math.max(0.001, t.presence)));
+      if (t.truck) {
+        this.trucks.setMatrixAt(trucks++, this.matrix);
+      } else {
+        this.bodies.setMatrixAt(cars, this.matrix);
+        this.details.setMatrixAt(cars, this.matrix);
+        this.bodies.setColorAt(cars++, this.color.set(t.color));
+      }
+    }
+    this.bodies.count = this.details.count = cars;
+    this.trucks.count = trucks;
+    for (const mesh of [this.bodies, this.details, this.trucks]) mesh.instanceMatrix.needsUpdate = true;
+    this.bodies.instanceColor!.needsUpdate = true;
   }
 }

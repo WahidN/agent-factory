@@ -4,6 +4,7 @@ import { Park } from "./park.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { createScene } from "./scene.ts";
 import { createTooltip } from "./tooltip.ts";
+import { ParkTraffic } from "./traffic.ts";
 
 const RECONNECT_MS = 2000;
 
@@ -14,6 +15,8 @@ const hint = document.querySelector<HTMLElement>("#hint")!;
 const view = createScene(canvas);
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
+const traffic = new ParkTraffic();
+view.scene.add(traffic.group);
 
 const lots = new Map<string, Lot>();
 const leaving = new Set<Lot>();
@@ -67,9 +70,10 @@ function handle(message: ServerMessage) {
   }
 }
 
-// Roads and trees follow the used lots; the camera and shadows follow the park.
+// Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.
 function refocus(fit = false) {
   park.update(plots.indexes());
+  traffic.setRoads(plots.indexes());
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
 }
@@ -101,6 +105,8 @@ const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLEl
 
 view.onFrame((dt, now) => {
   for (const lot of [...lots.values(), ...leaving]) lot.tick(dt, now);
+  // Leaving lots send nothing, so their vehicles shrink away.
+  traffic.tick(dt, [...lots].map(([id, lot]) => ({ id, index: plots.indexOf(id)!, ...lot.traffic() })));
   tooltip.update();
 });
 

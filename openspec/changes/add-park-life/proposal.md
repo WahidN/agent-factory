@@ -5,7 +5,7 @@ The park still fills empty grid cells with forest blocks, so a few sessions sit 
 ## What Changes
 
 - Roads, sidewalks, trees, and lamps are only drawn around cells that have a lot. Unused cells stay plain grass. A road shared with a neighbour lot stays when one of the two lots goes away.
-- Each busy lot sends cars around its roads next to its truck: 2 cars, plus 1 for each busy subagent, up to 6. Cars drive away when the lot goes idle.
+- Every lot sends 2 cars onto the park roads, busy or idle. A busy lot also sends its truck and 1 more car for each busy subagent, up to 6 cars. Cars drive all park roads in both directions.
 - Every yard gets a few parked cars, also when idle.
 - Small workers walk and work in busy lots: 4 in the main yard, and 1 in front of each busy subagent warehouse. When the lot goes idle, workers walk back inside and disappear.
 - **BREAKING (visual):** the tooltip no longer shows the working folder.

@@ -16,10 +16,20 @@ Then open http://localhost:5173. This starts the Node server on `127.0.0.1:4317`
 ## What you see
 
 - one lot per session, with the session name on the sign
+- the hall and machines are sized by the model the session runs (see below)
 - sessions in the same folder share an accent color
 - subagents show up as small warehouses inside the parent yard, up to 4 per lot
-- hover a hall or warehouse for the name, status and current tool
+- hover a hall or warehouse for the name, status, current tool and model
 - drag to rotate, scroll to zoom
+
+| Model | Lot |
+| --- | --- |
+| Haiku | small hall, 1 stack, small cooling tower, short searchlight tower |
+| Sonnet, or no model known yet | full hall with 1 row of windows, 3 stacks, cooling tower, lattice tower |
+| Opus | 2 rows of windows, 4 taller stacks, bigger cooling tower, taller lattice tower |
+| Fable or Mythos | 3 rows of windows, 5 tall stacks, biggest cooling tower, tallest lattice tower |
+
+The model comes from the transcript, so a fresh session starts as a Sonnet sized lot and is rebuilt in place once its first response arrives. Switching models with `/model` rebuilds the lot the same way. Subagent warehouses have one size.
 
 | Agent state | Animation |
 | --- | --- |
@@ -36,7 +46,7 @@ The server in `server/` watches `~/.claude/sessions/` and `~/.claude/projects/`.
 
 The page in `web/` draws the park with Three.js. Static parts of a lot are merged into one mesh, and repeated parts like trees and windows are instanced.
 
-Only the tool name and a short label leave the server. The label is a file name, or the first 40 characters of a command or search pattern. Prompts, responses and file contents stay on disk. The server listens on localhost only and never writes under `~/.claude/`.
+Only the tool name, a short label and the model id leave the server. The label is a file name, or the first 40 characters of a command or search pattern. Prompts, responses and file contents stay on disk. The server listens on localhost only and never writes under `~/.claude/`.
 
 Claude Code owns the format of these files, so an update can break the reader.
 

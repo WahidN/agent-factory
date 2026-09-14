@@ -2,7 +2,7 @@
 
 Shows every running Claude Code session on your machine as a factory in a 3D industrial park. A busy agent lights up its lot, and each tool type drives a different machine.
 
-![Four busy lots, one per model: a small Haiku plant, a medium Sonnet hall, a taller Opus hall and a three story Fable hall](docs/screenshot.png)
+![Four busy lots, one per model: a small Haiku plant, a medium Sonnet hall, a taller Opus hall and a three story Fable hall](docs/lots-by-model.png)
 
 ## Run it
 

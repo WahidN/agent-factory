@@ -1,11 +1,13 @@
 // One session's industrial lot: fenced yard, main hall, machines, traffic,
-// workers, name sign, and its subagent warehouses.
+// workers, name sign, and its subagent warehouses. The hall and machines are
+// sized by the session's model tier, and rebuilt in place when the tier changes.
 
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import type { AgentState, SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
-import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, YARD_Y } from "./machines.ts";
+import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
+import { type ModelTier, tierFor } from "./model-tier.ts";
 import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY } from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
 import { movingCarCount } from "./park-layout.ts";
@@ -30,8 +32,12 @@ function partForTool(name: string): Part {
   return TOOL_PARTS[name] ?? "cooling";
 }
 
-const HALL = { x0: -18, x1: 4, z0: -18, z1: -4, stripe: 1, wall: WALL_BAY.height };
-const HALL_TOP = YARD_Y + HALL.stripe + HALL.wall;
+// The hall keeps its dock side on every tier, so the dock door, hall door,
+// parked cars and worker routes never move. A smaller hall shrinks toward the
+// back left corner.
+const HALL_X1 = 4;
+const HALL_Z1 = -4;
+const STRIPE = 1;
 const DOCK_X = -7;
 const GATE = { z0: 6, z1: 12 }; // opening in the right fence
 const MAX_WAREHOUSES = 4;
@@ -42,6 +48,51 @@ const WAREHOUSE_SLOTS: [number, number][] = [
   [12.5, 14],
 ];
 const SINK_DEPTH = 12;
+
+// Hall footprint and machine sizes per tier. Machines stay clear of the parked
+// cars, the worker routes, and the fence on every tier (see design.md).
+type LotSize = {
+  hall: { x0: number; z0: number };
+  bays: number; // rows of windows
+  stacks: StacksOptions & { at: [number, number] };
+  cooling: { at: [number, number]; radius: number; height: number };
+  searchlight: { height: number; reach: number };
+};
+
+const SIZES: Record<ModelTier, LotSize> = {
+  small: {
+    hall: { x0: -10, z0: -12 },
+    bays: 1,
+    stacks: { at: [12, -12], count: 1, height: 7, radius: 0.7, frame: false },
+    cooling: { at: [12.5, 0.5], radius: 2.4, height: 5 },
+    searchlight: { height: 5, reach: 9 },
+  },
+  medium: {
+    hall: { x0: -18, z0: -18 },
+    bays: 1,
+    stacks: { at: [12, -12], count: 3, height: 11, radius: 0.9, frame: true },
+    cooling: { at: [12.5, 0.5], radius: 3.6, height: 8 },
+    searchlight: { height: 9, reach: 11 },
+  },
+  large: {
+    hall: { x0: -18, z0: -18 },
+    bays: 2,
+    stacks: { at: [12, -12], count: 4, height: 14, radius: 0.95, frame: true },
+    cooling: { at: [12.5, 0.5], radius: 4.2, height: 11 },
+    searchlight: { height: 12, reach: 12 },
+  },
+  huge: {
+    hall: { x0: -18, z0: -18 },
+    bays: 3,
+    stacks: { at: [12, -13], count: 5, height: 17, radius: 0.85, frame: true },
+    cooling: { at: [13.5, 1], radius: 4.8, height: 14 },
+    searchlight: { height: 14, reach: 13 },
+  },
+};
+
+function hallTop(size: LotSize) {
+  return YARD_Y + STRIPE + size.bays * WALL_BAY.height;
+}
 
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
@@ -57,19 +108,28 @@ const WORKER_SLOTS: WorkerSlot[] = [
   })),
 ];
 
-// Rooftop vents and AC boxes, relative to the hall's corner.
+// Rooftop vents and AC boxes, relative to the hall's back left corner. Ones
+// that fall outside a smaller roof are left out.
 const VENTS: [number, number][] = [
   [2, 2.5], [5, 11.5], [8.5, 2], [12, 12], [15.5, 3], [19, 11], [20, 6.5], [3.5, 7],
 ];
+const SKYLIGHTS: [number, number][] = [[9, 4.5], [9, 9.5]];
+const AC_BOXES: [number, number][] = [[17, 4.5], [17.5, 9.5]];
 
 type Slot = { warehouse: Warehouse; slot: number };
+type Machines = { stacks: Stacks; forklift: Forklift; searchlight: Searchlight; cooling: CoolingTower };
 
 export class Lot {
   readonly group = new THREE.Group();
   state: SessionState;
+  tier: ModelTier;
   gone = false;
 
   private body = new THREE.Group();
+  // Everything sized by the tier: yard markings, hall, machines, parked cars, sign.
+  private structure = new THREE.Group();
+  private machines!: Machines;
+  private sign!: { element: HTMLElement; name: HTMLElement; badge: HTMLElement };
   private hallPickables: THREE.Mesh[] = [];
   private busy = new Activity();
   private parts: Record<Part, Activity> = {
@@ -84,55 +144,34 @@ export class Lot {
   private accentMaterial: THREE.MeshStandardMaterial;
   private wallMaterial = createWallMaterial();
 
-  private stacks: Stacks;
-  private forklift: Forklift;
-  private searchlight: Searchlight;
-  private cooling: CoolingTower;
   private workers = new LotWorkers(WORKER_SLOTS);
   private busySubagents = 0;
 
   private warehouses = new Map<string, Slot>();
   private leavingWarehouses = new Set<Slot>();
   private overflow = 0;
-  private sign: { element: HTMLElement; name: HTMLElement; badge: HTMLElement };
 
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
   constructor(state: SessionState) {
     this.state = state;
+    this.tier = tierFor(state.model);
     this.accent = accentFor(state.cwd);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
     this.accentGrey = new THREE.Color(l, l, l);
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
 
-    const builder = new StaticBuilder();
-    this.buildYard(builder);
-    this.buildHall(builder);
+    this.buildStructure();
 
-    this.stacks = new Stacks(builder, [12, -12], { count: 3, height: 11, radius: 0.9, frame: true });
-    this.forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
-    this.searchlight = new Searchlight(builder, [-17, 12], { tower: true, height: 9, reach: 11, aimAt: [-4, 2] });
-    this.cooling = new CoolingTower(builder, [12.5, 0.5], 3.6, 8);
-    addParkedCars(builder, state.id);
-
+    // The parked truck is the same on every tier. It shares the truck
+    // template's geometry, so it stays out of the rebuilt structure.
     const parked = createTruck();
     parked.position.set(-9, YARD_Y, 5.8);
     parked.traverse((child) => (child.castShadow = child.receiveShadow = true));
 
-    const statics = builder.build();
-    const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
-    for (const mesh of statics.children as THREE.Mesh[]) {
-      if (hallMaterials.includes(mesh.material as THREE.Material)) {
-        mesh.userData.hover = this;
-        this.hallPickables.push(mesh);
-      }
-    }
-
-    this.sign = this.createSign();
-    this.drawSign();
-    this.body.add(statics, parked, this.stacks.group, this.forklift.group, this.searchlight.group, this.cooling.group, this.workers.mesh);
+    this.body.add(parked, this.workers.mesh);
     this.body.position.y = -SINK_DEPTH;
     this.group.add(this.body);
     this.update(state, performance.now());
@@ -141,13 +180,20 @@ export class Lot {
   update(state: SessionState, nowMs: number) {
     const nameChanged = state.name !== this.state.name;
     this.state = state;
+    const tier = tierFor(state.model);
+    if (tier !== this.tier) {
+      this.tier = tier;
+      this.disposeStructure();
+      this.buildStructure();
+    } else if (nameChanged) {
+      this.drawSign();
+    }
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
     const active = working && state.currentTool ? partForTool(state.currentTool.name) : null;
     for (const part of Object.keys(this.parts) as Part[]) this.parts[part].set(part === active, nowMs);
     this.busySubagents = state.subagents.filter((s) => s.status === "busy").length;
     this.updateWarehouses(state.subagents, nowMs);
-    if (nameChanged) this.drawSign();
   }
 
   // What this lot sends onto the park roads: always some cars, the truck only while busy.
@@ -179,10 +225,10 @@ export class Lot {
     this.wallMaterial.emissiveIntensity = busy * 1.1;
     this.accentMaterial.color.copy(this.accent).lerp(this.accentGrey, (1 - busy) * 0.35);
 
-    this.stacks.tick(dt, busy, stacks);
-    this.forklift.tick(dt, forklift);
-    this.searchlight.tick(dt, searchlight);
-    this.cooling.tick(dt, busy, cooling);
+    this.machines.stacks.tick(dt, busy, stacks);
+    this.machines.forklift.tick(dt, forklift);
+    this.machines.searchlight.tick(dt, searchlight);
+    this.machines.cooling.tick(dt, busy, cooling);
     this.workers.tick(dt, this.workerBusyFlags());
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);
@@ -190,19 +236,54 @@ export class Lot {
   }
 
   dispose() {
+    this.disposeStructure();
     this.wallMaterial.dispose();
     this.accentMaterial.dispose();
-    this.stacks.dispose();
-    this.searchlight.dispose();
-    this.cooling.dispose();
     this.workers.mesh.dispose();
-    // Three.js only tells the removed object itself, not the label inside it,
-    // so the label's HTML element has to be removed by hand.
-    this.sign.element.remove();
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.dispose();
   }
 
   // ---------- Building ----------
+
+  private buildStructure() {
+    const size = SIZES[this.tier];
+    const builder = new StaticBuilder();
+    this.buildYard(builder);
+    this.buildHall(builder, size);
+
+    const { at: stacksAt, ...stacksOptions } = size.stacks;
+    const stacks = new Stacks(builder, stacksAt, stacksOptions);
+    const forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
+    const searchlight = new Searchlight(builder, [-17, 12], { tower: true, ...size.searchlight, aimAt: [-4, 2] });
+    const cooling = new CoolingTower(builder, size.cooling.at, size.cooling.radius, size.cooling.height);
+    addParkedCars(builder, this.state.id);
+
+    const statics = builder.build();
+    const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
+    this.hallPickables = (statics.children as THREE.Mesh[]).filter((mesh) => hallMaterials.includes(mesh.material as THREE.Material));
+    for (const mesh of this.hallPickables) mesh.userData.hover = this;
+
+    this.machines = { stacks, forklift, searchlight, cooling };
+    this.structure = new THREE.Group();
+    this.structure.add(statics, stacks.group, forklift.group, searchlight.group, cooling.group);
+    this.sign = this.createSign(size);
+    this.body.add(this.structure);
+    this.drawSign();
+  }
+
+  private disposeStructure() {
+    this.body.remove(this.structure);
+    this.machines.stacks.dispose();
+    this.machines.searchlight.dispose();
+    this.machines.cooling.dispose();
+    // Three.js only tells the removed object itself, not the label inside it,
+    // so the label's HTML element has to be removed by hand.
+    this.sign.element.remove();
+    // Own merged geometry only; smoke and steam are instanced and share one puff geometry.
+    this.structure.traverse((child) => {
+      if (child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh)) child.geometry.dispose();
+    });
+  }
 
   private buildYard(b: StaticBuilder) {
     const h = YARD_HALF;
@@ -238,40 +319,48 @@ export class Lot {
     flat(DECALS.hatch, 0.5, -1.8, 4, 3);
   }
 
-  private buildHall(b: StaticBuilder) {
-    const { x0, x1, z0, z1, stripe, wall } = HALL;
+  private buildHall(b: StaticBuilder, size: LotSize) {
+    const { x0, z0 } = size.hall;
+    const x1 = HALL_X1;
+    const z1 = HALL_Z1;
+    const wall = size.bays * WALL_BAY.height;
+    const top = hallTop(size);
     const width = x1 - x0;
     const depth = z1 - z0;
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
-    const wallY = YARD_Y + stripe + wall / 2;
+    const wallY = YARD_Y + STRIPE + wall / 2;
 
-    b.box(this.accentMaterial, [cx, YARD_Y + stripe / 2, cz], [width + 0.1, stripe, depth + 0.1]);
-    const wallPlane = (length: number) => repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, 1);
+    b.box(this.accentMaterial, [cx, YARD_Y + STRIPE / 2, cz], [width + 0.1, STRIPE, depth + 0.1]);
+    const wallPlane = (length: number) => repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, size.bays);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z1]);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z0], [1, 1, 1], [0, Math.PI, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x1, wallY, cz], [1, 1, 1], [0, Math.PI / 2, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x0, wallY, cz], [1, 1, 1], [0, -Math.PI / 2, 0]);
 
     // Flat roof with parapet
-    b.box(MATERIALS.roof, [cx, HALL_TOP + 0.15, cz], [width, 0.3, depth]);
+    b.box(MATERIALS.roof, [cx, top + 0.15, cz], [width, 0.3, depth]);
     for (const s of [-1, 1]) {
-      b.box(MATERIALS.parapet, [cx, HALL_TOP + 0.4, cz + s * (depth / 2 - 0.2)], [width + 0.1, 0.8, 0.4]);
-      b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), HALL_TOP + 0.4, cz], [0.4, 0.8, depth + 0.1]);
+      b.box(MATERIALS.parapet, [cx, top + 0.4, cz + s * (depth / 2 - 0.2)], [width + 0.1, 0.8, 0.4]);
+      b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), top + 0.4, cz], [0.4, 0.8, depth + 0.1]);
     }
 
-    // Rooftop: vents, skylights, AC boxes
-    for (const [vx, vz] of VENTS) {
-      const x = x0 + vx;
-      const z = z0 + vz;
-      b.cylinder(MATERIALS.frame, [x, HALL_TOP + 0.6, z], [0.35, 0.6, 0.35]);
-      b.cylinder(MATERIALS.white, [x, HALL_TOP + 1.0, z], [0.48, 0.18, 0.48]);
+    // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
+    // half size inside the parapet.
+    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+    for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
+      const x = x0 + vent[0];
+      const z = z0 + vent[1];
+      b.cylinder(MATERIALS.frame, [x, top + 0.6, z], [0.35, 0.6, 0.35]);
+      b.cylinder(MATERIALS.white, [x, top + 1.0, z], [0.48, 0.18, 0.48]);
     }
     const skylight = new THREE.CylinderGeometry(0.9, 0.9, 7, 14, 1, false, 0, Math.PI);
-    for (const vz of [4.5, 9.5]) b.add(skylight, MATERIALS.frame, [x0 + 9, HALL_TOP + 0.3, z0 + vz], [1, 1, 1], [0, 0, Math.PI / 2]);
-    for (const [vx, vz] of [[17, 4.5], [17.5, 9.5]]) {
-      b.box(MATERIALS.frame, [x0 + vx, HALL_TOP + 0.75, z0 + vz], [1.8, 0.9, 1.3]);
-      b.cylinder(MATERIALS.darkSteel, [x0 + vx, HALL_TOP + 1.22, z0 + vz], [0.45, 0.05, 0.45]);
+    for (const [vx, vz] of SKYLIGHTS.filter((v) => fits(v, 3.5, 0.9))) {
+      b.add(skylight, MATERIALS.frame, [x0 + vx, top + 0.3, z0 + vz], [1, 1, 1], [0, 0, Math.PI / 2]);
+    }
+    for (const [vx, vz] of AC_BOXES.filter((v) => fits(v, 0.9, 0.65))) {
+      b.box(MATERIALS.frame, [x0 + vx, top + 0.75, z0 + vz], [1.8, 0.9, 1.3]);
+      b.cylinder(MATERIALS.darkSteel, [x0 + vx, top + 1.22, z0 + vz], [0.45, 0.05, 0.45]);
     }
 
     // Loading dock door with awning, and a people door
@@ -358,8 +447,9 @@ export class Lot {
 
   // ---------- Sign ----------
 
-  // An HTML label that follows the hall. `dispose` removes its element.
-  private createSign() {
+  // An HTML label that hangs above the hall roof. Lives in the structure, so a
+  // rebuild replaces it.
+  private createSign(size: LotSize) {
     const element = document.createElement("div");
     element.className = "lot-label";
     element.style.setProperty("--accent", `#${this.accent.getHexString()}`);
@@ -368,8 +458,8 @@ export class Lot {
     badge.className = "badge";
     element.append(name, badge);
     const label = new CSS2DObject(element);
-    label.position.set((HALL.x0 + HALL.x1) / 2, HALL_TOP + 4, (HALL.z0 + HALL.z1) / 2);
-    this.body.add(label);
+    label.position.set((size.hall.x0 + HALL_X1) / 2, hallTop(size) + 4, (size.hall.z0 + HALL_Z1) / 2);
+    this.structure.add(label);
     return { element, name, badge };
   }
 

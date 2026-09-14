@@ -3,4 +3,4 @@
 not json at all
 {"type":"attachment","attachment":{"type":"total_tokens_reminder"}}
 {"type":"assistant","timestamp":"2026-09-13T10:00:01.000Z","message":{"role":"assistant","content":"plain string content"}}
-{"type":"assistant","timestamp":"2026-09-13T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_9","name":"mcp__sentry__search","input":{"query":"errors"}}]}}
+{"type":"assistant","timestamp":"2026-09-13T10:00:02.000Z","message":{"model":"claude-fable-5-1","role":"assistant","content":[{"type":"tool_use","id":"toolu_9","name":"mcp__sentry__search","input":{"query":"errors"}}]}}

@@ -11,6 +11,7 @@ export type AgentState = {
   status: AgentStatus;
   currentTool: CurrentTool | null;
   startedAt: number;
+  model: string; // model id from the transcript, empty until the first assistant message
 };
 
 export type SessionState = AgentState & { subagents: AgentState[] };

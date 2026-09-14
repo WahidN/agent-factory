@@ -84,6 +84,11 @@ body {
   color: #a9b1bb;
 }
 
+#tooltip .model {
+  color: #8f98a3;
+  font-size: 12px;
+}
+
 .lot-label {
   display: flex;
   align-items: center;

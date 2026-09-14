@@ -13,7 +13,7 @@ import {
   parseTranscriptChunk,
   projectDirFor,
   type SessionFile,
-  type ToolEvent,
+  type TranscriptEvent,
 } from "./claude-reader.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
 import type { ServerMessage } from "./types.ts";
@@ -50,7 +50,7 @@ wss.on("connection", (socket) => {
 // ---------- Transcript tailing ----------
 
 type Tail = { offset: number; remainder: Buffer };
-type ReadResult = { events: ToolEvent[]; mtimeMs: number } | null;
+type ReadResult = { events: TranscriptEvent[]; mtimeMs: number } | null;
 const tails = new Map<string, Tail>();
 const readQueues = new Map<string, Promise<unknown>>();
 
@@ -196,7 +196,8 @@ async function syncSubagent(sessionId: string, fileName: string) {
   const result = await readNewEvents(path);
   if (!result) return;
   const meta = parseSubagentMeta(await readFile(join(dir, `${agentId}.meta.json`), "utf8").catch(() => ""));
-  tracker.applySubagentEvents(sessionId, agentId, meta?.name ?? agentId, result.events, result.mtimeMs, now);
+  const subagent = { name: meta?.name ?? agentId, model: meta?.model ?? "" };
+  tracker.applySubagentEvents(sessionId, agentId, subagent, result.events, result.mtimeMs, now);
 }
 
 // ---------- Watching ----------

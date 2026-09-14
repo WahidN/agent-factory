@@ -16,11 +16,16 @@ export type SubagentMeta = {
   name: string;
   agentType: string;
   description: string;
+  model: string; // short alias like "sonnet", empty when the file has none
 };
 
-export type ToolEvent =
+export type TranscriptEvent =
   | { kind: "tool_start"; id: string; name: string; target: string; at: number }
-  | { kind: "tool_end"; id: string; at: number };
+  | { kind: "tool_end"; id: string; at: number }
+  | { kind: "model"; model: string; at: number };
+
+// Placeholder Claude Code writes on messages it made up itself.
+const SYNTHETIC_MODEL = "<synthetic>";
 
 const LABEL_MAX = 40;
 
@@ -54,15 +59,15 @@ export function parseSubagentMeta(json: string): SubagentMeta | null {
   const description = str(data.description);
   const name = str(data.name) || description || agentType;
   if (!name) return null;
-  return { name, agentType, description };
+  return { name, agentType, description, model: str(data.model) };
 }
 
 // Parses complete lines. The unfinished last line comes back as `remainder`
 // so the caller can prepend it to the next chunk.
-export function parseTranscriptChunk(text: string): { entries: ToolEvent[]; remainder: string } {
+export function parseTranscriptChunk(text: string): { entries: TranscriptEvent[]; remainder: string } {
   const lines = text.split("\n");
   const remainder = lines.pop() ?? "";
-  const entries: ToolEvent[] = [];
+  const entries: TranscriptEvent[] = [];
 
   for (const line of lines) {
     const data = parseJson(line);
@@ -70,6 +75,12 @@ export function parseTranscriptChunk(text: string): { entries: ToolEvent[]; rema
     if (!Array.isArray(content)) continue;
     const parsed = Date.parse(data.timestamp);
     const at = Number.isFinite(parsed) ? parsed : 0;
+
+    // Every assistant line names the model that wrote it.
+    const model = data.message.model;
+    if (data.type === "assistant" && typeof model === "string" && model && model !== SYNTHETIC_MODEL) {
+      entries.push({ kind: "model", model, at });
+    }
 
     for (const block of content) {
       if (data.type === "assistant" && block?.type === "tool_use" && typeof block.id === "string") {

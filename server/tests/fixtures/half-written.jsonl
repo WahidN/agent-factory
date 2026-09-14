@@ -1,2 +1,2 @@
-{"type":"assistant","timestamp":"2026-09-13T10:00:01.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Grep","input":{"pattern":"useState"}}]}}
+{"type":"assistant","timestamp":"2026-09-13T10:00:01.000Z","message":{"model":"claude-opus-5","role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Grep","input":{"pattern":"useState"}}]}}
 {"type":"user","timestamp":"2026-09-13T10:00:02.000Z","message":{"role":"user","content":[{"type":"tool_re

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { accentIndexFor } from "./park-layout.ts";
 
 export const COLORS = {
-  grass: "#5fae4a",
+  grass: "#1a1e25",
   road: "#5d6064",
   yard: "#7c7f83",
   wall: "#a3a6aa",

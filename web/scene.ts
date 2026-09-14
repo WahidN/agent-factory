@@ -21,7 +21,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   renderer.toneMapping = THREE.NeutralToneMapping;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#cfe3ea");
+  scene.background = new THREE.Color("#14181f");
 
   // Orthographic: parallel edges stay parallel, like the reference render.
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 3);

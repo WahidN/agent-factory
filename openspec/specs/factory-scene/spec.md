@@ -37,11 +37,11 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 | State | Animation |
 |---|---|
 | idle | windows dark, no smoke or steam, forklift parked, searchlight off, no truck on the road, hall slightly faded |
-| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, a truck drives the roads around the lot |
+| busy, no tool running | windows glow, thin slow smoke from the chimney stacks, slow steam from the cooling tower, a truck drives the roads around the lot |
 | editing or writing files | forklift carries pallets between the dock and the parked truck |
 | running a shell command | chimney stack rims glow orange and smoke is fast and thick |
 | reading or searching files | searchlight on the lattice tower turns on and sweeps its beam across the yard |
-| any other tool | cooling tower releases steam |
+| any other tool | cooling tower steam is fast and thick |
 
 #### Scenario: Agent goes idle
 - **WHEN** a session's status becomes idle
@@ -61,7 +61,7 @@ A lot SHALL show its agent's status and current tool through animation, as follo
 
 #### Scenario: Unknown tool
 - **WHEN** a session's current tool is not in the table
-- **THEN** its cooling tower releases steam
+- **THEN** its cooling tower steam is fast and thick
 
 ### Requirement: Short tool calls stay visible
 Animations SHALL fade in and out over about 0.3 seconds, and a machine SHALL stay active for at least 0.6 seconds after its tool starts.

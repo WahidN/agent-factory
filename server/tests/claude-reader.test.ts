@@ -56,8 +56,10 @@ describe("parseTranscriptChunk", () => {
     const { entries, remainder } = parseTranscriptChunk(fixture("running-tool.jsonl"));
     expect(remainder).toBe("");
     expect(entries).toEqual([
+      { kind: "model", model: "claude-opus-5", at: Date.parse("2026-09-13T10:00:01.000Z") },
       { kind: "tool_start", id: "toolu_1", name: "Read", target: "", at: Date.parse("2026-09-13T10:00:01.000Z") },
       { kind: "tool_end", id: "toolu_1", at: Date.parse("2026-09-13T10:00:02.000Z") },
+      { kind: "model", model: "claude-opus-5", at: Date.parse("2026-09-13T10:00:03.000Z") },
       {
         kind: "tool_start",
         id: "toolu_2",
@@ -70,13 +72,20 @@ describe("parseTranscriptChunk", () => {
 
   it("sees a finished tool", () => {
     const kinds = parseTranscriptChunk(fixture("finished-tool.jsonl")).entries.map((e) => e.kind);
-    expect(kinds).toEqual(["tool_start", "tool_end"]);
+    expect(kinds).toEqual(["model", "tool_start", "tool_end"]);
+  });
+
+  it("names the model of every assistant line except synthetic ones", () => {
+    const models = parseTranscriptChunk(fixture("finished-tool.jsonl"))
+      .entries.filter((e) => e.kind === "model")
+      .map((e) => e.model);
+    expect(models).toEqual(["claude-sonnet-5"]); // the last line says "<synthetic>"
   });
 
   it("carries a half-written last line as remainder and completes it later", () => {
     const text = fixture("half-written.jsonl");
     const first = parseTranscriptChunk(text);
-    expect(first.entries.map((e) => e.kind)).toEqual(["tool_start"]);
+    expect(first.entries.map((e) => e.kind)).toEqual(["model", "tool_start"]);
     expect(first.remainder.startsWith('{"type":"user"')).toBe(true);
 
     const rest = 'sult","tool_use_id":"toolu_1","content":"x"}]}}\n';
@@ -88,6 +97,7 @@ describe("parseTranscriptChunk", () => {
   it("skips unknown and broken lines", () => {
     const { entries } = parseTranscriptChunk(fixture("unknown-lines.jsonl"));
     expect(entries).toEqual([
+      { kind: "model", model: "claude-fable-5-1", at: Date.parse("2026-09-13T10:00:02.000Z") },
       {
         kind: "tool_start",
         id: "toolu_9",
@@ -101,6 +111,7 @@ describe("parseTranscriptChunk", () => {
   it("reads subagent transcripts the same way", () => {
     const { entries } = parseTranscriptChunk(fixture("subagent.jsonl"));
     expect(entries).toEqual([
+      { kind: "model", model: "claude-sonnet-5", at: Date.parse("2026-09-13T10:05:01.000Z") },
       { kind: "tool_start", id: "toolu_s1", name: "Glob", target: "", at: Date.parse("2026-09-13T10:05:01.000Z") },
     ]);
   });
@@ -152,7 +163,13 @@ describe("parseSubagentMeta", () => {
       name: "code-review",
       agentType: "general-purpose",
       description: "/code-review 6",
+      model: "",
     });
+  });
+
+  it("reads the model alias when the file has one", () => {
+    const meta = parseSubagentMeta('{"agentType":"general-purpose","description":"Review","model":"sonnet"}');
+    expect(meta?.model).toBe("sonnet");
   });
 
   it("rejects an invalid meta file", () => {

@@ -13,6 +13,30 @@ pnpm dev
 
 Then open http://localhost:5173. This starts the Node server on `127.0.0.1:4317` and the Vite page together. Vite proxies `/ws` to the server, and the page reconnects every 2 seconds while the server is down.
 
+## Run it for a team
+
+One Mac runs the hub:
+
+```
+pnpm hub
+```
+
+Every other Mac points at it:
+
+```
+HUB=ws://<hub-host>:4317 pnpm dev
+```
+
+Everyone opens their own http://localhost:5173 and sees one park with every machine's sessions.
+
+![Five lots from two machines, each sign shows the session name and the machine name](docs/two-machines.png)
+
+The hub prints the address to use when it starts. On a Mac it is the computer name plus `.local`, for example `ws://wahids-macbook.local:4317`.
+
+Once the park has sessions from more than one machine, every sign and tooltip shows the machine name. The default is the host name up to the first dot. `MACHINE=wahid pnpm dev` picks a better one than `macbook-pro-3`.
+
+The first time the hub starts, macOS asks once whether `node` may accept incoming connections. Click Allow. While the hub is down, a spoke's page shows `reconnecting...` and no lots, its own included. Both sides retry every 2 seconds.
+
 ## What you see
 
 - one lot per session, with the session name on the sign
@@ -44,9 +68,13 @@ The model comes from the transcript, so a fresh session starts as a Sonnet sized
 
 The server in `server/` watches `~/.claude/sessions/` and `~/.claude/projects/`. It reads each session file for the process id and status, and tails the transcript to find the running tool. On first sight it reads only the last 64 KB of a transcript, and only new bytes after that. Each change goes to the page over a WebSocket.
 
+With `HUB` set, the server also opens one outbound connection to the hub and sends the same messages there. A hub lists what it receives next to its own sessions, prefixes each relayed session id with the machine name, and drops a machine's sessions when its connection closes. A spoke's page is proxied to the hub, so the spoke's own server only relays.
+
 The page in `web/` draws the park with Three.js. Static parts of a lot are merged into one mesh, and repeated parts like trees and windows are instanced.
 
-Only the tool name, a short label and the model id leave the server. The label is a file name, or the first 40 characters of a command or search pattern. Prompts, responses and file contents stay on disk. The server listens on localhost only and never writes under `~/.claude/`.
+Only the tool name, a short label, the model id, the folder name and the machine name leave the server. The label is a file name, or the first 40 characters of a command or search pattern. The folder name is the last part of the working folder, never the full path. Prompts, responses and file contents stay on disk. The server never writes under `~/.claude/`.
+
+Without `--hub` the server listens on localhost only. A hub listens on every network interface, so anyone on the same network can connect to it and read the same stream. Only run a hub on a network you trust.
 
 Claude Code owns the format of these files, so an update can break the reader.
 

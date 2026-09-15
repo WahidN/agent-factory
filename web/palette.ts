@@ -100,18 +100,6 @@ function drawPanes(ctx: CanvasRenderingContext2D, fill: string) {
 }
 
 export const TEXTURES = {
-  wallBay: canvasTexture(BAY_PX.w, BAY_PX.h, (ctx) => {
-    ctx.fillStyle = COLORS.wall;
-    ctx.fillRect(0, 0, BAY_PX.w, BAY_PX.h);
-    ctx.fillStyle = "rgba(0,0,0,0.05)"; // faint panel seam
-    ctx.fillRect(0, 0, 2, BAY_PX.h);
-    ctx.fillStyle = COLORS.frame;
-    ctx.fillRect(WINDOW.x, WINDOW.y, WINDOW.w, WINDOW.h);
-    drawPanes(ctx, COLORS.glass);
-    ctx.fillStyle = "#c6c9cc"; // sill
-    ctx.fillRect(WINDOW.x - 4, WINDOW.y + WINDOW.h, WINDOW.w + 8, 6);
-  }),
-
   // White where glass is, so only panes glow.
   wallBayGlow: canvasTexture(BAY_PX.w, BAY_PX.h, (ctx) => {
     ctx.fillStyle = "#000";
@@ -166,10 +154,46 @@ export const DECALS = {
 // Roofs stay their own mesh so hovering a hall roof finds it.
 MATERIALS.roof.userData.separate = true;
 
+// Hall colors per machine. These are the brickwork itself, not a tint laid
+// over it, so the windows keep their own color whichever hall they sit in.
+export const WALL_TINTS = [
+  "#8a95a3", // slate blue
+  "#a08b83", // brick grey
+  "#ab9f7e", // sand
+  "#8b9c8a", // moss grey
+  "#9a8a97", // plum grey
+  "#7f8890", // slate
+];
+
+// One wallBay texture per tint, cached so the 14 lots of one machine (same
+// tint) share a single texture instead of drawing a copy each. Never
+// disposed by a lot: only the material built from it is.
+const wallBayCache = new Map<string, THREE.Texture>();
+
+export function wallBayFor(tint: string): THREE.Texture {
+  const cached = wallBayCache.get(tint);
+  if (cached) return cached;
+  const texture = canvasTexture(BAY_PX.w, BAY_PX.h, (ctx) => {
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, BAY_PX.w, BAY_PX.h);
+    ctx.fillStyle = "rgba(0,0,0,0.05)"; // faint panel seam
+    ctx.fillRect(0, 0, 2, BAY_PX.h);
+    ctx.fillStyle = COLORS.frame;
+    ctx.fillRect(WINDOW.x, WINDOW.y, WINDOW.w, WINDOW.h);
+    drawPanes(ctx, COLORS.glass);
+    ctx.fillStyle = "#c6c9cc"; // sill
+    ctx.fillRect(WINDOW.x - 4, WINDOW.y + WINDOW.h, WINDOW.w + 8, 6);
+  });
+  wallBayCache.set(tint, texture);
+  return texture;
+}
+
 // Per lot, because window glow changes per session. Textures stay shared.
-export function createWallMaterial() {
+// The tint is baked into the brick fill of the texture itself, not into
+// material.color, so it never multiplies over the frame, glass, or sill.
+export function createWallMaterial(tint: string = COLORS.wall) {
   return standard("#ffffff", {
-    map: TEXTURES.wallBay,
+    map: wallBayFor(tint),
     emissiveMap: TEXTURES.wallBayGlow,
     emissive: COLORS.windowLight,
     emissiveIntensity: 0,

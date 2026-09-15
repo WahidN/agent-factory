@@ -31,7 +31,10 @@ export default defineConfig({
         "web/worker-logic.ts",
         "web/traffic-logic.ts",
       ],
-      exclude: ["server/tests/**", "web/tests/**"],
+      // server/index.ts is glue: file watchers, sockets and side effects at
+      // import time. It is left out for the same reason the scene modules are,
+      // so the gate measures logic and does not block work on the wiring.
+      exclude: ["server/tests/**", "web/tests/**", "server/index.ts"],
     },
   },
 });

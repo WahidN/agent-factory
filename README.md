@@ -74,6 +74,18 @@ Without `--hub` the server listens on localhost only. A hub listens on every net
 
 Claude Code owns the format of these files, so an update can break the reader.
 
+## Meekijken op de centrale
+
+Draait het park op de vaste centrale machine, dan hoef je niets te installeren om mee te kijken. Open in de browser `http://agentfactory.local:4317` en je ziet het park van iedereen.
+
+Wil je met je eigen sessies meedoen, dan draai je op je Mac:
+
+```
+HUB=ws://agentfactory.local:4317 pnpm start
+```
+
+Je Mac stuurt dan zijn sessies naar de centrale en serveert zelf geen pagina. Zie [`deploy/pi.md`](deploy/pi.md) voor het opzetten van de centrale zelf, op een Raspberry Pi.
+
 ## Develop
 
 ```

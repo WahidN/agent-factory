@@ -1,0 +1,29 @@
+# Install: /etc/systemd/system/agent-factory.service
+# Enable:  sudo systemctl enable --now agent-factory
+# Logs:    journalctl -u agent-factory -f
+#
+# Replace USERNAME below with the account you created at first boot. Recent
+# Raspberry Pi OS no longer ships a default `pi` user.
+#
+# See deploy/pi.md for the full setup, including the journald cap that keeps
+# this from wearing out the SD card.
+
+[Unit]
+Description=Agent Factory central
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=USERNAME
+WorkingDirectory=/home/USERNAME/agent-factory
+# Node directly, not through pnpm. A pnpm wrapper would be the process systemd
+# watches and signals, while the server it spawned is the one that matters.
+ExecStart=/usr/bin/node --import tsx server/index.ts --hub
+Environment=PORT=4317
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

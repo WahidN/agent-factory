@@ -46,7 +46,9 @@ describe("Hub", () => {
     const hub = new Hub();
     hub.join("mac-b");
     hub.apply("mac-b", { type: "session-update", session: session("a") });
-    expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([{ type: "session-removed", id: "mac-b/a" }]);
+    expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([
+      { type: "session-removed", id: "mac-b/a" },
+    ]);
     expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([]);
     expect(hub.remote()).toEqual([]);
   });
@@ -86,7 +88,11 @@ describe("Hub", () => {
 
 describe("parseRelayMessage", () => {
   it("accepts hello and server messages, rejects the rest", () => {
-    expect(parseRelayMessage('{"type":"hello","machine":"mac-b","protocol":1}')).toEqual({ type: "hello", machine: "mac-b", protocol: 1 });
+    expect(parseRelayMessage('{"type":"hello","machine":"mac-b","protocol":1}')).toEqual({
+      type: "hello",
+      machine: "mac-b",
+      protocol: 1,
+    });
     expect(parseRelayMessage('{"type":"session-removed","id":"a"}')).toEqual({ type: "session-removed", id: "a" });
     expect(parseRelayMessage('{"type":"other"}')).toBeNull();
     expect(parseRelayMessage("not json")).toBeNull();

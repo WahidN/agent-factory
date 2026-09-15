@@ -87,7 +87,13 @@ export class Park {
       for (const c of [col, col + 1]) {
         for (const r of [row, row + 1]) {
           once(`x:${c}:${r}`, () =>
-            builder.add(patch, plainRoadMaterial, [(c - 0.5) * PLOT_SIZE, 0.045, (r - 0.5) * PLOT_SIZE], [1, 1, 1], [-Math.PI / 2, 0, 0]),
+            builder.add(
+              patch,
+              plainRoadMaterial,
+              [(c - 0.5) * PLOT_SIZE, 0.045, (r - 0.5) * PLOT_SIZE],
+              [1, 1, 1],
+              [-Math.PI / 2, 0, 0],
+            ),
           );
         }
       }
@@ -115,8 +121,10 @@ export class Park {
       const strip = (YARD_HALF + inner - SIDEWALK) / 2;
       for (let t = -inner + 5; t <= inner - 5; t += 4.5) {
         for (const side of [-1, 1]) {
-          if (rand() < 0.45) trees.push({ x: cx + t + (rand() - 0.5), z: cz + side * strip, scale: 0.8 + rand() * 0.4 });
-          if (rand() < 0.45) trees.push({ x: cx + side * strip, z: cz + t + (rand() - 0.5), scale: 0.8 + rand() * 0.4 });
+          if (rand() < 0.45)
+            trees.push({ x: cx + t + (rand() - 0.5), z: cz + side * strip, scale: 0.8 + rand() * 0.4 });
+          if (rand() < 0.45)
+            trees.push({ x: cx + side * strip, z: cz + t + (rand() - 0.5), scale: 0.8 + rand() * 0.4 });
         }
       }
     }
@@ -138,7 +146,11 @@ export class Park {
     builder.cylinder(MATERIALS.darkSteel, [x, 3, z], [0.12, 6, 0.12]);
     const armX = x - sx * 0.9;
     const armZ = z - sz * 0.9;
-    builder.box(MATERIALS.darkSteel, [(x + armX) / 2, 5.95, (z + armZ) / 2], [Math.abs(x - armX) + 0.15, 0.12, Math.abs(z - armZ) + 0.15]);
+    builder.box(
+      MATERIALS.darkSteel,
+      [(x + armX) / 2, 5.95, (z + armZ) / 2],
+      [Math.abs(x - armX) + 0.15, 0.12, Math.abs(z - armZ) + 0.15],
+    );
     builder.box(MATERIALS.lampHead, [armX, 5.8, armZ], [0.6, 0.18, 0.6]);
   }
 }

@@ -67,7 +67,13 @@ export class RoofSign {
         cursor += SPACE_WIDTH + TRACKING;
         continue;
       }
-      const geometry = new TextGeometry(char, { font: FONT, size: NOMINAL, depth: DEPTH, bevelEnabled: false, curveSegments: 4 });
+      const geometry = new TextGeometry(char, {
+        font: FONT,
+        size: NOMINAL,
+        depth: DEPTH,
+        bevelEnabled: false,
+        curveSegments: 4,
+      });
       geometry.computeBoundingBox();
       const box = geometry.boundingBox;
       if (!box) {

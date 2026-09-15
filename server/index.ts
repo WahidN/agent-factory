@@ -120,7 +120,10 @@ const readQueues = new Map<string, Promise<unknown>>();
 // Reads of the same file wait for each other, so no bytes are handled twice.
 function readNewEvents(path: string): Promise<ReadResult> {
   const read = (readQueues.get(path) ?? Promise.resolve()).then(() => readNewEventsNow(path));
-  readQueues.set(path, read.catch(() => {}));
+  readQueues.set(
+    path,
+    read.catch(() => {}),
+  );
   return read;
 }
 

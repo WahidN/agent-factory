@@ -45,9 +45,19 @@ function prepare(geometry: THREE.BufferGeometry, color: THREE.Color | null) {
 export class StaticBuilder {
   private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
 
-  add(geometry: THREE.BufferGeometry, material: THREE.Material, position: Vec3, scale: Vec3 = [1, 1, 1], rotation: Vec3 = [0, 0, 0]) {
+  add(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    position: Vec3,
+    scale: Vec3 = [1, 1, 1],
+    rotation: Vec3 = [0, 0, 0],
+  ) {
     quaternion.setFromEuler(euler.set(...rotation));
-    this.addWithMatrix(geometry, material, new THREE.Matrix4().compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale)));
+    this.addWithMatrix(
+      geometry,
+      material,
+      new THREE.Matrix4().compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale)),
+    );
   }
 
   // For parts placed inside an already transformed object, like a parked car.

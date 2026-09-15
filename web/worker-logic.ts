@@ -35,7 +35,13 @@ function walk(worker: Worker, to: Point, dt: number): { worker: Worker; arrived:
   }
   const k = step / remaining;
   return {
-    worker: { ...worker, x: worker.x + dx * k, z: worker.z + dz * k, heading: Math.atan2(dx, dz), walked: worker.walked + step },
+    worker: {
+      ...worker,
+      x: worker.x + dx * k,
+      z: worker.z + dz * k,
+      heading: Math.atan2(dx, dz),
+      walked: worker.walked + step,
+    },
     arrived: false,
   };
 }

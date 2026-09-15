@@ -149,7 +149,15 @@ export class Sign {
     const avatarCx = 384;
     const avatarCy = 384;
     const avatarRadius = 280;
-    drawAvatarCircle(ctx, this.avatarImage, avatarCx, avatarCy, avatarRadius, `#${this.accent.getHexString()}`, initialsFor(this.data?.machine ?? ""));
+    drawAvatarCircle(
+      ctx,
+      this.avatarImage,
+      avatarCx,
+      avatarCy,
+      avatarRadius,
+      `#${this.accent.getHexString()}`,
+      initialsFor(this.data?.machine ?? ""),
+    );
 
     // Just the project name, large and centered in the space beside the avatar.
     const textX = 760;
@@ -165,7 +173,11 @@ export class Sign {
       return ctx.measureText(folder).width;
     };
     while (fit() > maxWidth && size > 110) size -= 10;
-    ctx.fillText(truncate(folder, maxWidth, (s) => ctx.measureText(s).width), textX, CANVAS_HEIGHT / 2);
+    ctx.fillText(
+      truncate(folder, maxWidth, (s) => ctx.measureText(s).width),
+      textX,
+      CANVAS_HEIGHT / 2,
+    );
     ctx.textBaseline = "alphabetic";
 
     if (this.data && this.data.overflow > 0) {

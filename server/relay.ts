@@ -12,7 +12,12 @@ export type Relay = { send(message: ServerMessage): void; close(): void };
 
 type Options = { retryMs?: number; log?: (line: string) => void };
 
-export function startRelay(hubUrl: string, machine: string, snapshot: () => SessionState[], options: Options = {}): Relay {
+export function startRelay(
+  hubUrl: string,
+  machine: string,
+  snapshot: () => SessionState[],
+  options: Options = {},
+): Relay {
   const { retryMs = RETRY_MS, log = console.log } = options;
   const url = new URL("/relay", hubUrl).toString();
   let socket: WebSocket | null = null;

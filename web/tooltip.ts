@@ -20,7 +20,10 @@ export function createTooltip(
   canvas.addEventListener("pointermove", (event) => {
     const rect = canvas.getBoundingClientRect();
     screen = { x: event.clientX, y: event.clientY };
-    pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    pointer.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
   });
   canvas.addEventListener("pointerleave", () => (screen = null));
 

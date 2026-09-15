@@ -29,7 +29,12 @@ export class Warehouse {
 
   private body = new THREE.Group();
   private busy = new Activity();
-  private parts: Record<Part, Activity> = { door: new Activity(), stack: new Activity(), lamp: new Activity(), fan: new Activity() };
+  private parts: Record<Part, Activity> = {
+    door: new Activity(),
+    stack: new Activity(),
+    lamp: new Activity(),
+    fan: new Activity(),
+  };
   private wallMaterial = createWallMaterial();
   private accentMaterial: THREE.MeshStandardMaterial;
   private accent: THREE.Color;
@@ -71,7 +76,12 @@ export class Warehouse {
     }
     builder.box(MATERIALS.frame, [-0.6, top + 0.45, -0.8], [1.3, 0.5, 1.3]); // fan housing
 
-    this.stack = new Stacks(builder, [w / 2 - 1, -d / 2 + 1], { count: 1, height: top + 1.8 - YARD_Y, radius: 0.3, frame: false });
+    this.stack = new Stacks(builder, [w / 2 - 1, -d / 2 + 1], {
+      count: 1,
+      height: top + 1.8 - YARD_Y,
+      radius: 0.3,
+      frame: false,
+    });
     this.lamp = new Searchlight(builder, [-w / 2 + 0.6, d / 2 - 0.6], {
       tower: false,
       height: top + 1.2 - YARD_Y,

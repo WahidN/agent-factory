@@ -12,7 +12,13 @@ const file: SessionFile = {
   startedAt: 100,
 };
 
-const start = (id: string, name: string, target = ""): TranscriptEvent => ({ kind: "tool_start", id, name, target, at: 0 });
+const start = (id: string, name: string, target = ""): TranscriptEvent => ({
+  kind: "tool_start",
+  id,
+  name,
+  target,
+  at: 0,
+});
 const end = (id: string): TranscriptEvent => ({ kind: "tool_end", id, at: 0 });
 const model = (id: string): TranscriptEvent => ({ kind: "model", model: id, at: 0 });
 const review = { name: "review", model: "" };
@@ -100,7 +106,13 @@ describe("subagents", () => {
   it("is busy while written in the last 5 seconds, then idle", () => {
     const { tracker, latest, now } = setup();
     tracker.applySubagentEvents("s1", "agent-x", { name: "code-review", model: "" }, [], now.value, now.value);
-    expect(latest().subagents[0]).toMatchObject({ id: "agent-x", name: "code-review", status: "busy", folder: "shop", machine: "mac-a" });
+    expect(latest().subagents[0]).toMatchObject({
+      id: "agent-x",
+      name: "code-review",
+      status: "busy",
+      folder: "shop",
+      machine: "mac-a",
+    });
 
     now.value += SUBAGENT_BUSY_MS - 1;
     tracker.tick(now.value);
@@ -150,7 +162,14 @@ describe("subagent model", () => {
     tracker.applySubagentEvents("s1", "agent-x", { name: "review", model: "sonnet" }, [], now.value, now.value);
     expect(latest().subagents[0].model).toBe("sonnet");
 
-    tracker.applySubagentEvents("s1", "agent-x", { name: "review", model: "sonnet" }, [model("claude-sonnet-5")], now.value, now.value);
+    tracker.applySubagentEvents(
+      "s1",
+      "agent-x",
+      { name: "review", model: "sonnet" },
+      [model("claude-sonnet-5")],
+      now.value,
+      now.value,
+    );
     expect(latest().subagents[0].model).toBe("claude-sonnet-5");
   });
 

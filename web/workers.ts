@@ -44,7 +44,9 @@ export class LotWorkers {
 
   // `busy` holds one flag per slot, in the same order as the slots.
   tick(dt: number, busy: boolean[]) {
-    this.workers = this.workers.map((worker, i) => stepWorker(worker, dt, busy[i], this.slots[i].door, this.slots[i].route));
+    this.workers = this.workers.map((worker, i) =>
+      stepWorker(worker, dt, busy[i], this.slots[i].door, this.slots[i].route),
+    );
     this.workers.forEach((worker, i) => {
       if (worker.mode === "inside") {
         this.mesh.setMatrixAt(i, this.hidden);
@@ -52,7 +54,11 @@ export class LotWorkers {
       }
       const bob = Math.abs(Math.sin(worker.walked * 3.5)) * 0.07;
       this.quaternion.setFromAxisAngle(this.up, worker.heading);
-      this.matrix.compose(new THREE.Vector3(worker.x, YARD_Y + bob, worker.z), this.quaternion, new THREE.Vector3(1, 1, 1));
+      this.matrix.compose(
+        new THREE.Vector3(worker.x, YARD_Y + bob, worker.z),
+        this.quaternion,
+        new THREE.Vector3(1, 1, 1),
+      );
       this.mesh.setMatrixAt(i, this.matrix);
     });
     this.mesh.instanceMatrix.needsUpdate = true;

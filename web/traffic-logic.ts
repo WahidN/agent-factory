@@ -31,7 +31,12 @@ const crossing = (col: number, row: number) => `${col}:${row}`;
 // The cell's 4 corners, clockwise as seen from above.
 function corners(index: number): [number, number][] {
   const { col, row } = plotCell(index);
-  return [[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]];
+  return [
+    [col, row],
+    [col + 1, row],
+    [col + 1, row + 1],
+    [col, row + 1],
+  ];
 }
 
 // Both lanes of the 4 roads around every used cell. Shared roads are added once.
@@ -42,7 +47,14 @@ export function roadGraph(indexes: number[]): Roads {
     const from = crossing(fc, fr);
     const key = `${from}>${crossing(tc, tr)}`;
     if (lanes.has(key)) return;
-    lanes.set(key, { from, to: crossing(tc, tr), x: (fc - 0.5) * PLOT_SIZE, z: (fr - 0.5) * PLOT_SIZE, dx: tc - fc, dz: tr - fr });
+    lanes.set(key, {
+      from,
+      to: crossing(tc, tr),
+      x: (fc - 0.5) * PLOT_SIZE,
+      z: (fr - 0.5) * PLOT_SIZE,
+      dx: tc - fc,
+      dz: tr - fr,
+    });
     exits.set(from, [...(exits.get(from) ?? []), key]);
   };
   for (const index of indexes) {
@@ -110,7 +122,11 @@ export function vehiclePose(roads: Roads, v: Vehicle): { x: number; z: number; h
   const lane = roads.lanes.get(v.lane)!;
   if (v.s < STRAIGHT) {
     const along = TURN + v.s;
-    return { x: lane.x + lane.dx * along - lane.dz * LANE, z: lane.z + lane.dz * along + lane.dx * LANE, heading: Math.atan2(-lane.dz, lane.dx) };
+    return {
+      x: lane.x + lane.dx * along - lane.dz * LANE,
+      z: lane.z + lane.dz * along + lane.dx * LANE,
+      heading: Math.atan2(-lane.dz, lane.dx),
+    };
   }
   const curve = turnCurve(roads, v);
   const t = Math.min(1, (v.s - STRAIGHT) / curveLength(curve));

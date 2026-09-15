@@ -109,7 +109,10 @@ const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLEl
 view.onFrame((dt, now) => {
   for (const lot of [...lots.values(), ...leaving]) lot.tick(dt, now);
   // Leaving lots send nothing, so their vehicles shrink away.
-  traffic.tick(dt, [...lots].map(([id, lot]) => ({ id, index: plots.indexOf(id)!, ...lot.traffic() })));
+  traffic.tick(
+    dt,
+    [...lots].map(([id, lot]) => ({ id, index: plots.indexOf(id)!, ...lot.traffic() })),
+  );
   tooltip.update();
 });
 

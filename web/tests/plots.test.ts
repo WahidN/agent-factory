@@ -10,7 +10,9 @@ describe("PlotAllocator", () => {
 
   it("adding and removing sessions never moves other plots", () => {
     const plots = new PlotAllocator();
-    ["a", "b", "c", "d"].forEach((id) => plots.assign(id));
+    ["a", "b", "c", "d"].forEach((id) => {
+      plots.assign(id);
+    });
 
     plots.release("b");
     expect(plots.indexOf("a")).toBe(0);

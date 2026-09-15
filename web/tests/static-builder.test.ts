@@ -28,7 +28,8 @@ describe("StaticBuilder", () => {
     separate.userData.separate = true;
     const textured = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
     const transparent = new THREE.MeshBasicMaterial({ transparent: true });
-    for (const material of [plain, separate, separate, textured, transparent]) builder.box(material, [0, 0, 0], [1, 1, 1]);
+    for (const material of [plain, separate, separate, textured, transparent])
+      builder.box(material, [0, 0, 0], [1, 1, 1]);
 
     const meshes = meshesOf(builder.build());
     expect(meshes.map((m) => m.material)).toEqual([BAKED_MATERIAL, separate, textured, transparent]);

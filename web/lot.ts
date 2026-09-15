@@ -8,7 +8,16 @@ import { Activity } from "./activity.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
-import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY, WALL_TINTS } from "./palette.ts";
+import {
+  accentFor,
+  createWallMaterial,
+  DECALS,
+  MATERIALS,
+  repeatUv,
+  standard,
+  WALL_BAY,
+  WALL_TINTS,
+} from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
 import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
 import { RoofSign } from "./roof-sign.ts";
@@ -100,23 +109,65 @@ function hallTop(size: LotSize) {
 // the main yard; the rest stand in front of the warehouse slots.
 const HALL_DOOR = { x: 1.5, z: -3.3 };
 const WORKER_SLOTS: WorkerSlot[] = [
-  { door: HALL_DOOR, route: [{ x: 1.5, z: -3.3 }, { x: 2.3, z: 9.3 }] }, // past the hatch, between parked cars
-  { door: HALL_DOOR, route: [{ x: -2.5, z: -3.3 }, { x: -2.5, z: 3.5 }] }, // beside the forklift lane
-  { door: HALL_DOOR, route: [{ x: 6, z: -3.4 }, { x: 17.5, z: -5.8 }] }, // between stacks and cooling tower
-  { door: HALL_DOOR, route: [{ x: 5, z: 9.5 }, { x: 18.5, z: 9.5 }] }, // along the walkway to the gate
-  ...WAREHOUSE_SLOTS.map(([x, z]): WorkerSlot => ({
-    door: { x: x + 1.2, z: z + 2.9 },
-    route: [{ x: x - 1.8, z: z + 3.6 }, { x: x + 1.8, z: z + 3.6 }],
-  })),
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 1.5, z: -3.3 },
+      { x: 2.3, z: 9.3 },
+    ],
+  }, // past the hatch, between parked cars
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: -2.5, z: -3.3 },
+      { x: -2.5, z: 3.5 },
+    ],
+  }, // beside the forklift lane
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 6, z: -3.4 },
+      { x: 17.5, z: -5.8 },
+    ],
+  }, // between stacks and cooling tower
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 5, z: 9.5 },
+      { x: 18.5, z: 9.5 },
+    ],
+  }, // along the walkway to the gate
+  ...WAREHOUSE_SLOTS.map(
+    ([x, z]): WorkerSlot => ({
+      door: { x: x + 1.2, z: z + 2.9 },
+      route: [
+        { x: x - 1.8, z: z + 3.6 },
+        { x: x + 1.8, z: z + 3.6 },
+      ],
+    }),
+  ),
 ];
 
 // Rooftop vents and AC boxes, relative to the hall's back left corner. Ones
 // that fall outside a smaller roof are left out.
 const VENTS: [number, number][] = [
-  [2, 2.5], [5, 11.5], [8.5, 2], [12, 12], [15.5, 3], [19, 11], [20, 6.5], [3.5, 7],
+  [2, 2.5],
+  [5, 11.5],
+  [8.5, 2],
+  [12, 12],
+  [15.5, 3],
+  [19, 11],
+  [20, 6.5],
+  [3.5, 7],
 ];
-const SKYLIGHTS: [number, number][] = [[9, 4.5], [9, 9.5]];
-const AC_BOXES: [number, number][] = [[17, 4.5], [17.5, 9.5]];
+const SKYLIGHTS: [number, number][] = [
+  [9, 4.5],
+  [9, 9.5],
+];
+const AC_BOXES: [number, number][] = [
+  [17, 4.5],
+  [17.5, 9.5],
+];
 
 type Slot = { warehouse: Warehouse; slot: number };
 type Machines = { stacks: Stacks; forklift: Forklift; searchlight: Searchlight; cooling: CoolingTower };
@@ -277,7 +328,9 @@ export class Lot {
 
     const statics = builder.build();
     const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
-    this.hallPickables = (statics.children as THREE.Mesh[]).filter((mesh) => hallMaterials.includes(mesh.material as THREE.Material));
+    this.hallPickables = (statics.children as THREE.Mesh[]).filter((mesh) =>
+      hallMaterials.includes(mesh.material as THREE.Material),
+    );
     for (const mesh of this.hallPickables) mesh.userData.hover = this;
 
     this.machines = { stacks, forklift, searchlight, cooling };
@@ -351,7 +404,11 @@ export class Lot {
     const segment = (x0: number, z0: number, x1: number, z1: number) => {
       const length = Math.hypot(x1 - x0, z1 - z0);
       const alongX = Math.abs(x1 - x0) > Math.abs(z1 - z0);
-      b.box(MATERIALS.concrete, [(x0 + x1) / 2, YARD_Y + wallHeight / 2, (z0 + z1) / 2], alongX ? [length, wallHeight, 0.3] : [0.3, wallHeight, length]);
+      b.box(
+        MATERIALS.concrete,
+        [(x0 + x1) / 2, YARD_Y + wallHeight / 2, (z0 + z1) / 2],
+        alongX ? [length, wallHeight, 0.3] : [0.3, wallHeight, length],
+      );
     };
     segment(-h, -h, h, -h);
     segment(-h, h, h, h);
@@ -359,7 +416,12 @@ export class Lot {
     segment(h, -h, h, GATE.z0);
     segment(h, GATE.z1, h, h);
     for (let t = -h; t <= h; t += 5) {
-      for (const [x, z] of [[t, -h], [t, h], [-h, t], [h, t]]) {
+      for (const [x, z] of [
+        [t, -h],
+        [t, h],
+        [-h, t],
+        [h, t],
+      ]) {
         if (x === h && z > GATE.z0 && z < GATE.z1) continue;
         b.box(MATERIALS.parapet, [x, YARD_Y + 0.7, z], [0.5, 1.4, 0.5]);
       }
@@ -389,7 +451,8 @@ export class Lot {
     const wallY = YARD_Y + STRIPE + wall / 2;
 
     b.box(this.accentMaterial, [cx, YARD_Y + STRIPE / 2, cz], [width + 0.1, STRIPE, depth + 0.1]);
-    const wallPlane = (length: number) => repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, size.bays);
+    const wallPlane = (length: number) =>
+      repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, size.bays);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z1]);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z0], [1, 1, 1], [0, Math.PI, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x1, wallY, cz], [1, 1, 1], [0, Math.PI / 2, 0]);
@@ -404,7 +467,8 @@ export class Lot {
 
     // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
     // half size inside the parapet.
-    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) =>
+      vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
     for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
       const x = x0 + vent[0];
       const z = z0 + vent[1];
@@ -473,7 +537,8 @@ export class Lot {
   private workerBusyFlags(): boolean[] {
     const lotBusy = this.state.status === "busy" && !this.exit;
     const slotBusy = new Array(MAX_WAREHOUSES).fill(false);
-    for (const { warehouse, slot } of this.warehouses.values()) slotBusy[slot] = warehouse.state.status === "busy" && !this.exit;
+    for (const { warehouse, slot } of this.warehouses.values())
+      slotBusy[slot] = warehouse.state.status === "busy" && !this.exit;
     return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
   }
 
@@ -504,6 +569,12 @@ export class Lot {
   // ---------- Sign ----------
 
   private syncSign() {
-    this.sign.update({ name: this.state.name, folder: this.state.folder, machine: this.state.machine, model: this.state.model, overflow: this.overflow });
+    this.sign.update({
+      name: this.state.name,
+      folder: this.state.folder,
+      machine: this.state.machine,
+      model: this.state.model,
+      overflow: this.overflow,
+    });
   }
 }

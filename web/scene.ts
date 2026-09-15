@@ -103,7 +103,10 @@ export function createScene(canvas: HTMLCanvasElement) {
     const dt = Math.min(timer.getDelta(), 0.1);
     const now = performance.now();
 
-    move.copy(focusTarget).sub(controls.target).multiplyScalar(Math.min(1, dt * 3));
+    move
+      .copy(focusTarget)
+      .sub(controls.target)
+      .multiplyScalar(Math.min(1, dt * 3));
     controls.target.add(move);
     camera.position.add(move);
     controls.update();

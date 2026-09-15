@@ -1,13 +1,23 @@
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { WebSocket, WebSocketServer } from "ws";
+import { type WebSocket, WebSocketServer } from "ws";
 import { PROTOCOL } from "../hub.ts";
 import { startRelay, type Relay } from "../relay.ts";
 import type { SessionState } from "../types.ts";
 
 function session(id: string): SessionState {
-  return { id, name: id, folder: "shop", machine: "mac-b", status: "idle", currentTool: null, startedAt: 1, model: "", subagents: [] };
+  return {
+    id,
+    name: id,
+    folder: "shop",
+    machine: "mac-b",
+    status: "idle",
+    currentTool: null,
+    startedAt: 1,
+    model: "",
+    subagents: [],
+  };
 }
 
 // A hub stand-in on a free port. Each connection collects its parsed messages.

@@ -84,7 +84,8 @@ body {
   color: #a9b1bb;
 }
 
-#tooltip .model {
+#tooltip .model,
+#tooltip .machine {
   color: #8f98a3;
   font-size: 12px;
 }
@@ -116,4 +117,16 @@ body {
   background: #2b2f36;
   color: #fff;
   font-size: 11px;
+}
+
+.lot-label .machine {
+  color: #6b7280;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* Machine names only matter once the park mixes machines. */
+body:not(.many-machines) .lot-label .machine,
+body:not(.many-machines) #tooltip .machine {
+  display: none;
 }

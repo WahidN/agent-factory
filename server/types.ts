@@ -7,7 +7,8 @@ export type CurrentTool = { name: string; target: string };
 export type AgentState = {
   id: string;
   name: string;
-  cwd: string;
+  folder: string; // last part of the working folder, never the full path
+  machine: string; // short host name of the machine the session runs on
   status: AgentStatus;
   currentTool: CurrentTool | null;
   startedAt: number;

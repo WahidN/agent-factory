@@ -1,7 +1,7 @@
 // Holds state per session and subagent. No file system access and no clock of
 // its own: callers pass `now`, so timing rules can be tested with a fake clock.
 
-import type { SessionFile, TranscriptEvent } from "./claude-reader.ts";
+import { baseName, type SessionFile, type TranscriptEvent } from "./claude-reader.ts";
 import type { AgentState, CurrentTool, ServerMessage, SessionState } from "./types.ts";
 
 export const SUBAGENT_BUSY_MS = 5_000;
@@ -55,7 +55,11 @@ export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
 
-  constructor(private listener: Listener) {}
+  // `machine` is stamped on every state, so a hub can tell sessions apart by origin.
+  constructor(
+    private listener: Listener,
+    private machine = "",
+  ) {}
 
   upsertSession(file: SessionFile, now: number) {
     const existing = this.sessions.get(file.sessionId);
@@ -148,7 +152,8 @@ export class SessionTracker {
       return {
         id: subagent.id,
         name: subagent.name,
-        cwd: file.cwd,
+        folder: baseName(file.cwd),
+        machine: this.machine,
         status: currentTool || recent ? "busy" : "idle",
         currentTool,
         startedAt: subagent.startedAt,
@@ -158,7 +163,8 @@ export class SessionTracker {
     return {
       id: file.sessionId,
       name: file.name,
-      cwd: file.cwd,
+      folder: baseName(file.cwd),
+      machine: this.machine,
       status: file.status,
       currentTool: session.tools.current(),
       startedAt: file.startedAt,

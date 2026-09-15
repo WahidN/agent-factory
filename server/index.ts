@@ -1,9 +1,9 @@
 // Glue: watches Claude Code files, feeds the tracker, streams state over WebSocket.
-// Read-only on ~/.claude. Listens on 127.0.0.1 only.
+// Read-only on ~/.claude. Listens on 127.0.0.1 unless started with --hub.
 
 import { watch, type FSWatcher } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { basename, join } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import {
@@ -15,11 +15,19 @@ import {
   type SessionFile,
   type TranscriptEvent,
 } from "./claude-reader.ts";
+import { Hub, parseRelayMessage, PROTOCOL } from "./hub.ts";
+import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
 import type { ServerMessage } from "./types.ts";
 
-const HOST = "127.0.0.1";
-const PORT = 4317;
+// `--hub` opens the port to the network and takes other machines' sessions on /relay.
+// `HUB=ws://host:4317` sends our sessions to such a hub instead.
+const IS_HUB = process.argv.includes("--hub");
+const HUB_URL = process.env.HUB ?? "";
+const HOST = IS_HUB ? "0.0.0.0" : "127.0.0.1";
+const PORT = Number(process.env.PORT) || 4317;
+// Short host name, `MACHINE=wahid` overrides the default Mac name.
+const MACHINE = process.env.MACHINE || hostname().split(".")[0].toLowerCase();
 const CLAUDE_DIR = join(homedir(), ".claude");
 const SESSIONS_DIR = join(CLAUDE_DIR, "sessions");
 const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
@@ -41,11 +49,66 @@ function broadcast(message: ServerMessage) {
 const tracker = new SessionTracker((message) => {
   log(message);
   broadcast(message);
+  relay?.send(message);
+}, MACHINE);
+
+const relay = HUB_URL ? startRelay(HUB_URL, MACHINE, () => tracker.snapshot(Date.now())) : null;
+
+// Browsers connect on /ws and get our sessions plus everything relayed to us.
+// Other machines connect on /relay, hub mode only.
+const hub = new Hub();
+const reporters = new Map<string, WebSocket>(); // machine -> its open relay socket
+
+wss.on("connection", (socket, request) => {
+  if (request.url === "/relay") {
+    if (IS_HUB) acceptReporter(socket, request.socket.remoteAddress ?? "?");
+    else socket.close(1008, "not started with --hub");
+    return;
+  }
+  const sessions = [...tracker.snapshot(Date.now()), ...hub.remote()];
+  socket.send(JSON.stringify({ type: "snapshot", sessions } satisfies ServerMessage));
 });
 
-wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "snapshot", sessions: tracker.snapshot(Date.now()) } satisfies ServerMessage));
-});
+// ---------- Hub ----------
+
+// The first message must be a hello with our protocol number. Every message
+// after that is merged and broadcast. A close drops the machine's sessions.
+function acceptReporter(socket: WebSocket, from: string) {
+  let machine = "";
+  socket.on("message", (data) => {
+    const message = parseRelayMessage(data.toString());
+    if (!machine) {
+      if (message?.type !== "hello") return socket.close(1002, "expected hello");
+      if (message.protocol !== PROTOCOL) {
+        const time = new Date().toLocaleTimeString();
+        console.log(`${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub speaks ${PROTOCOL}`);
+        return socket.close(1002, `protocol ${PROTOCOL} expected`);
+      }
+      machine = message.machine;
+      // A machine that restarted before its old socket was seen dead takes over its own sessions.
+      const old = reporters.get(machine);
+      reporters.set(machine, socket);
+      old?.terminate();
+      hub.join(machine);
+      console.log(`${new Date().toLocaleTimeString()}  joined   ${machine} from ${from}`);
+      return;
+    }
+    if (!message || message.type === "hello") return;
+    for (const out of hub.apply(machine, message)) {
+      log(out);
+      broadcast(out);
+    }
+  });
+  socket.on("close", () => {
+    if (!machine || reporters.get(machine) !== socket) return; // replaced by a newer socket
+    reporters.delete(machine);
+    for (const out of hub.leave(machine)) {
+      log(out);
+      broadcast(out);
+    }
+    console.log(`${new Date().toLocaleTimeString()}  left     ${machine}`);
+  });
+}
 
 // ---------- Transcript tailing ----------
 
@@ -264,12 +327,17 @@ function log(message: ServerMessage) {
   const { session } = message;
   const tool = session.currentTool ? `${session.currentTool.name} ${session.currentTool.target}`.trim() : "-";
   const subs = session.subagents.map((s) => `${s.name}:${s.status}`).join(", ");
-  console.log(`${time}  ${session.name.padEnd(28)} ${session.status.padEnd(5)} ${tool}${subs ? `  [${subs}]` : ""}`);
+  const who = IS_HUB ? `${session.machine}/${session.name}` : session.name;
+  console.log(`${time}  ${who.padEnd(28)} ${session.status.padEnd(5)} ${tool}${subs ? `  [${subs}]` : ""}`);
 }
 
 // ---------- Start ----------
 
-wss.on("listening", () => console.log(`agent-factory server on ws://${HOST}:${PORT}`));
+wss.on("listening", () => {
+  console.log(`agent-factory server on ws://${HOST}:${PORT}`);
+  if (IS_HUB) console.log(`hub: other machines start with HUB=ws://${hostname()}:${PORT}`);
+  if (HUB_URL) console.log(`relaying to ${HUB_URL} as ${MACHINE}`);
+});
 
 watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions)).on("error", (error) =>
   console.error("[watch sessions]", error),

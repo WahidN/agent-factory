@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "concurrently -n server,web -c blue,green \"pnpm:dev:server\" \"pnpm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
+    "hub": "concurrently -n server,web -c blue,green \"pnpm:dev:hub\" \"pnpm:dev:web\"",
+    "dev:hub": "tsx watch server/index.ts --hub",
     "dev:web": "vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

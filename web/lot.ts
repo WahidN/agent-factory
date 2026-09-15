@@ -129,7 +129,7 @@ export class Lot {
   // Everything sized by the tier: yard markings, hall, machines, parked cars, sign.
   private structure = new THREE.Group();
   private machines!: Machines;
-  private sign!: { element: HTMLElement; name: HTMLElement; badge: HTMLElement };
+  private sign!: { element: HTMLElement; name: HTMLElement; machine: HTMLElement; badge: HTMLElement };
   private hallPickables: THREE.Mesh[] = [];
   private busy = new Activity();
   private parts: Record<Part, Activity> = {
@@ -178,7 +178,7 @@ export class Lot {
   }
 
   update(state: SessionState, nowMs: number) {
-    const nameChanged = state.name !== this.state.name;
+    const nameChanged = state.name !== this.state.name || state.machine !== this.state.machine;
     this.state = state;
     const tier = tierFor(state.model);
     if (tier !== this.tier) {
@@ -454,17 +454,20 @@ export class Lot {
     element.className = "lot-label";
     element.style.setProperty("--accent", `#${this.accent.getHexString()}`);
     const name = document.createElement("span");
+    const machine = document.createElement("span");
+    machine.className = "machine"; // shown only while body.many-machines
     const badge = document.createElement("span");
     badge.className = "badge";
-    element.append(name, badge);
+    element.append(name, machine, badge);
     const label = new CSS2DObject(element);
     label.position.set((size.hall.x0 + HALL_X1) / 2, hallTop(size) + 4, (size.hall.z0 + HALL_Z1) / 2);
     this.structure.add(label);
-    return { element, name, badge };
+    return { element, name, machine, badge };
   }
 
   private drawSign() {
     this.sign.name.textContent = this.state.name;
+    this.sign.machine.textContent = this.state.machine;
     this.sign.badge.textContent = this.overflow > 0 ? `+${this.overflow}` : "";
     this.sign.badge.hidden = this.overflow === 0;
   }

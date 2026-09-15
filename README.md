@@ -27,11 +27,7 @@ Every other Mac points at it:
 HUB=ws://<hub-host>:4317 pnpm dev
 ```
 
-Everyone opens their own http://localhost:5173 and sees one park with every machine's sessions.
-
-![Five lots from two machines, each sign shows the session name and the machine name](docs/two-machines.png)
-
-The hub prints the address to use when it starts. On a Mac it is the computer name plus `.local`, for example `ws://wahids-macbook.local:4317`.
+Everyone opens their own http://localhost:5173 and sees one park with every machine's sessions. The hub prints the address to use when it starts. On a Mac it is the computer name plus `.local`, for example `ws://wahids-macbook.local:4317`.
 
 Once the park has sessions from more than one machine, every sign and tooltip shows the machine name. The default is the host name up to the first dot. `MACHINE=wahid pnpm dev` picks a better one than `macbook-pro-3`.
 

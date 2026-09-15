@@ -124,7 +124,7 @@ The page SHALL show whether it is connected to the server and SHALL retry every 
 
 #### Scenario: Server not running
 - **WHEN** the page cannot reach the server
-- **THEN** a grey "reconnecting..." indicator is shown, the page retries every 2 seconds, and if no sessions were ever received the ground shows the hint `run npm run dev`
+- **THEN** a grey "reconnecting..." indicator is shown, the page retries every 2 seconds, and if no sessions were ever received the ground shows the hint `run pnpm dev`
 
 #### Scenario: Server comes back
 - **WHEN** the server becomes reachable again

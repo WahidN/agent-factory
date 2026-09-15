@@ -31,8 +31,8 @@ export const COLORS = {
 // Fixed, readable accents: orange, red, teal, blue, yellow, green, purple, brown.
 export const ACCENTS = ["#e2702f", "#d23c35", "#2a9d8f", "#3a6ea5", "#e9b43a", "#4c9a4a", "#7d5ba6", "#8a5a3c"];
 
-export function accentFor(cwd: string) {
-  return new THREE.Color(ACCENTS[accentIndexFor(cwd)]);
+export function accentFor(folder: string) {
+  return new THREE.Color(ACCENTS[accentIndexFor(folder)]);
 }
 
 export function standard(color: string | THREE.Color, extra: THREE.MeshStandardMaterialParameters = {}) {

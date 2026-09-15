@@ -124,7 +124,7 @@ function shorten(value: unknown): string {
   return value.replace(/\s+/g, " ").trim().slice(0, LABEL_MAX);
 }
 
-function baseName(path: string): string {
+export function baseName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
 }
 

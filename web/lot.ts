@@ -157,7 +157,7 @@ export class Lot {
   constructor(state: SessionState) {
     this.state = state;
     this.tier = tierFor(state.model);
-    this.accent = accentFor(state.cwd);
+    this.accent = accentFor(state.folder);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
     this.accentGrey = new THREE.Color(l, l, l);
     this.accentMaterial = standard(this.accent.clone());

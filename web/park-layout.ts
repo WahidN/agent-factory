@@ -4,10 +4,10 @@ import { plotCell } from "./plots.ts";
 
 export const ACCENT_COUNT = 8;
 
-// Same folder, same accent.
-export function accentIndexFor(cwd: string): number {
+// Same folder name, same accent, also across machines.
+export function accentIndexFor(folder: string): number {
   let hash = 0;
-  for (const char of cwd) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of folder) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % ACCENT_COUNT;
 }
 

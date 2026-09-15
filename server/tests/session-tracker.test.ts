@@ -19,7 +19,7 @@ const review = { name: "review", model: "" };
 
 function setup() {
   const messages: ServerMessage[] = [];
-  const tracker = new SessionTracker((m) => messages.push(m));
+  const tracker = new SessionTracker((m) => messages.push(m), "mac-a");
   const latest = (): SessionState => tracker.snapshot(now.value)[0];
   const now = { value: 1_000_000 };
   tracker.upsertSession(file, now.value);
@@ -48,7 +48,24 @@ describe("session tool state", () => {
     const { tracker, latest, now } = setup();
     expect(latest().status).toBe("busy");
     tracker.upsertSession({ ...file, status: "idle", name: "renamed" }, now.value);
-    expect(latest()).toMatchObject({ status: "idle", name: "renamed", cwd: "/Users/me/shop", startedAt: 100 });
+    expect(latest()).toMatchObject({ status: "idle", name: "renamed", folder: "shop", startedAt: 100 });
+  });
+
+  it("sends the folder name, never the full path", () => {
+    const { tracker, latest, now } = setup();
+    tracker.upsertSession({ ...file, cwd: "/Users/me/Projecten/agent-factory/" }, now.value);
+    expect(latest().folder).toBe("agent-factory");
+    expect(JSON.stringify(latest())).not.toContain("/Users");
+
+    tracker.upsertSession({ ...file, cwd: "/" }, now.value);
+    expect(latest().folder).toBe("/");
+  });
+
+  it("stamps the machine name on the session and its subagents", () => {
+    const { tracker, latest, now } = setup();
+    tracker.applySubagentEvents("s1", "agent-x", review, [], now.value, now.value);
+    expect(latest().machine).toBe("mac-a");
+    expect(latest().subagents[0].machine).toBe("mac-a");
   });
 
   it("ignores events for unknown sessions", () => {
@@ -83,7 +100,7 @@ describe("subagents", () => {
   it("is busy while written in the last 5 seconds, then idle", () => {
     const { tracker, latest, now } = setup();
     tracker.applySubagentEvents("s1", "agent-x", { name: "code-review", model: "" }, [], now.value, now.value);
-    expect(latest().subagents[0]).toMatchObject({ id: "agent-x", name: "code-review", status: "busy", cwd: file.cwd });
+    expect(latest().subagents[0]).toMatchObject({ id: "agent-x", name: "code-review", status: "busy", folder: "shop", machine: "mac-a" });
 
     now.value += SUBAGENT_BUSY_MS - 1;
     tracker.tick(now.value);

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev": "concurrently -n server,web -c blue,green \"pnpm:dev:server\" \"pnpm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite",
     "test": "vitest run",

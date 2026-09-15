@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ACCENT_COUNT, accentIndexFor, forkliftPose, movingCarCount, parkBounds } from "../park-layout.ts";
+import {
+  ACCENT_COUNT,
+  accentIndexFor,
+  forkliftPose,
+  movingCarCount,
+  parkBounds,
+  WALL_TINT_COUNT,
+  wallTintIndexFor,
+} from "../park-layout.ts";
 import { plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
@@ -13,6 +21,26 @@ describe("accentIndexFor", () => {
       expect(index).toBeGreaterThanOrEqual(0);
       expect(index).toBeLessThan(ACCENT_COUNT);
     }
+  });
+});
+
+describe("wallTintIndexFor", () => {
+  it("gives the same hall color for the same machine", () => {
+    expect(wallTintIndexFor("dennispassway-macbook")).toBe(wallTintIndexFor("dennispassway-macbook"));
+  });
+
+  it("stays within the palette", () => {
+    for (const machine of ["a", "macbook-pro", "dennispassway-macbook", ""]) {
+      const index = wallTintIndexFor(machine);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThan(WALL_TINT_COUNT);
+    }
+  });
+
+  // These are the two machines that sit side by side in practice; the hash
+  // must split them so their halls are visibly different colors.
+  it("gives different colors for the two machines in the office", () => {
+    expect(wallTintIndexFor("dennispassway-macbook")).not.toBe(wallTintIndexFor("macbook-pro-van-wahid"));
   });
 });
 

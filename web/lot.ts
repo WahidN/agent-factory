@@ -3,14 +3,16 @@
 // sized by the session's model tier, and rebuilt in place when the tier changes.
 
 import * as THREE from "three";
-import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import type { AgentState, SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
+import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
-import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY } from "./palette.ts";
+import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY, WALL_TINTS } from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
-import { movingCarCount } from "./park-layout.ts";
+import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
+import { RoofSign } from "./roof-sign.ts";
+import { Sign } from "./sign.ts";
 import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
@@ -129,7 +131,10 @@ export class Lot {
   // Everything sized by the tier: yard markings, hall, machines, parked cars, sign.
   private structure = new THREE.Group();
   private machines!: Machines;
-  private sign!: { element: HTMLElement; name: HTMLElement; machine: HTMLElement; badge: HTMLElement };
+  private sign!: Sign;
+  private lightBox!: LightBox;
+  private roofSign!: RoofSign;
+  private builtModel!: string;
   private hallPickables: THREE.Mesh[] = [];
   private busy = new Activity();
   private parts: Record<Part, Activity> = {
@@ -142,7 +147,10 @@ export class Lot {
   private accent: THREE.Color;
   private accentGrey: THREE.Color;
   private accentMaterial: THREE.MeshStandardMaterial;
-  private wallMaterial = createWallMaterial();
+  // Fixed at construction from the machine that opened the session. A machine
+  // switch mid-session (an id gets re-prefixed) does not retint the wall; the
+  // tint only changes with a fresh Lot.
+  private wallMaterial: THREE.MeshStandardMaterial;
 
   private workers = new LotWorkers(WORKER_SLOTS);
   private busySubagents = 0;
@@ -162,6 +170,7 @@ export class Lot {
     this.accentGrey = new THREE.Color(l, l, l);
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
+    this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.machine)]);
 
     this.buildStructure();
 
@@ -178,16 +187,17 @@ export class Lot {
   }
 
   update(state: SessionState, nowMs: number) {
-    const nameChanged = state.name !== this.state.name || state.machine !== this.state.machine;
     this.state = state;
     const tier = tierFor(state.model);
-    if (tier !== this.tier) {
+    // The roof letters show the model name, so a same-tier model swap
+    // ("claude-opus-5" to "claude-opus-4-5") also needs a rebuild.
+    if (tier !== this.tier || state.model !== this.builtModel) {
       this.tier = tier;
       this.disposeStructure();
       this.buildStructure();
-    } else if (nameChanged) {
-      this.drawSign();
     }
+    this.syncSign();
+    this.lightBox.update(this.state.machine);
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
     const active = working && state.currentTool ? partForTool(state.currentTool.name) : null;
@@ -203,7 +213,12 @@ export class Lot {
   }
 
   pickables(): THREE.Mesh[] {
-    return [...this.hallPickables, ...[...this.warehouses.values()].flatMap((s) => s.warehouse.pickables)];
+    return [
+      ...this.hallPickables,
+      ...this.sign.pickables,
+      ...this.lightBox.pickables,
+      ...[...this.warehouses.values()].flatMap((s) => s.warehouse.pickables),
+    ];
   }
 
   remove(onGone: () => void) {
@@ -223,6 +238,7 @@ export class Lot {
     const cooling = this.parts.cooling.update(dt, nowMs);
 
     this.wallMaterial.emissiveIntensity = busy * 1.1;
+    this.lightBox.setGlow(busy);
     this.accentMaterial.color.copy(this.accent).lerp(this.accentGrey, (1 - busy) * 0.35);
 
     this.machines.stacks.tick(dt, busy, stacks);
@@ -247,6 +263,7 @@ export class Lot {
 
   private buildStructure() {
     const size = SIZES[this.tier];
+    this.builtModel = this.state.model;
     const builder = new StaticBuilder();
     this.buildYard(builder);
     this.buildHall(builder, size);
@@ -266,9 +283,46 @@ export class Lot {
     this.machines = { stacks, forklift, searchlight, cooling };
     this.structure = new THREE.Group();
     this.structure.add(statics, stacks.group, forklift.group, searchlight.group, cooling.group);
-    this.sign = this.createSign(size);
+
+    // Yard sign, standing along the front fence facing +z. It spans x 3 to 19
+    // on z 18.8 (depth 0.12): the wall sits at z 20 (0.3 thick, inner face
+    // 19.85), the warehouse slots sit at z 14 with depth 5 (to z 16.5) and
+    // their work routes at z 17.6, so nothing overlaps.
+    this.sign = new Sign(this.accent);
+    this.sign.group.position.set(11, YARD_Y, 18.8);
+    this.sign.group.rotation.y = 0;
+    for (const mesh of this.sign.pickables) mesh.userData.hover = this;
+    this.structure.add(this.sign.group);
+
+    // Light box on the front facade. Clamped above the stripe so a 1 bay hall
+    // (wall height 6) never sinks the box into the yard markings.
+    // Anchored to HALL_X1 - 2.5 (x 1.5, half width 1.5, so x 0..3) instead of
+    // hall.x0: on the small tier the dock side (hall.x0 = -10) is too tight.
+    // Checked on all four tiers: dock door (x -8.8..-5.2) and awning
+    // (x -9.3..-4.7) sit at least 4.7 clear of x 0..3. The people door
+    // (x 0.9..2.1, y 0.3..2.5) overlaps in x and z but the box's y starts at
+    // 3.5 on the smallest hall (small/medium: y 3.5..6.5, large: 9.5..12.5,
+    // huge: 15.5..18.5), well above the door top. x 0..3 also stays inside
+    // the facade width [hall.x0, HALL_X1] on every tier.
+    this.lightBox = new LightBox(this.accent, 3);
+    const boxY = Math.max(hallTop(size) - 2.2, YARD_Y + STRIPE + 1.8);
+    this.lightBox.group.position.set(HALL_X1 - 2.5, boxY, HALL_Z1 + 0.2);
+    this.lightBox.group.rotation.y = 0;
+    for (const mesh of this.lightBox.pickables) mesh.userData.hover = this;
+    this.structure.add(this.lightBox.group);
+
+    // Roof letters at the front edge, in the band between the parapet (which
+    // reaches back to HALL_Z1 - 0.4) and the front row of vents (whose faces
+    // sit at HALL_Z1 - 1.52). The letters are 0.5 deep, so only this narrow
+    // gap keeps them clear of both.
+    this.roofSign = new RoofSign(this.state.model, HALL_X1 - size.hall.x0);
+    this.roofSign.group.position.set((size.hall.x0 + HALL_X1) / 2, hallTop(size) + 0.3, HALL_Z1 - 1);
+    this.roofSign.group.rotation.y = 0;
+    this.structure.add(this.roofSign.group);
+
     this.body.add(this.structure);
-    this.drawSign();
+    this.syncSign();
+    this.lightBox.update(this.state.machine);
   }
 
   private disposeStructure() {
@@ -276,10 +330,13 @@ export class Lot {
     this.machines.stacks.dispose();
     this.machines.searchlight.dispose();
     this.machines.cooling.dispose();
-    // Three.js only tells the removed object itself, not the label inside it,
-    // so the label's HTML element has to be removed by hand.
-    this.sign.element.remove();
+    this.sign.dispose();
+    this.lightBox.dispose();
+    this.roofSign.dispose();
     // Own merged geometry only; smoke and steam are instanced and share one puff geometry.
+    // The sign's own geometries (posts, board, stripe, text planes) are disposed
+    // above by Sign.dispose(); this traversal disposes them a second time, which
+    // is harmless in Three.js since geometry.dispose() is idempotent.
     this.structure.traverse((child) => {
       if (child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh)) child.geometry.dispose();
     });
@@ -397,7 +454,7 @@ export class Lot {
 
     if (waiting !== this.overflow) {
       this.overflow = waiting;
-      this.drawSign();
+      this.syncSign();
     }
   }
 
@@ -438,7 +495,6 @@ export class Lot {
     this.exit.t += dt;
     const k = Math.min(1, this.exit.t);
     this.body.position.y = -SINK_DEPTH * k * k;
-    this.sign.element.style.opacity = String(1 - k); // labels are never hidden by the ground
     if (k >= 1) {
       this.gone = true;
       this.exit.onGone();
@@ -447,28 +503,7 @@ export class Lot {
 
   // ---------- Sign ----------
 
-  // An HTML label that hangs above the hall roof. Lives in the structure, so a
-  // rebuild replaces it.
-  private createSign(size: LotSize) {
-    const element = document.createElement("div");
-    element.className = "lot-label";
-    element.style.setProperty("--accent", `#${this.accent.getHexString()}`);
-    const name = document.createElement("span");
-    const machine = document.createElement("span");
-    machine.className = "machine"; // shown only while body.many-machines
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    element.append(name, machine, badge);
-    const label = new CSS2DObject(element);
-    label.position.set((size.hall.x0 + HALL_X1) / 2, hallTop(size) + 4, (size.hall.z0 + HALL_Z1) / 2);
-    this.structure.add(label);
-    return { element, name, machine, badge };
-  }
-
-  private drawSign() {
-    this.sign.name.textContent = this.state.name;
-    this.sign.machine.textContent = this.state.machine;
-    this.sign.badge.textContent = this.overflow > 0 ? `+${this.overflow}` : "";
-    this.sign.badge.hidden = this.overflow === 0;
+  private syncSign() {
+    this.sign.update({ name: this.state.name, folder: this.state.folder, machine: this.state.machine, model: this.state.model, overflow: this.overflow });
   }
 }

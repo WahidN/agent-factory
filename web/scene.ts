@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
@@ -61,12 +60,6 @@ export function createScene(canvas: HTMLCanvasElement) {
   composer.addPass(ao);
   composer.addPass(new OutputPass());
 
-  // HTML labels on top of the canvas. Kept out of the 3D passes, so ambient
-  // occlusion does not draw them as dark boxes.
-  const labels = new CSS2DRenderer();
-  Object.assign(labels.domElement.style, { position: "fixed", inset: "0", pointerEvents: "none" });
-  canvas.after(labels.domElement);
-
   const focusTarget = new THREE.Vector3();
 
   // Moves the orbit center to the town and sizes the sun's shadow area to it.
@@ -89,7 +82,6 @@ export function createScene(canvas: HTMLCanvasElement) {
     const { clientWidth: width, clientHeight: height } = canvas;
     renderer.setSize(width, height, false);
     composer.setSize(width, height);
-    labels.setSize(width, height);
     const aspect = width / height;
     Object.assign(camera, {
       left: (-VIEW_HEIGHT * aspect) / 2,
@@ -121,7 +113,6 @@ export function createScene(canvas: HTMLCanvasElement) {
 
     for (const callback of callbacks) callback(dt, now);
     composer.render(dt);
-    labels.render(scene, camera);
   });
 
   return {

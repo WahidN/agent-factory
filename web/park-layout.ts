@@ -11,6 +11,15 @@ export function accentIndexFor(folder: string): number {
   return hash % ACCENT_COUNT;
 }
 
+export const WALL_TINT_COUNT = 6;
+
+// Same machine, same hall color, also across reloads.
+export function wallTintIndexFor(machine: string): number {
+  let hash = 0;
+  for (const char of machine) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash % WALL_TINT_COUNT;
+}
+
 export type Bounds = { minCol: number; maxCol: number; minRow: number; maxRow: number };
 
 // Tight bounds of the cells in use. Falls back to the first cell.

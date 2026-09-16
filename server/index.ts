@@ -9,6 +9,7 @@ import { homedir, hostname } from "node:os";
 import { basename, extname, join, normalize, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
+import { createBatcher } from "./batcher.ts";
 import {
   dropPartialFirstLine,
   parseSessionFile,
@@ -20,10 +21,11 @@ import {
 } from "./claude-reader.ts";
 import { ConfigError, loadConfig } from "./config.ts";
 import { health } from "./health.ts";
+import { createHeartbeat } from "./heartbeat.ts";
 import { Hub, parseRelayMessage, PROTOCOL } from "./hub.ts";
 import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
-import type { ServerMessage } from "./types.ts";
+import type { PlainMessage, ServerMessage } from "./types.ts";
 
 const rootDir = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -55,14 +57,35 @@ const CHECK_EVERY_MS = 5_000;
 const httpServer = createServer(handleRequest);
 const wss = new WebSocketServer({ noServer: true });
 
+// Every connected socket, browsers on /ws and reporters on /relay alike, is
+// pinged every HEARTBEAT_MS. A socket that misses two pings in a row is
+// terminated (not closed: a half dead socket never answers a close either).
+export const HEARTBEAT_MS = 30_000;
+const heartbeat = createHeartbeat<WebSocket>();
+
+setInterval(() => {
+  for (const dead of heartbeat.onTick()) dead.terminate();
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) client.ping();
+  }
+}, HEARTBEAT_MS);
+
 let lastUpdateAt = 0;
 
-function broadcast(message: ServerMessage) {
-  if (message.type === "session-update") lastUpdateAt = Date.now();
+function sendToBrowsers(message: ServerMessage) {
   const data = JSON.stringify(message);
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) client.send(data);
   }
+}
+
+// Messages that land in the same tick go out as one "batch", so a snapshot
+// of 150 sessions is one send instead of 150.
+const batcher = createBatcher(sendToBrowsers);
+
+function broadcast(message: PlainMessage) {
+  if (message.type === "session-update") lastUpdateAt = Date.now();
+  batcher.push(message);
 }
 
 const tracker = new SessionTracker((message) => {
@@ -99,6 +122,10 @@ httpServer.on("upgrade", (request, socket, head) => {
 });
 
 wss.on("connection", (socket, request) => {
+  heartbeat.onConnect(socket);
+  socket.on("pong", () => heartbeat.onPong(socket));
+  socket.on("close", () => heartbeat.forget(socket));
+
   if (request.url === "/relay") {
     acceptReporter(socket, request.socket.remoteAddress ?? "?");
     return;

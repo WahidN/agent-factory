@@ -19,7 +19,17 @@ export type AgentState = {
 // longer carries nested agents, so the two types are identical.
 export type SessionState = AgentState;
 
+// `batch` wraps the updates from one tick. A snapshot of 150 sessions used to
+// arrive as 150 separate messages, and the page rebuilt every road, kerb, lamp
+// and tree of the park after each one.
 export type ServerMessage =
+  | { type: "snapshot"; sessions: SessionState[] }
+  | { type: "session-update"; session: SessionState }
+  | { type: "session-removed"; id: string }
+  | { type: "batch"; messages: PlainMessage[] };
+
+// What a batch may hold: everything except another batch, so it cannot nest.
+export type PlainMessage =
   | { type: "snapshot"; sessions: SessionState[] }
   | { type: "session-update"; session: SessionState }
   | { type: "session-removed"; id: string };

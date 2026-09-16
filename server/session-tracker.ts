@@ -2,7 +2,7 @@
 // its own: callers pass `now`, so timing rules can be tested with a fake clock.
 
 import { baseName, type SessionFile, type TranscriptEvent } from "./claude-reader.ts";
-import type { AgentStatus, ServerMessage, SessionState } from "./types.ts";
+import type { AgentStatus, PlainMessage, SessionState } from "./types.ts";
 
 export const SUBAGENT_BUSY_MS = 5_000;
 export const SUBAGENT_REMOVE_MS = 60_000;
@@ -15,7 +15,7 @@ export const SESSION_BUSY_MS = 5_000;
 // is open is one of the signals that decides busy vs idle.
 type CurrentTool = { name: string; target: string };
 
-type Listener = (message: ServerMessage) => void;
+type Listener = (message: PlainMessage) => void;
 
 // Tool calls without a result yet, in the order they started.
 class PendingTools {

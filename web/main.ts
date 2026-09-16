@@ -1,5 +1,6 @@
-import type { ServerMessage, SessionState } from "../server/types.ts";
+import type { PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
 import { Lot } from "./lot.ts";
+import { flattenBatch } from "./message-logic.ts";
 import { Park } from "./park.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { createScene } from "./scene.ts";
@@ -23,17 +24,21 @@ const leaving = new Set<Lot>();
 let everReceived = false;
 let fitted = false;
 
-function upsert(session: SessionState) {
+// Returns whether a new lot was created, so the caller can refocus once after
+// a whole message (or a whole batch) is processed, instead of once per lot.
+function upsert(session: SessionState): boolean {
   let lot = lots.get(session.id);
+  let added = false;
   if (!lot) {
     lot = new Lot(session);
     const { x, z } = plotPosition(plots.assign(session.id));
     lot.group.position.set(x, 0, z);
     view.scene.add(lot.group);
     lots.set(session.id, lot);
-    refocus();
+    added = true;
   }
   lot.update(session, performance.now());
+  return added;
 }
 
 // The lot sinks first; its cell is freed once it is gone.
@@ -51,23 +56,44 @@ function remove(id: string) {
   });
 }
 
+// A batch is every message from one server tick; a lone message is treated as
+// a batch of one, so it behaves exactly as before. Either way, lots are
+// applied first and the park (roads, kerbs, lamps, trees) is rebuilt at most
+// once, not once per lot: a snapshot of 150 sessions used to call refocus 150
+// times.
 function handle(message: ServerMessage) {
   everReceived = true;
+  let added = false;
+  let fitNow = false;
+
+  for (const plain of flattenBatch(message)) {
+    if (applyPlain(plain)) added = true;
+    if (plain.type === "snapshot" && !fitted) {
+      fitted = true;
+      fitNow = true;
+    }
+  }
+
+  if (fitNow)
+    refocus(true); // zoom to fit once, after the first snapshot's lots all exist
+  else if (added) refocus();
+}
+
+// Applies one message and reports whether a lot was added (the only case
+// that needs the park rebuilt).
+function applyPlain(message: PlainMessage): boolean {
   if (message.type === "snapshot") {
     const ids = new Set(message.sessions.map((s) => s.id));
     for (const id of [...lots.keys()]) if (!ids.has(id)) remove(id);
-    [...message.sessions].sort((a, b) => a.startedAt - b.startedAt).forEach(upsert);
-    // Zoom to fit once, after every lot from the first snapshot exists.
-    // Later snapshots (reconnects) keep the user's zoom.
-    if (!fitted) {
-      fitted = true;
-      refocus(true);
+    let added = false;
+    for (const session of [...message.sessions].sort((a, b) => a.startedAt - b.startedAt)) {
+      if (upsert(session)) added = true;
     }
-  } else if (message.type === "session-update") {
-    upsert(message.session);
-  } else if (message.type === "session-removed") {
-    remove(message.id);
+    return added;
   }
+  if (message.type === "session-update") return upsert(message.session);
+  remove(message.id);
+  return false;
 }
 
 // Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.

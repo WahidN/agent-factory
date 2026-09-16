@@ -6,8 +6,7 @@
 // Usage: pnpm fake-park
 // Env: SPOKES, SESSIONS_PER_SPOKE, HUB, SEED (see README below).
 
-import { WebSocket } from "ws";
-import { PROTOCOL, type RelayMessage } from "../server/hub.ts";
+import { startRelay, type Relay } from "../server/relay.ts";
 import type { ServerMessage, SessionState } from "../server/types.ts";
 
 const SPOKES = Number(process.env.SPOKES) || 10;
@@ -94,33 +93,27 @@ type Spoke = {
   machine: string;
   user: string;
   rng: () => number;
-  socket: WebSocket | null;
+  relay: Relay | null;
   sessions: Map<string, SessionState>;
   connected: boolean;
 };
 
-function send(spoke: Spoke, message: RelayMessage) {
-  if (spoke.socket?.readyState === WebSocket.OPEN) spoke.socket.send(JSON.stringify(message));
+function send(spoke: Spoke, message: ServerMessage) {
+  spoke.relay?.send(message);
 }
 
-function sendSnapshot(spoke: Spoke) {
-  const sessions = [...spoke.sessions.values()];
-  send(spoke, { type: "snapshot", sessions } satisfies ServerMessage);
-}
-
+// Uses the real relay: hello and a fresh snapshot on every connect, and the
+// same exponential backoff with jitter a real reporter uses to come back
+// after the hub restarts, so this script exercises the code under test
+// instead of a simplified copy of it.
 function connectSpoke(spoke: Spoke) {
-  const url = new URL("/relay", HUB).toString();
-  const socket = new WebSocket(url);
-  spoke.socket = socket;
-  socket.on("open", () => {
-    spoke.connected = true;
-    send(spoke, { type: "hello", protocol: PROTOCOL, user: spoke.user, machine: spoke.machine });
-    sendSnapshot(spoke);
+  spoke.relay = startRelay(HUB, spoke.machine, spoke.user, "", () => [...spoke.sessions.values()], {
+    log: (line) => {
+      if (line.includes("connected")) spoke.connected = true;
+      else if (line.includes("hub gone")) spoke.connected = false;
+      console.log(`${new Date().toISOString()}  ${spoke.machine}  ${line}`);
+    },
   });
-  socket.on("close", () => {
-    spoke.connected = false;
-  });
-  socket.on("error", () => {}); // a close always follows
 }
 
 // One small, plausible change: flip a status, add or drop a subagent, or
@@ -172,7 +165,7 @@ function makeSpoke(index: number): Spoke {
     const session = makeSession(rng, now, user);
     sessions.set(session.id, session);
   }
-  return { machine, user, rng, socket: null, sessions, connected: false };
+  return { machine, user, rng, relay: null, sessions, connected: false };
 }
 
 console.log(
@@ -209,6 +202,6 @@ const statusTimer = setInterval(() => {
 process.on("SIGINT", () => {
   clearInterval(statusTimer);
   for (const timer of timers) clearTimeout(timer);
-  for (const spoke of spokes) spoke.socket?.close();
+  for (const spoke of spokes) spoke.relay?.close();
   process.exit(0);
 });

@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
 import { PROTOCOL } from "../hub.ts";
-import { startRelay, type Relay } from "../relay.ts";
+import { backoffDelay, MAX_RETRY_MS, RETRY_MS, startRelay, type Relay } from "../relay.ts";
 import type { SessionState } from "../types.ts";
 
 function session(id: string): SessionState {
@@ -103,7 +103,33 @@ describe("startRelay", () => {
 
     wss = new WebSocketServer({ host: "127.0.0.1", port: Number(new URL(url).port) });
     const { received } = await nextConnection(wss);
-    await until(() => received.length === 2);
+    await until(() => received.length === 2, 5000);
     expect(lines.at(-1)).toContain("connected");
+  });
+});
+
+describe("backoffDelay", () => {
+  it("starts at the base retry and doubles per attempt, capped at the ceiling", () => {
+    const random = () => 1; // full jitter's upper edge, so the delay equals the cap exactly
+    expect(backoffDelay(0, 1000, MAX_RETRY_MS, random)).toBe(1000);
+    expect(backoffDelay(1, 1000, MAX_RETRY_MS, random)).toBe(2000);
+    expect(backoffDelay(2, 1000, MAX_RETRY_MS, random)).toBe(4000);
+  });
+
+  it("never exceeds MAX_RETRY_MS even after many attempts", () => {
+    const random = () => 1;
+    expect(backoffDelay(10, 1000, MAX_RETRY_MS, random)).toBe(MAX_RETRY_MS);
+    expect(backoffDelay(50, RETRY_MS, MAX_RETRY_MS, random)).toBe(MAX_RETRY_MS);
+  });
+
+  it("scales with the random draw, from 0 up to the cap", () => {
+    expect(backoffDelay(0, 1000, MAX_RETRY_MS, () => 0)).toBe(0);
+    expect(backoffDelay(0, 1000, MAX_RETRY_MS, () => 0.5)).toBe(500);
+  });
+
+  it("spreads real randomness so 30 reporters do not all land in the same second", () => {
+    const delays = Array.from({ length: 30 }, () => backoffDelay(0, RETRY_MS, MAX_RETRY_MS, Math.random));
+    const seconds = new Set(delays.map((d) => Math.floor(d / 1000)));
+    expect(seconds.size).toBeGreaterThan(1);
   });
 });

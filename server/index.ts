@@ -69,9 +69,11 @@ const tracker = new SessionTracker((message) => {
   log(message);
   broadcast(message);
   relay?.send(message);
-}, MACHINE);
+}, config.user);
 
-const relay = HUB_URL ? startRelay(HUB_URL, MACHINE, () => tracker.snapshot(Date.now())) : null;
+const relay = HUB_URL
+  ? startRelay(HUB_URL, MACHINE, config.user, config.token, () => tracker.snapshot(Date.now()))
+  : null;
 
 // Browsers connect on /ws and get our sessions plus everything relayed to us.
 // Other machines connect on /relay, central mode only.
@@ -119,6 +121,13 @@ function acceptReporter(socket: WebSocket, from: string) {
         const time = new Date().toLocaleTimeString();
         console.log(`${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub speaks ${PROTOCOL}`);
         return socket.close(1002, `protocol ${PROTOCOL} expected`);
+      }
+      // A guard rail against a misdirected reporter, not authentication: no
+      // timing safe compare, and a hub with no token configured accepts
+      // everyone.
+      if (config.token && message.token !== config.token) {
+        console.log(`${new Date().toLocaleTimeString()}  refused  ${message.machine}: bad token`);
+        return socket.close(1008, "bad token");
       }
       machine = message.machine;
       // A machine that restarted before its old socket was seen dead takes over its own sessions.
@@ -279,7 +288,7 @@ async function syncTranscript(sessionId: string) {
   const watched = watchedSessions.get(sessionId);
   if (!watched?.projectDir) return;
   const result = await readNewEvents(join(watched.projectDir, `${sessionId}.jsonl`));
-  if (result) tracker.applySessionEvents(sessionId, result.events, Date.now());
+  if (result) tracker.applySessionEvents(sessionId, result.events, result.mtimeMs, Date.now());
 }
 
 async function syncSubagent(sessionId: string, fileName: string) {
@@ -458,10 +467,8 @@ function log(message: ServerMessage) {
   }
   if (message.type !== "session-update") return;
   const { session } = message;
-  const tool = session.currentTool ? `${session.currentTool.name} ${session.currentTool.target}`.trim() : "-";
-  const subs = session.subagents.map((s) => `${s.name}:${s.status}`).join(", ");
-  const who = IS_HUB ? `${session.machine}/${session.name}` : session.name;
-  console.log(`${time}  ${who.padEnd(28)} ${session.status.padEnd(5)} ${tool}${subs ? `  [${subs}]` : ""}`);
+  const who = `${session.user}/${session.project}`;
+  console.log(`${time}  ${who.padEnd(28)} ${session.status.padEnd(5)} subagents=${session.subagents}`);
 }
 
 // ---------- Start ----------

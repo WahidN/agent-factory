@@ -85,12 +85,7 @@ body {
 }
 
 #tooltip .model,
-#tooltip .machine {
+#tooltip .project {
   color: #8f98a3;
   font-size: 12px;
-}
-
-/* Machine names only matter once the park mixes machines. */
-body:not(.many-machines) #tooltip .machine {
-  display: none;
 }

@@ -3,7 +3,7 @@
 // sized by the session's model tier, and rebuilt in place when the tier changes.
 
 import * as THREE from "three";
-import type { AgentState, SessionState } from "../server/types.ts";
+import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
@@ -26,22 +26,6 @@ import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
 import { LotWorkers, type WorkerSlot } from "./workers.ts";
-
-type Part = "forklift" | "stacks" | "searchlight" | "cooling";
-
-const TOOL_PARTS: Record<string, Part> = {
-  Edit: "forklift",
-  Write: "forklift",
-  NotebookEdit: "forklift",
-  Bash: "stacks",
-  Read: "searchlight",
-  Grep: "searchlight",
-  Glob: "searchlight",
-};
-
-function partForTool(name: string): Part {
-  return TOOL_PARTS[name] ?? "cooling";
-}
 
 // The hall keeps its dock side on every tier, so the dock door, hall door,
 // parked cars and worker routes never move. A smaller hall shrinks toward the
@@ -188,25 +172,18 @@ export class Lot {
   private builtModel!: string;
   private hallPickables: THREE.Mesh[] = [];
   private busy = new Activity();
-  private parts: Record<Part, Activity> = {
-    forklift: new Activity(),
-    stacks: new Activity(),
-    searchlight: new Activity(),
-    cooling: new Activity(),
-  };
 
   private accent: THREE.Color;
   private accentGrey: THREE.Color;
   private accentMaterial: THREE.MeshStandardMaterial;
-  // Fixed at construction from the machine that opened the session. A machine
+  // Fixed at construction from the user who opened the session. A user
   // switch mid-session (an id gets re-prefixed) does not retint the wall; the
   // tint only changes with a fresh Lot.
   private wallMaterial: THREE.MeshStandardMaterial;
 
   private workers = new LotWorkers(WORKER_SLOTS);
-  private busySubagents = 0;
 
-  private warehouses = new Map<string, Slot>();
+  private warehouses = new Map<number, Slot>();
   private leavingWarehouses = new Set<Slot>();
   private overflow = 0;
 
@@ -216,12 +193,12 @@ export class Lot {
   constructor(state: SessionState) {
     this.state = state;
     this.tier = tierFor(state.model);
-    this.accent = accentFor(state.folder);
+    this.accent = accentFor(state.project);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
     this.accentGrey = new THREE.Color(l, l, l);
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
-    this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.machine)]);
+    this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.user)]);
 
     this.buildStructure();
 
@@ -248,19 +225,16 @@ export class Lot {
       this.buildStructure();
     }
     this.syncSign();
-    this.lightBox.update(this.state.machine);
+    this.lightBox.update(this.state.project);
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
-    const active = working && state.currentTool ? partForTool(state.currentTool.name) : null;
-    for (const part of Object.keys(this.parts) as Part[]) this.parts[part].set(part === active, nowMs);
-    this.busySubagents = state.subagents.filter((s) => s.status === "busy").length;
-    this.updateWarehouses(state.subagents, nowMs);
+    this.updateWarehouses(state.subagents, working, nowMs);
   }
 
   // What this lot sends onto the park roads: always some cars, the truck only while busy.
   traffic(): { cars: number; truck: boolean } {
     const lotBusy = this.state.status === "busy" && !this.exit;
-    return { cars: movingCarCount(lotBusy, this.busySubagents), truck: lotBusy };
+    return { cars: movingCarCount(lotBusy, this.state.subagents), truck: lotBusy };
   }
 
   pickables(): THREE.Mesh[] {
@@ -275,27 +249,22 @@ export class Lot {
   remove(onGone: () => void) {
     if (this.exit) return;
     this.busy.set(false, 0);
-    for (const part of Object.values(this.parts)) part.set(false, 0);
-    for (const [id, slot] of this.warehouses) this.leaveWarehouse(id, slot);
+    for (const [slot, entry] of this.warehouses) this.leaveWarehouse(slot, entry);
     this.exit = { t: 0, onGone };
   }
 
   tick(dt: number, nowMs: number) {
     if (this.gone) return;
     const busy = this.busy.update(dt, nowMs);
-    const forklift = this.parts.forklift.update(dt, nowMs);
-    const stacks = this.parts.stacks.update(dt, nowMs);
-    const searchlight = this.parts.searchlight.update(dt, nowMs);
-    const cooling = this.parts.cooling.update(dt, nowMs);
 
     this.wallMaterial.emissiveIntensity = busy * 1.1;
     this.lightBox.setGlow(busy);
     this.accentMaterial.color.copy(this.accent).lerp(this.accentGrey, (1 - busy) * 0.35);
 
-    this.machines.stacks.tick(dt, busy, stacks);
-    this.machines.forklift.tick(dt, forklift);
-    this.machines.searchlight.tick(dt, searchlight);
-    this.machines.cooling.tick(dt, busy, cooling);
+    this.machines.stacks.tick(dt, busy, busy);
+    this.machines.forklift.tick(dt, busy);
+    this.machines.searchlight.tick(dt, busy);
+    this.machines.cooling.tick(dt, busy, busy);
     this.workers.tick(dt, this.workerBusyFlags());
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);
@@ -375,7 +344,7 @@ export class Lot {
 
     this.body.add(this.structure);
     this.syncSign();
-    this.lightBox.update(this.state.machine);
+    this.lightBox.update(this.state.project);
   }
 
   private disposeStructure() {
@@ -493,29 +462,26 @@ export class Lot {
 
   // ---------- Warehouses ----------
 
-  private updateWarehouses(subagents: AgentState[], nowMs: number) {
-    const ids = new Set(subagents.map((s) => s.id));
-    for (const [id, slot] of this.warehouses) if (!ids.has(id)) this.leaveWarehouse(id, slot);
+  // No per-subagent identity survives on the wire, just a count: this fills
+  // slots 0..count-1 and empties the rest, all mirroring the lot's own busy
+  // state (there is no separate busy flag per subagent anymore).
+  private updateWarehouses(count: number, busy: boolean, nowMs: number) {
+    const target = Math.min(count, MAX_WAREHOUSES);
+    for (const [slot, entry] of [...this.warehouses]) if (slot >= target) this.leaveWarehouse(slot, entry);
 
-    let waiting = 0;
-    for (const subagent of [...subagents].sort((a, b) => a.startedAt - b.startedAt)) {
-      const existing = this.warehouses.get(subagent.id);
-      if (existing) {
-        existing.warehouse.update(subagent, nowMs);
-        continue;
-      }
-      const slot = this.freeSlot();
-      if (slot === null || this.exit) {
-        waiting++;
-        continue;
-      }
-      const warehouse = new Warehouse(subagent, this.accent);
+    for (let slot = 0; slot < target; slot++) {
+      if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
+      const warehouse = new Warehouse(this.accent);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
+      for (const mesh of warehouse.pickables) mesh.userData.hover = this;
       this.body.add(warehouse.group);
-      this.warehouses.set(subagent.id, { warehouse, slot });
+      this.warehouses.set(slot, { warehouse, slot });
     }
 
+    for (const { warehouse } of this.warehouses.values()) warehouse.update(busy, nowMs);
+
+    const waiting = Math.max(0, count - MAX_WAREHOUSES);
     if (waiting !== this.overflow) {
       this.overflow = waiting;
       this.syncSign();
@@ -523,29 +489,27 @@ export class Lot {
   }
 
   // A leaving warehouse keeps its slot until it has shrunk away.
-  private leaveWarehouse(id: string, slot: Slot) {
-    this.warehouses.delete(id);
-    this.leavingWarehouses.add(slot);
-    slot.warehouse.remove(() => {
-      this.leavingWarehouses.delete(slot);
-      this.body.remove(slot.warehouse.group);
-      slot.warehouse.dispose();
+  private leaveWarehouse(slot: number, entry: Slot) {
+    this.warehouses.delete(slot);
+    this.leavingWarehouses.add(entry);
+    entry.warehouse.remove(() => {
+      this.leavingWarehouses.delete(entry);
+      this.body.remove(entry.warehouse.group);
+      entry.warehouse.dispose();
     });
   }
 
-  // Yard workers follow the session; each warehouse worker follows its subagent.
+  private slotLeaving(slot: number): boolean {
+    for (const entry of this.leavingWarehouses) if (entry.slot === slot) return true;
+    return false;
+  }
+
+  // Yard workers follow the session; each warehouse worker follows the same busy state.
   private workerBusyFlags(): boolean[] {
     const lotBusy = this.state.status === "busy" && !this.exit;
     const slotBusy = new Array(MAX_WAREHOUSES).fill(false);
-    for (const { warehouse, slot } of this.warehouses.values())
-      slotBusy[slot] = warehouse.state.status === "busy" && !this.exit;
+    for (const slot of this.warehouses.keys()) slotBusy[slot] = lotBusy;
     return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
-  }
-
-  private freeSlot(): number | null {
-    const used = new Set([...this.warehouses.values(), ...this.leavingWarehouses].map((s) => s.slot));
-    for (let slot = 0; slot < MAX_WAREHOUSES; slot++) if (!used.has(slot)) return slot;
-    return null;
   }
 
   // ---------- Lifecycle ----------
@@ -569,12 +533,6 @@ export class Lot {
   // ---------- Sign ----------
 
   private syncSign() {
-    this.sign.update({
-      name: this.state.name,
-      folder: this.state.folder,
-      machine: this.state.machine,
-      model: this.state.model,
-      overflow: this.overflow,
-    });
+    this.sign.update({ user: this.state.user, overflow: this.overflow });
   }
 }

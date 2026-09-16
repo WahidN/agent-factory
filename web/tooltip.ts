@@ -40,17 +40,15 @@ export function createTooltip(
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
-    const { name, status, currentTool, model, machine } = hovered.state;
-    const tool = currentTool ? `${currentTool.name} ${currentTool.target}`.trim() : "no tool running";
-    const key = [name, status, tool, model, machine].join("\n");
+    const { user, project, status, model } = hovered.state;
+    const key = [user, project, status, model].join("\n");
     if (key !== rendered) {
       rendered = key;
       element.replaceChildren(
-        line("name", name),
+        line("name", user),
         line(status, status),
-        line("tool", tool),
+        line("project", project),
         ...(model ? [line("model", model)] : []), // no line until the transcript names a model
-        ...(machine ? [line("machine", machine)] : []), // shown only while body.many-machines
       );
     }
 

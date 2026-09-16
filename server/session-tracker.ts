@@ -2,10 +2,18 @@
 // its own: callers pass `now`, so timing rules can be tested with a fake clock.
 
 import { baseName, type SessionFile, type TranscriptEvent } from "./claude-reader.ts";
-import type { AgentState, CurrentTool, ServerMessage, SessionState } from "./types.ts";
+import type { AgentStatus, ServerMessage, SessionState } from "./types.ts";
 
 export const SUBAGENT_BUSY_MS = 5_000;
 export const SUBAGENT_REMOVE_MS = 60_000;
+// A session counts as busy if its transcript was written to this recently,
+// even when the session file itself still says idle (it lags the transcript).
+export const SESSION_BUSY_MS = 5_000;
+
+// Tool events no longer leave the machine: the wire format has no room for a
+// tool name or target. The tracker still reads them, because whether a tool
+// is open is one of the signals that decides busy vs idle.
+type CurrentTool = { name: string; target: string };
 
 type Listener = (message: ServerMessage) => void;
 
@@ -40,6 +48,7 @@ type Subagent = {
 type Session = {
   file: SessionFile;
   model: string;
+  lastWriteAt: number;
   tools: PendingTools;
   subagents: Map<string, Subagent>;
 };
@@ -55,16 +64,24 @@ export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
 
-  // `machine` is stamped on every state, so a hub can tell sessions apart by origin.
+  // `user` is stamped on every state: who runs the session, from this
+  // machine's env, same idea as `machine` used to be before it left the wire.
   constructor(
     private listener: Listener,
-    private machine = "",
+    private user = "",
   ) {}
 
   upsertSession(file: SessionFile, now: number) {
     const existing = this.sessions.get(file.sessionId);
     if (existing) existing.file = file;
-    else this.sessions.set(file.sessionId, { file, model: "", tools: new PendingTools(), subagents: new Map() });
+    else
+      this.sessions.set(file.sessionId, {
+        file,
+        model: "",
+        lastWriteAt: 0,
+        tools: new PendingTools(),
+        subagents: new Map(),
+      });
     this.emit(file.sessionId, now);
   }
 
@@ -83,10 +100,13 @@ export class SessionTracker {
   }
 
   // Emits after every event, so a tool that starts and ends in the same read
-  // still reaches clients as two updates instead of vanishing.
-  applySessionEvents(sessionId: string, events: TranscriptEvent[], now: number) {
+  // still reaches clients as two updates instead of vanishing. `writtenAt` is
+  // when the session transcript last changed, used to derive busy.
+  applySessionEvents(sessionId: string, events: TranscriptEvent[], writtenAt: number, now: number) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+    session.lastWriteAt = Math.max(session.lastWriteAt, writtenAt);
+    this.emit(sessionId, now);
     for (const event of events) {
       applyEvent(session, event);
       this.emit(sessionId, now);
@@ -146,30 +166,17 @@ export class SessionTracker {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     const { file } = session;
-    const subagents: AgentState[] = [...session.subagents.values()].map((subagent) => {
-      const currentTool = subagent.tools.current();
-      const recent = now - subagent.lastWriteAt < SUBAGENT_BUSY_MS;
-      return {
-        id: subagent.id,
-        name: subagent.name,
-        folder: baseName(file.cwd),
-        machine: this.machine,
-        status: currentTool || recent ? "busy" : "idle",
-        currentTool,
-        startedAt: subagent.startedAt,
-        model: subagent.model || subagent.alias,
-      };
-    });
+    const currentTool = session.tools.current();
+    const recentWrite = now - session.lastWriteAt < SESSION_BUSY_MS;
+    const status: AgentStatus = file.status === "busy" || currentTool !== null || recentWrite ? "busy" : "idle";
     return {
       id: file.sessionId,
-      name: file.name,
-      folder: baseName(file.cwd),
-      machine: this.machine,
-      status: file.status,
-      currentTool: session.tools.current(),
-      startedAt: file.startedAt,
+      user: this.user,
+      project: baseName(file.cwd),
       model: session.model,
-      subagents,
+      status,
+      subagents: session.subagents.size,
+      startedAt: file.startedAt,
     };
   }
 

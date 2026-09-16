@@ -4,19 +4,19 @@ import { plotCell } from "./plots.ts";
 
 export const ACCENT_COUNT = 8;
 
-// Same folder name, same accent, also across machines.
-export function accentIndexFor(folder: string): number {
+// Same project name, same accent, also across users.
+export function accentIndexFor(project: string): number {
   let hash = 0;
-  for (const char of folder) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of project) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % ACCENT_COUNT;
 }
 
 export const WALL_TINT_COUNT = 6;
 
-// Same machine, same hall color, also across reloads.
-export function wallTintIndexFor(machine: string): number {
+// Same user, same hall color, also across reloads.
+export function wallTintIndexFor(user: string): number {
   let hash = 0;
-  for (const char of machine) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of user) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % WALL_TINT_COUNT;
 }
 
@@ -35,9 +35,9 @@ export function parkBounds(indexes: number[]): Bounds {
 
 export const MAX_MOVING_CARS = 6;
 
-// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per busy subagent, up to 6.
-export function movingCarCount(lotBusy: boolean, busySubagents: number): number {
-  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? busySubagents : 0));
+// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per live subagent, up to 6.
+export function movingCarCount(lotBusy: boolean, subagents: number): number {
+  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? subagents : 0));
 }
 
 // One forklift trip per phase 0..1: lift at `from`, drive to `to`, lower, drive back empty.

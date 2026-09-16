@@ -5,9 +5,14 @@
 import type { ServerMessage, SessionState } from "./types.ts";
 
 // Bump when ServerMessage or AgentState change shape in a way an older hub cannot show.
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
-export type Hello = { type: "hello"; machine: string; protocol: number };
+// `machine` stays in the hello even though it left the session state: the
+// hello is one message per connection, not per session, so it costs nothing
+// on the wire per session. The hub uses it to prefix session ids and to let a
+// reconnecting machine take over its own sessions. `user` rides along on
+// every session instead.
+export type Hello = { type: "hello"; protocol: number; user: string; machine: string; token?: string };
 export type RelayMessage = Hello | ServerMessage;
 
 const RELAY_TYPES = new Set(["hello", "snapshot", "session-update", "session-removed"]);
@@ -65,12 +70,7 @@ export class Hub {
   }
 
   private put(ids: Set<string>, machine: string, session: SessionState): ServerMessage {
-    const stamped: SessionState = {
-      ...session,
-      id: prefixed(machine, session.id),
-      machine,
-      subagents: session.subagents.map((s) => ({ ...s, machine })),
-    };
+    const stamped: SessionState = { ...session, id: prefixed(machine, session.id) };
     ids.add(stamped.id);
     this.sessions.set(stamped.id, stamped);
     return { type: "session-update", session: stamped };

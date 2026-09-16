@@ -2,13 +2,20 @@ import { hostname } from "node:os";
 import { describe, expect, it, vi } from "vitest";
 import { ConfigError, DEFAULT_PORT, loadConfig } from "../config.ts";
 
+const osUser = vi.hoisted(() => ({ username: "wahid" }));
+
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
-  return { ...actual, hostname: () => "Wahid-MacBook.local" };
+  return {
+    ...actual,
+    hostname: () => "Wahid-MacBook.local",
+    userInfo: () => ({ ...actual.userInfo(), username: osUser.username }),
+  };
 });
 
 const rootDir = "/repo";
 const noEnv: Record<string, string | undefined> = {};
+const withUser = { USER: "dennis" };
 
 describe("loadConfig", () => {
   it("defaults to local mode, loopback host and serving the page", () => {
@@ -87,5 +94,39 @@ describe("loadConfig", () => {
     const config = loadConfig({ env: { MACHINE: "" }, argv: [], rootDir });
     expect(config.machine).toBe(hostname().split(".")[0].toLowerCase());
     expect(config.machine).toBe("wahid-macbook");
+  });
+
+  it("uses USER when set", () => {
+    const config = loadConfig({ env: withUser, argv: [], rootDir });
+    expect(config.user).toBe("dennis");
+  });
+
+  it("trims USER", () => {
+    const config = loadConfig({ env: { USER: "  dennis  " }, argv: [], rootDir });
+    expect(config.user).toBe("dennis");
+  });
+
+  it("falls back to the OS user name when USER is empty", () => {
+    const config = loadConfig({ env: { USER: "" }, argv: [], rootDir });
+    expect(config.user).toBe("wahid");
+  });
+
+  it("refuses to start when neither USER nor the OS user name is available", () => {
+    osUser.username = "";
+    try {
+      expect(() => loadConfig({ env: { USER: "" }, argv: [], rootDir })).toThrow(ConfigError);
+    } finally {
+      osUser.username = "wahid";
+    }
+  });
+
+  it("defaults the token to an empty string", () => {
+    const config = loadConfig({ env: withUser, argv: [], rootDir });
+    expect(config.token).toBe("");
+  });
+
+  it("trims FACTORY_TOKEN", () => {
+    const config = loadConfig({ env: { ...withUser, FACTORY_TOKEN: "  secret  " }, argv: [], rootDir });
+    expect(config.token).toBe("secret");
   });
 });

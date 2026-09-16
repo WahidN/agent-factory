@@ -8,7 +8,7 @@
 
 import { WebSocket } from "ws";
 import { PROTOCOL, type RelayMessage } from "../server/hub.ts";
-import type { AgentState, CurrentTool, ServerMessage, SessionState } from "../server/types.ts";
+import type { ServerMessage, SessionState } from "../server/types.ts";
 
 const SPOKES = Number(process.env.SPOKES) || 10;
 const SESSIONS_PER_SPOKE = Number(process.env.SESSIONS_PER_SPOKE) || 5;
@@ -33,19 +33,11 @@ const PROJECTS = [
   "status-page",
 ];
 
-const MODELS = [
-  "claude-haiku-4-5-20251001",
-  "claude-sonnet-4-5-20250929",
-  "claude-opus-4-5-20251003",
-  "claude-fable-1-20250815",
-];
+// Real model ids, so a fake park sorts into the same lot sizes as a real one.
+// tierFor in web/model-tier.ts matches on the family name, not the date.
+const MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-5", "claude-opus-5", "claude-fable-5-1"];
 
-const TOOLS: CurrentTool[] = [
-  { name: "Bash", target: "pnpm test" },
-  { name: "Edit", target: "src/index.ts" },
-  { name: "Read", target: "README.md" },
-  { name: "Grep", target: "TODO" },
-];
+const USERS = ["dennis", "wahid", "daan", "sara", "mo", "lynn", "abdel", "noor", "finn", "iris"];
 
 // A small seeded PRNG (mulberry32) so a run with SEED is reproducible. Falls
 // back to Math.random when no SEED is given.
@@ -78,47 +70,29 @@ function randomBetween(rng: () => number, min: number, max: number): number {
 }
 
 let nextSessionSeq = 0;
-let nextSubagentSeq = 0;
 
 // Builds one fake session. This is the only place the session shape is
-// assembled: phase 2 changes SessionState/AgentState to seven flat fields,
-// and only this function needs to change when that lands.
-function makeSession(rng: () => number, now: number): SessionState {
+// assembled: phase 2 already landed, so a future wire change only needs to
+// touch this function.
+function makeSession(rng: () => number, now: number, user: string): SessionState {
   const id = `s${nextSessionSeq++}`;
   const project = pick(rng, PROJECTS);
   const startedAt = now - Math.floor(randomBetween(rng, 0, 30 * 60_000));
-  const subagentCount = Math.floor(randomBetween(rng, 0, 4));
-  const subagents: AgentState[] = Array.from({ length: subagentCount }, () => makeSubagent(rng, now));
 
   return {
     id,
-    name: project,
-    folder: project,
-    machine: "", // stamped by the hub on relay, left blank here
+    user,
+    project,
+    model: pick(rng, MODELS),
     status: rng() < 0.6 ? "busy" : "idle",
-    currentTool: rng() < 0.7 ? pick(rng, TOOLS) : null,
+    subagents: Math.floor(randomBetween(rng, 0, 4)),
     startedAt,
-    model: pick(rng, MODELS),
-    subagents,
-  };
-}
-
-function makeSubagent(rng: () => number, now: number): AgentState {
-  const id = `sub${nextSubagentSeq++}`;
-  return {
-    id,
-    name: `subagent-${id}`,
-    folder: pick(rng, PROJECTS),
-    machine: "",
-    status: rng() < 0.6 ? "busy" : "idle",
-    currentTool: rng() < 0.7 ? pick(rng, TOOLS) : null,
-    startedAt: now - Math.floor(randomBetween(rng, 0, 5 * 60_000)),
-    model: pick(rng, MODELS),
   };
 }
 
 type Spoke = {
   machine: string;
+  user: string;
   rng: () => number;
   socket: WebSocket | null;
   sessions: Map<string, SessionState>;
@@ -140,7 +114,7 @@ function connectSpoke(spoke: Spoke) {
   spoke.socket = socket;
   socket.on("open", () => {
     spoke.connected = true;
-    send(spoke, { type: "hello", machine: spoke.machine, protocol: PROTOCOL });
+    send(spoke, { type: "hello", protocol: PROTOCOL, user: spoke.user, machine: spoke.machine });
     sendSnapshot(spoke);
   });
   socket.on("close", () => {
@@ -156,7 +130,7 @@ function tick(spoke: Spoke, now: number) {
   const roll = spoke.rng();
 
   if (roll < 0.1 && spoke.sessions.size < SESSIONS_PER_SPOKE * 2) {
-    const session = makeSession(spoke.rng, now);
+    const session = makeSession(spoke.rng, now, spoke.user);
     spoke.sessions.set(session.id, session);
     send(spoke, { type: "session-update", session } satisfies ServerMessage);
     return;
@@ -174,17 +148,14 @@ function tick(spoke: Spoke, now: number) {
   const session = spoke.sessions.get(id);
   if (!session) return;
 
-  const changed: SessionState = { ...session, subagents: [...session.subagents] };
+  const changed: SessionState = { ...session };
   const detail = spoke.rng();
-  if (detail < 0.4) {
+  if (detail < 0.5) {
     changed.status = changed.status === "busy" ? "idle" : "busy";
-    changed.currentTool = changed.status === "busy" && spoke.rng() < 0.7 ? pick(spoke.rng, TOOLS) : null;
-  } else if (detail < 0.7 && changed.subagents.length < 4) {
-    changed.subagents.push(makeSubagent(spoke.rng, now));
-  } else if (changed.subagents.length > 0) {
-    changed.subagents.splice(Math.floor(randomBetween(spoke.rng, 0, changed.subagents.length)), 1);
-  } else {
-    changed.currentTool = spoke.rng() < 0.5 ? pick(spoke.rng, TOOLS) : null;
+  } else if (detail < 0.8 && changed.subagents < 4) {
+    changed.subagents += 1;
+  } else if (changed.subagents > 0) {
+    changed.subagents -= 1;
   }
 
   spoke.sessions.set(id, changed);
@@ -194,13 +165,14 @@ function tick(spoke: Spoke, now: number) {
 function makeSpoke(index: number): Spoke {
   const machine = `fake-${String(index + 1).padStart(2, "0")}`;
   const rng = makeRng(SEED ? `${SEED}:${machine}` : undefined);
+  const user = pick(rng, USERS);
   const now = Date.now();
   const sessions = new Map<string, SessionState>();
   for (let i = 0; i < SESSIONS_PER_SPOKE; i++) {
-    const session = makeSession(rng, now);
+    const session = makeSession(rng, now, user);
     sessions.set(session.id, session);
   }
-  return { machine, rng, socket: null, sessions, connected: false };
+  return { machine, user, rng, socket: null, sessions, connected: false };
 }
 
 console.log(

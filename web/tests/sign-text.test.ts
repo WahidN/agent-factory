@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialsFor, machineSlug, modelLabel, truncate } from "../sign-text.ts";
+import { avatarSlug, initialsFor, modelLabel, truncate } from "../sign-text.ts";
 
 describe("modelLabel", () => {
   it("labels dated ids by dropping the date suffix", () => {
@@ -26,18 +26,18 @@ describe("modelLabel", () => {
   });
 });
 
-describe("machineSlug", () => {
+describe("avatarSlug", () => {
   it("lowercases and collapses non alphanumeric runs to one dash", () => {
-    expect(machineSlug("MacBook-Pro-van-Wahid")).toBe("macbook-pro-van-wahid");
-    expect(machineSlug("dennis passway.local")).toBe("dennis-passway-local");
+    expect(avatarSlug("MacBook-Pro-van-Wahid")).toBe("macbook-pro-van-wahid");
+    expect(avatarSlug("dennis passway.local")).toBe("dennis-passway-local");
   });
 
   it("trims leading and trailing dashes", () => {
-    expect(machineSlug("--Wahid--")).toBe("wahid");
+    expect(avatarSlug("--Wahid--")).toBe("wahid");
   });
 
-  it("returns an empty machine name unchanged", () => {
-    expect(machineSlug("")).toBe("");
+  it("returns an empty user name unchanged", () => {
+    expect(avatarSlug("")).toBe("");
   });
 });
 

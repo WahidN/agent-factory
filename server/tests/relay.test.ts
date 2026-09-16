@@ -9,14 +9,12 @@ import type { SessionState } from "../types.ts";
 function session(id: string): SessionState {
   return {
     id,
-    name: id,
-    folder: "shop",
-    machine: "mac-b",
-    status: "idle",
-    currentTool: null,
-    startedAt: 1,
+    user: "dennis",
+    project: "shop",
     model: "",
-    subagents: [],
+    status: "idle",
+    subagents: 0,
+    startedAt: 1,
   };
 }
 
@@ -57,12 +55,12 @@ describe("startRelay", () => {
     const hub = await fakeHub();
     wss = hub.wss;
     const connection = nextConnection(hub.wss);
-    relay = startRelay(hub.url, "mac-b", () => [session("a")], { log: () => {} });
+    relay = startRelay(hub.url, "mac-b", "dennis", "", () => [session("a")], { log: () => {} });
 
     const { received } = await connection;
     await until(() => received.length === 2);
     expect(hub.paths).toEqual(["/relay"]);
-    expect(received[0]).toEqual({ type: "hello", machine: "mac-b", protocol: PROTOCOL });
+    expect(received[0]).toEqual({ type: "hello", protocol: PROTOCOL, user: "dennis", machine: "mac-b" });
     expect(received[1]).toEqual({ type: "snapshot", sessions: [session("a")] });
 
     relay.send({ type: "session-removed", id: "a" });
@@ -75,7 +73,7 @@ describe("startRelay", () => {
     wss = hub.wss;
     let sessions = [session("a")];
     const first = nextConnection(hub.wss);
-    relay = startRelay(hub.url, "mac-b", () => sessions, { retryMs: 20, log: () => {} });
+    relay = startRelay(hub.url, "mac-b", "dennis", "", () => sessions, { retryMs: 20, log: () => {} });
     const { socket, received } = await first;
     await until(() => received.length === 2);
 
@@ -87,7 +85,7 @@ describe("startRelay", () => {
 
     const again = await second;
     await until(() => again.received.length === 2);
-    expect(again.received[0]).toEqual({ type: "hello", machine: "mac-b", protocol: PROTOCOL });
+    expect(again.received[0]).toEqual({ type: "hello", protocol: PROTOCOL, user: "dennis", machine: "mac-b" });
     expect(again.received[1]).toEqual({ type: "snapshot", sessions: [session("b")] });
     expect(received).toHaveLength(2);
   });
@@ -99,7 +97,7 @@ describe("startRelay", () => {
     await once(hub.wss, "close");
 
     const lines: string[] = [];
-    relay = startRelay(url, "mac-b", () => [], { retryMs: 10, log: (line) => lines.push(line) });
+    relay = startRelay(url, "mac-b", "dennis", "", () => [], { retryMs: 10, log: (line: string) => lines.push(line) });
     await new Promise((r) => setTimeout(r, 80));
     expect(lines.filter((l) => l.includes("retrying"))).toHaveLength(1);
 

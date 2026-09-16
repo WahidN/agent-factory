@@ -3,7 +3,7 @@
 // file watcher. Pure: takes the environment, returns a value, throws on
 // nonsense. Nothing here touches the disk or the network.
 
-import { hostname } from "node:os";
+import { hostname, userInfo } from "node:os";
 
 // `central`  accepts reporters on /relay and serves the page to the office.
 // `reporter` reads this Mac and relays to a central, nothing listens.
@@ -22,6 +22,10 @@ export type Config = {
   webRoot: string;
   /** False in `reporter` mode: no HTTP server, no static files. */
   serveWeb: boolean;
+  /** Who runs the sessions on this machine, from USER in the environment. */
+  user: string;
+  /** Guard rail token, checked by a central; empty means it accepts everyone. */
+  token: string;
 };
 
 export const DEFAULT_PORT = 4317;
@@ -51,6 +55,8 @@ export function loadConfig({ env, argv, rootDir }: Input): Config {
     machine: machineFrom(env.MACHINE),
     webRoot: mode === "reporter" ? "" : `${rootDir}/web/dist`,
     serveWeb: mode !== "reporter",
+    user: userFrom(env.USER),
+    token: (env.FACTORY_TOKEN ?? "").trim(),
   };
 }
 
@@ -93,5 +99,18 @@ function machineFrom(raw: string | undefined): string {
   if (given) return given;
   const fallback = hostname().split(".")[0].toLowerCase();
   if (!fallback) throw new ConfigError("Could not read a host name. Set MACHINE to name this machine.");
+  return fallback;
+}
+
+function userFrom(raw: string | undefined): string {
+  const given = raw?.trim();
+  if (given) return given;
+  let fallback = "";
+  try {
+    fallback = userInfo().username?.trim() ?? "";
+  } catch {
+    fallback = "";
+  }
+  if (!fallback) throw new ConfigError("Could not read a user name. Set USER to identify this machine's sessions.");
   return fallback;
 }

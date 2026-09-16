@@ -15,6 +15,8 @@ type Options = { retryMs?: number; log?: (line: string) => void };
 export function startRelay(
   hubUrl: string,
   machine: string,
+  user: string,
+  token: string,
   snapshot: () => SessionState[],
   options: Options = {},
 ): Relay {
@@ -31,7 +33,10 @@ export function startRelay(
       socket = ws;
       announced = false;
       log(`relay: connected to ${url}`);
-      ws.send(JSON.stringify({ type: "hello", machine, protocol: PROTOCOL } satisfies RelayMessage));
+      const hello: RelayMessage = token
+        ? { type: "hello", protocol: PROTOCOL, user, machine, token }
+        : { type: "hello", protocol: PROTOCOL, user, machine };
+      ws.send(JSON.stringify(hello));
       ws.send(JSON.stringify({ type: "snapshot", sessions: snapshot() } satisfies ServerMessage));
     });
     ws.on("error", () => {}); // a close always follows, and that is where we retry

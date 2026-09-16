@@ -11,7 +11,7 @@ import {
 import { plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
-  it("gives the same accent for the same folder", () => {
+  it("gives the same accent for the same project", () => {
     expect(accentIndexFor("/Volumes/Based/Projects")).toBe(accentIndexFor("/Volumes/Based/Projects"));
   });
 
@@ -25,22 +25,22 @@ describe("accentIndexFor", () => {
 });
 
 describe("wallTintIndexFor", () => {
-  it("gives the same hall color for the same machine", () => {
-    expect(wallTintIndexFor("dennispassway-macbook")).toBe(wallTintIndexFor("dennispassway-macbook"));
+  it("gives the same hall color for the same user", () => {
+    expect(wallTintIndexFor("dennispassway")).toBe(wallTintIndexFor("dennispassway"));
   });
 
   it("stays within the palette", () => {
-    for (const machine of ["a", "macbook-pro", "dennispassway-macbook", ""]) {
-      const index = wallTintIndexFor(machine);
+    for (const user of ["a", "wahid", "dennispassway", ""]) {
+      const index = wallTintIndexFor(user);
       expect(index).toBeGreaterThanOrEqual(0);
       expect(index).toBeLessThan(WALL_TINT_COUNT);
     }
   });
 
-  // These are the two machines that sit side by side in practice; the hash
+  // These are the two users that sit side by side in practice; the hash
   // must split them so their halls are visibly different colors.
-  it("gives different colors for the two machines in the office", () => {
-    expect(wallTintIndexFor("dennispassway-macbook")).not.toBe(wallTintIndexFor("macbook-pro-van-wahid"));
+  it("gives different colors for the two users in the office", () => {
+    expect(wallTintIndexFor("dennispassway")).not.toBe(wallTintIndexFor("wahid"));
   });
 });
 

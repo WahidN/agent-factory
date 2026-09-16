@@ -68,9 +68,6 @@ function handle(message: ServerMessage) {
   } else if (message.type === "session-removed") {
     remove(message.id);
   }
-  // Machine names on signs and tooltips only once the park mixes machines.
-  const machines = new Set([...lots.values()].map((lot) => lot.state.machine));
-  document.body.classList.toggle("many-machines", machines.size > 1);
 }
 
 // Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.

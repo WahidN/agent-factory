@@ -3,6 +3,9 @@
 // central process instead of importing the module in-process.
 
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { PROTOCOL } from "../hub.ts";
@@ -18,11 +21,18 @@ function nextPort() {
   return 39000 + Math.floor(Math.random() * 5000);
 }
 
-function startCentral(port: number, token: string): Promise<void> {
+function startCentral(port: number, token: string, home?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     child = spawn("node", ["--import", "tsx", "server/index.ts", "--hub"], {
       cwd: process.cwd(),
-      env: { ...process.env, PORT: String(port), MACHINE: "test-hub", USER: "tester", FACTORY_TOKEN: token },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        MACHINE: "test-hub",
+        USER: "tester",
+        FACTORY_TOKEN: token,
+        ...(home ? { HOME: home } : {}),
+      },
     });
     const timeout = setTimeout(() => reject(new Error("central did not start in time")), 10_000);
     child.stdout.on("data", (chunk: Buffer) => {
@@ -81,5 +91,19 @@ describe("central token guard rail", () => {
     await new Promise((r) => setTimeout(r, 300));
     expect(closedEarly).toEqual([]);
     ws.close();
+  }, 15_000);
+});
+
+// The Pi runs the central and nothing else, so it has no Claude Code and no
+// ~/.claude at all. fs.watch throws synchronously on a missing folder, which
+// took the whole process down before it ever listened.
+describe("a machine with no ~/.claude", () => {
+  it("still starts and serves", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-factory-empty-home-"));
+    const port = nextPort();
+    await startCentral(port, "", home);
+    const response = await fetch(`http://127.0.0.1:${port}/healthz`);
+    expect(response.status).toBe(503); // central, no reporters yet
+    await rm(home, { recursive: true, force: true });
   }, 15_000);
 });

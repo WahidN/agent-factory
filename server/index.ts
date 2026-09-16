@@ -479,14 +479,36 @@ httpServer.listen(PORT, HOST, () => {
   if (HUB_URL) console.log(`relaying to ${HUB_URL} as ${MACHINE}`);
 });
 
-watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions)).on("error", (error) =>
-  console.error("[watch sessions]", error),
-);
+// fs.watch throws synchronously when the folder is missing, so the error
+// handler below never gets a chance and an uncaught ENOENT would take the
+// whole process down at startup. A central on a Pi has no Claude Code
+// installed and therefore no ~/.claude/sessions at all, which is exactly the
+// machine this has to survive. Without the watcher the five second check
+// below still picks sessions up, and it retries the watch once the folder
+// appears.
+let sessionsWatcher: FSWatcher | null = null;
+
+function watchSessionsDir() {
+  if (sessionsWatcher) return;
+  try {
+    sessionsWatcher = watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions));
+    sessionsWatcher.on("error", (error) => {
+      console.error("[watch sessions]", error);
+      sessionsWatcher?.close();
+      sessionsWatcher = null;
+    });
+  } catch {
+    sessionsWatcher = null; // no sessions folder yet, the periodic check covers it
+  }
+}
+
+watchSessionsDir();
 
 // Safety net for missed file events, dead pids, and subagent timing.
 // Uses its own key so frequent session file writes can't keep postponing it.
 setInterval(() => {
   debounce("check", async () => {
+    watchSessionsDir(); // cheap no-op once the watcher is up
     tracker.tick(Date.now());
     await refreshSessions();
   });

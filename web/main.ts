@@ -96,11 +96,10 @@ function remove(id: string) {
   });
 }
 
-// A batch is every message from one server tick; a lone message is treated as
-// a batch of one, so it behaves exactly as before. Either way, lots are
-// applied first and the park (roads, kerbs, lamps, trees) is rebuilt at most
-// once, not once per lot: a snapshot of 150 sessions used to call refocus 150
-// times.
+// A batch holds every message from one server tick, and a lone message counts
+// as a batch of one. Lots are applied first, then the park (roads, kerbs,
+// lamps, trees) is rebuilt at most once for the whole batch: rebuilding it per
+// lot costs 150 full rebuilds on a 150 session snapshot.
 function handle(message: ServerMessage) {
   everReceived = true;
   let fitNow = false;

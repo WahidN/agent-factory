@@ -64,8 +64,8 @@ export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
 
-  // `user` is stamped on every state: who runs the session, from this
-  // machine's env, same idea as `machine` used to be before it left the wire.
+  // `user` is stamped on every state: who runs the session, read once from
+  // this machine's environment.
   constructor(
     private listener: Listener,
     private user = "",

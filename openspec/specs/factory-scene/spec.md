@@ -4,7 +4,7 @@
 Turns the live agent state into a 3D low-poly town where each Claude Code session is a factory that animates while its agent works, so activity is readable at a glance.
 ## Requirements
 ### Requirement: One factory per session
-The scene SHALL show one industrial lot for each listed session, labeled with the session name. A lot SHALL contain a grey flat-roof main hall with window grids, rooftop vents, a loading dock, and a colored base stripe, inside a fenced asphalt yard with the lot's machines. Sessions that share a working folder SHALL share an accent color, used on the hall's base stripe, the dock door, and the name sign.
+The scene SHALL show one industrial lot for each listed session, labeled with the session name. A lot SHALL contain a grey flat-roof main hall with window grids, rooftop vents, a loading dock, and a colored base stripe, inside a fenced asphalt yard with the lot's machines. Sessions that share a folder name SHALL share an accent color, used on the hall's base stripe, the dock door, and the name sign. When the listed sessions come from more than one machine, every sign SHALL also show its session's machine name. When they all come from one machine, no sign SHALL show a machine name.
 
 The hall and machines SHALL be sized by the session's model tier:
 
@@ -22,12 +22,24 @@ The yard, fence, gate, dock door, hall door, parked cars, warehouse slots and wo
 - **THEN** one lot per session appears, each with a sign showing the session name
 
 #### Scenario: Same folder
-- **WHEN** two sessions have the same working folder
+- **WHEN** two sessions have the same folder name, on the same machine or on different machines
 - **THEN** their lots use the same accent color
 
 #### Scenario: Different folders
-- **WHEN** two sessions have different working folders and the same model tier
+- **WHEN** two sessions have different folder names and the same model tier
 - **THEN** their halls look the same apart from the accent color and name
+
+#### Scenario: One machine
+- **WHEN** every listed session comes from the same machine
+- **THEN** no sign shows a machine name
+
+#### Scenario: Second machine joins
+- **WHEN** a session from a second machine is added to a park that showed one machine
+- **THEN** every sign, including those already shown, shows its machine name
+
+#### Scenario: Back to one machine
+- **WHEN** the last session from the other machine is removed
+- **THEN** the machine names disappear from the remaining signs
 
 #### Scenario: Small model
 - **WHEN** a session's model id is `claude-haiku-4-5-20251001`
@@ -123,7 +135,7 @@ Each subagent SHALL be shown as a small grey warehouse inside its parent's yard.
 - **THEN** 4 warehouses are shown and the parent's sign shows a count of 2 more
 
 ### Requirement: Hover details
-Hovering a main hall or a warehouse SHALL show a tooltip with its name, status, current tool with label, and model id. The model line SHALL be left out while the model is empty. The tooltip SHALL NOT show the working folder.
+Hovering a main hall or a warehouse SHALL show a tooltip with its name, status, current tool with label, and model id. The model line SHALL be left out while the model is empty. When the listed sessions come from more than one machine, the tooltip SHALL also show the machine name. The tooltip SHALL NOT show the working folder.
 
 #### Scenario: Hover busy factory
 - **WHEN** the pointer is over a main hall whose agent runs `claude-opus-5` and is editing `page.tsx`
@@ -136,6 +148,10 @@ Hovering a main hall or a warehouse SHALL show a tooltip with its name, status, 
 #### Scenario: Model not known yet
 - **WHEN** the pointer is over a hall whose session has no model yet
 - **THEN** the tooltip shows name, status, and tool, and no model line
+
+#### Scenario: Hover in a park with two machines
+- **WHEN** the park shows sessions from two machines and the pointer is over a hall or a warehouse
+- **THEN** the tooltip also shows the machine name of that session
 
 #### Scenario: Pointer leaves
 - **WHEN** the pointer moves off all halls and warehouses

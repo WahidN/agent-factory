@@ -23,6 +23,18 @@ if [[ -z "$NODE_PATH" ]]; then
   exit 1
 fi
 
+# launchd gets no shell, so the plist needs an absolute path to node. A version
+# manager gives one that holds the version number, and that path is gone the
+# day you switch versions. With KeepAlive on, the agent then restarts and dies
+# every ten seconds in a log nobody opens.
+if [[ "$NODE_PATH" == *"/.nvm/"* || "$NODE_PATH" == *"/.fnm/"* || "$NODE_PATH" == *"/.volta/"* ]]; then
+  echo "Let op: node staat op $NODE_PATH"
+  echo "Dat pad hoort bij een versiebeheerder en verdwijnt zodra je van node-versie wisselt."
+  echo "De agent stopt dan met werken. Een pad buiten je versiebeheerder is veiliger,"
+  echo "of maak een symlink die je zelf bijwerkt."
+  echo
+fi
+
 # The agent runs `node --import tsx server/index.ts` straight from this
 # checkout. Without node_modules that dies with ERR_MODULE_NOT_FOUND every
 # time launchd restarts it.

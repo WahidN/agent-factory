@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
+import { createFilterPanel, EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom, type Filter } from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
 import { Lot } from "./lot.ts";
@@ -38,6 +39,13 @@ const places = new Map<string, { x: number; z: number }>();
 // the shared instanced meshes, so 150 lots cost the same per frame as 20.
 const lots = new Map<string, Lot>();
 const leaving = new Set<Lot>();
+// Rebuilt only when the detailed set changes, not once per frame: the
+// tooltip only needs a fresh list right before it raycasts against it.
+let pickablesCache: THREE.Object3D[] | null = null;
+function pickables(): THREE.Object3D[] {
+  if (!pickablesCache) pickablesCache = [...lots.values()].flatMap((lot) => lot.pickables());
+  return pickablesCache;
+}
 // Sessions that arrived since the last redistribute, so a brand new lot still
 // rises out of the ground while one that only swapped level does not.
 const arriving = new Set<string>();
@@ -77,6 +85,7 @@ function remove(id: string) {
     return;
   }
   lots.delete(id);
+  pickablesCache = null;
   leaving.add(lot);
   lot.remove(() => {
     leaving.delete(lot);
@@ -113,6 +122,9 @@ function handle(message: ServerMessage) {
   // plain status change just rides along in the instance data.
   if (changed) redistribute();
   else syncFar();
+  applyDetailVisibility();
+  const { users, projects } = optionsFrom([...sessions.values()]);
+  filterPanel.setOptions(users, projects);
 }
 
 function applyPlain(message: PlainMessage) {
@@ -210,6 +222,7 @@ function redistribute() {
     lots.set(id, lot);
   }
   arriving.clear();
+  pickablesCache = null;
   syncFar();
 }
 
@@ -218,6 +231,7 @@ function syncFar() {
   const entries: FarLot[] = [];
   for (const [id, session] of sessions) {
     if (lots.has(id)) continue;
+    if (!matchesFilter(session, filter)) continue; // hidden by the filter panel
     const place = places.get(id);
     if (!place) continue;
     entries.push({
@@ -232,6 +246,31 @@ function syncFar() {
   }
   far.sync(entries, performance.now());
 }
+
+// ---------- Filter panel ----------
+
+let filter: Filter = EMPTY_FILTER;
+
+// A hidden lot is simply not drawn: simpler than a dimmed material variant,
+// and just as clear at a glance which sessions match.
+function applyDetailVisibility() {
+  for (const lot of lots.values()) lot.group.visible = matchesFilter(lot.state, filter);
+}
+
+const filterPanel = createFilterPanel(
+  (next) => {
+    filter = next;
+    applyDetailVisibility();
+    syncFar();
+  },
+  (user) => {
+    const points = [...places]
+      .map(([id, place]) => ({ user: sessions.get(id)?.user, ...place }))
+      .filter((p): p is { user: string; x: number; z: number } => p.user !== undefined);
+    const target = jumpTarget(user, points);
+    if (target) view.panTo(target.x, target.z);
+  },
+);
 
 // ---------- Connection ----------
 
@@ -254,9 +293,7 @@ function connect() {
 
 // ---------- Frame loop ----------
 
-const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLElement>("#tooltip")!, () =>
-  [...lots.values()].flatMap((lot) => lot.pickables()),
-);
+const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLElement>("#tooltip")!, pickables);
 
 view.onFrame((dt, now) => {
   stats?.recordFrame(dt * 1000);

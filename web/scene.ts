@@ -15,9 +15,14 @@ const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometri
 
 export function createScene(canvas: HTMLCanvasElement) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // The sun is fixed and buildings do not move, so the shadow map only needs
+  // a redraw when the layout changes or the camera settles somewhere new
+  // (see the distance check in the render loop below), not every frame.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   renderer.toneMapping = THREE.NeutralToneMapping;
 
   const scene = new THREE.Scene();
@@ -73,6 +78,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
+    renderer.shadowMap.needsUpdate = true; // layout changed, the map is stale
     if (fit) {
       const wanted = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left);
       camera.zoom = THREE.MathUtils.clamp(wanted, controls.minZoom, controls.maxZoom);
@@ -84,6 +90,7 @@ export function createScene(canvas: HTMLCanvasElement) {
     const { clientWidth: width, clientHeight: height } = canvas;
     renderer.setSize(width, height, false);
     composer.setSize(width, height);
+    ao.setSize(Math.max(1, width / 2), Math.max(1, height / 2)); // half res, still reads fine blended in
     const aspect = width / height;
     Object.assign(camera, {
       left: (-VIEW_HEIGHT * aspect) / 2,
@@ -100,6 +107,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   const timer = new THREE.Timer();
   timer.connect(document); // avoids a huge delta after the tab was hidden
   const move = new THREE.Vector3();
+  const lastShadowSunPos = sun.position.clone();
+  const SHADOW_UPDATE_DISTANCE = 0.5; // world units the sun must drift before a redraw is worth it
   renderer.setAnimationLoop((timestamp) => {
     timer.update(timestamp);
     const dt = Math.min(timer.getDelta(), 0.1);
@@ -115,15 +124,26 @@ export function createScene(canvas: HTMLCanvasElement) {
 
     sun.target.position.copy(controls.target);
     sun.position.copy(controls.target).add(sunOffset);
+    if (sun.position.distanceTo(lastShadowSunPos) > SHADOW_UPDATE_DISTANCE) {
+      renderer.shadowMap.needsUpdate = true;
+      lastShadowSunPos.copy(sun.position);
+    }
 
     for (const callback of callbacks) callback(dt, now);
     composer.render(dt);
   });
 
+  // Glides the orbit center to a point without touching the shadow area or
+  // the zoom, for a "jump to me" click rather than a layout change.
+  function panTo(x: number, z: number) {
+    focusTarget.set(x, 0, z);
+  }
+
   return {
     scene,
     camera,
     focus,
+    panTo,
     onFrame: (callback: FrameCallback) => callbacks.add(callback),
   };
 }

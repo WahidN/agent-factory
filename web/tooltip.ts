@@ -16,38 +16,53 @@ export function createTooltip(
   let screen: { x: number; y: number } | null = null;
   let hovered: Hoverable | null = null;
   let rendered = "";
+  // Only the pointer moving can change what is under it; re-raycasting every
+  // frame re-tests hundreds of meshes for no reason while the mouse sits
+  // still. A still-hovered lot's text can still change every frame below,
+  // since that just rereads its already-known state.
+  let dirty = true;
 
   canvas.addEventListener("pointermove", (event) => {
     const rect = canvas.getBoundingClientRect();
     screen = { x: event.clientX, y: event.clientY };
-    pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    pointer.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    dirty = true;
   });
-  canvas.addEventListener("pointerleave", () => (screen = null));
+  canvas.addEventListener("pointerleave", () => {
+    screen = null;
+    dirty = true;
+  });
 
-  // Called every frame, so the tooltip follows state changes and camera motion.
+  // Called every frame, so the tooltip's text still follows state changes and
+  // camera motion; the raycast itself only reruns when the pointer moved.
   function update() {
-    hovered = null;
-    if (screen) {
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(pickables(), false)[0];
-      const target = hit?.object.userData.hover as Hoverable | undefined;
-      if (target && !target.gone) hovered = target;
+    if (dirty) {
+      dirty = false;
+      hovered = null;
+      if (screen) {
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(pickables(), false)[0];
+        const target = hit?.object.userData.hover as Hoverable | undefined;
+        if (target && !target.gone) hovered = target;
+      }
     }
 
+    if (hovered?.gone) hovered = null; // the lot left without the pointer moving
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
-    const { name, status, currentTool, model, machine } = hovered.state;
-    const tool = currentTool ? `${currentTool.name} ${currentTool.target}`.trim() : "no tool running";
-    const key = [name, status, tool, model, machine].join("\n");
+    const { user, project, status, model } = hovered.state;
+    const key = [user, project, status, model].join("\n");
     if (key !== rendered) {
       rendered = key;
       element.replaceChildren(
-        line("name", name),
+        line("name", user),
         line(status, status),
-        line("tool", tool),
+        line("project", project),
         ...(model ? [line("model", model)] : []), // no line until the transcript names a model
-        ...(machine ? [line("machine", machine)] : []), // shown only while body.many-machines
       );
     }
 

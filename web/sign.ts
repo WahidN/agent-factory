@@ -5,13 +5,10 @@
 import * as THREE from "three";
 import { drawAvatarCircle, loadAvatar } from "./avatar.ts";
 import { MATERIALS, standard } from "./palette.ts";
-import { machineSlug, initialsFor, truncate } from "./sign-text.ts";
+import { avatarSlug, initialsFor, truncate } from "./sign-text.ts";
 
 export type SignData = {
-  name: string;
-  folder: string;
-  machine: string;
-  model: string;
+  user: string;
   overflow: number;
 };
 
@@ -29,11 +26,10 @@ const POST_INSET = 0.6; // distance of each post's center from the board edge
 const CANVAS_WIDTH = 2048;
 const CANVAS_HEIGHT = 768;
 
-// Only folder, machine (the avatar) and overflow are drawn on the board, so
-// a change in name or model alone is not a visible change.
+// Only the user (name and avatar) and overflow are drawn on the board.
 function sameData(a: SignData | null, b: SignData): boolean {
   if (!a) return false;
-  return a.folder === b.folder && a.machine === b.machine && a.overflow === b.overflow;
+  return a.user === b.user && a.overflow === b.overflow;
 }
 
 export class Sign {
@@ -124,13 +120,13 @@ export class Sign {
 
   update(data: SignData): void {
     if (sameData(this.data, data)) return;
-    const machineChanged = this.data?.machine !== data.machine;
+    const userChanged = this.data?.user !== data.user;
     this.data = data;
 
-    if (machineChanged) {
+    if (userChanged) {
       this.avatarImage = null;
       const token = ++this.avatarToken;
-      loadAvatar(machineSlug(data.machine)).then((img) => {
+      loadAvatar(avatarSlug(data.user)).then((img) => {
         if (this.disposed || token !== this.avatarToken) return;
         this.avatarImage = img;
         this.draw();
@@ -149,23 +145,35 @@ export class Sign {
     const avatarCx = 384;
     const avatarCy = 384;
     const avatarRadius = 280;
-    drawAvatarCircle(ctx, this.avatarImage, avatarCx, avatarCy, avatarRadius, `#${this.accent.getHexString()}`, initialsFor(this.data?.machine ?? ""));
+    drawAvatarCircle(
+      ctx,
+      this.avatarImage,
+      avatarCx,
+      avatarCy,
+      avatarRadius,
+      `#${this.accent.getHexString()}`,
+      initialsFor(this.data?.user ?? ""),
+    );
 
-    // Just the project name, large and centered in the space beside the avatar.
+    // Just the user name, large and centered in the space beside the avatar.
     const textX = 760;
     const maxWidth = CANVAS_WIDTH - textX - 80;
-    const folder = this.data?.folder ?? "";
+    const user = this.data?.user ?? "";
     ctx.fillStyle = "#2b2f36";
     ctx.textBaseline = "middle";
-    // Shrink to fit before cutting: a long folder name reads better small than
+    // Shrink to fit before cutting: a long user name reads better small than
     // chopped off. Below 110px it stops shrinking and truncate takes over.
     let size = 220;
     const fit = () => {
       ctx.font = `700 ${size}px system-ui, sans-serif`;
-      return ctx.measureText(folder).width;
+      return ctx.measureText(user).width;
     };
     while (fit() > maxWidth && size > 110) size -= 10;
-    ctx.fillText(truncate(folder, maxWidth, (s) => ctx.measureText(s).width), textX, CANVAS_HEIGHT / 2);
+    ctx.fillText(
+      truncate(user, maxWidth, (s) => ctx.measureText(s).width),
+      textX,
+      CANVAS_HEIGHT / 2,
+    );
     ctx.textBaseline = "alphabetic";
 
     if (this.data && this.data.overflow > 0) {

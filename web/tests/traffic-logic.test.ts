@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { advance, gapAhead, laneLength, lotLanes, pickNext, roadGraph, spawnVehicle, stepVehicles, vehiclePose, type Vehicle } from "../traffic-logic.ts";
+import {
+  advance,
+  gapAhead,
+  laneLength,
+  lotLanes,
+  pickNext,
+  roadGraph,
+  spawnVehicle,
+  stepVehicles,
+  vehiclePose,
+  type Vehicle,
+} from "../traffic-logic.ts";
 
 // Seeded random, so routes are the same on every run.
 function seeded(seed: number) {
@@ -10,7 +21,13 @@ function seeded(seed: number) {
   };
 }
 
-const car = (lane: string, s: number, roads = roadGraph([0])): Vehicle => ({ lane, next: pickNext(roads, lane, () => 0), s, speed: 10, length: 3.8 });
+const car = (lane: string, s: number, roads = roadGraph([0])): Vehicle => ({
+  lane,
+  next: pickNext(roads, lane, () => 0),
+  s,
+  speed: 10,
+  length: 3.8,
+});
 
 describe("roadGraph", () => {
   it("gives a lot two lanes on each of its 4 roads", () => {

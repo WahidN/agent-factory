@@ -1,0 +1,6 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["server/index.ts", "web/main.ts", "vite.config.ts", "scripts/fake-park.ts"],
+  "project": ["**/*.ts"],
+  "ignoreExportsUsedInFile": true
+}

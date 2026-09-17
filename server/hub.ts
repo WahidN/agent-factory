@@ -2,13 +2,30 @@
 // Pure: no sockets and no clock. index.ts feeds it one machine's messages and
 // broadcasts whatever comes back.
 
-import type { ServerMessage, SessionState } from "./types.ts";
+import type { PlainMessage, SessionState } from "./types.ts";
 
 // Bump when ServerMessage or AgentState change shape in a way an older hub cannot show.
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
+// The oldest protocol a hub still accepts. Thirty Macs cannot update in
+// lockstep, so a hub takes a range [MIN_PROTOCOL, PROTOCOL] instead of one
+// exact number. Raise this only once every reporter in the fleet has moved
+// past it.
+export const MIN_PROTOCOL = 2;
 
-export type Hello = { type: "hello"; machine: string; protocol: number };
-export type RelayMessage = Hello | ServerMessage;
+// Whether a hub speaking PROTOCOL still understands a reporter on `protocol`.
+export function protocolSupported(protocol: number): boolean {
+  return protocol >= MIN_PROTOCOL && protocol <= PROTOCOL;
+}
+
+// `machine` stays in the hello even though it left the session state: the
+// hello is one message per connection, not per session, so it costs nothing
+// on the wire per session. The hub uses it to prefix session ids and to let a
+// reconnecting machine take over its own sessions. `user` rides along on
+// every session instead.
+export type Hello = { type: "hello"; protocol: number; user: string; machine: string; token?: string };
+// A reporter never batches: batching only happens between the hub and the
+// browsers it feeds, one tick at a time.
+export type RelayMessage = Hello | PlainMessage;
 
 const RELAY_TYPES = new Set(["hello", "snapshot", "session-update", "session-removed"]);
 
@@ -32,13 +49,13 @@ export class Hub {
 
   // Turns one relayed message into the messages to broadcast. A snapshot also
   // removes whatever this machine sent before that is no longer in the list.
-  apply(machine: string, message: ServerMessage): ServerMessage[] {
+  apply(machine: string, message: PlainMessage): PlainMessage[] {
     const ids = this.owned.get(machine);
     if (!ids) return [];
     switch (message.type) {
       case "snapshot": {
         const keep = new Set(message.sessions.map((s) => prefixed(machine, s.id)));
-        const out: ServerMessage[] = [];
+        const out: PlainMessage[] = [];
         for (const id of [...ids]) if (!keep.has(id)) out.push(this.drop(ids, id));
         for (const session of message.sessions) out.push(this.put(ids, machine, session));
         return out;
@@ -53,7 +70,7 @@ export class Hub {
   }
 
   // The machine's connection closed: everything it sent goes away.
-  leave(machine: string): ServerMessage[] {
+  leave(machine: string): PlainMessage[] {
     const ids = this.owned.get(machine);
     if (!ids) return [];
     this.owned.delete(machine);
@@ -64,19 +81,14 @@ export class Hub {
     return [...this.sessions.values()];
   }
 
-  private put(ids: Set<string>, machine: string, session: SessionState): ServerMessage {
-    const stamped: SessionState = {
-      ...session,
-      id: prefixed(machine, session.id),
-      machine,
-      subagents: session.subagents.map((s) => ({ ...s, machine })),
-    };
+  private put(ids: Set<string>, machine: string, session: SessionState): PlainMessage {
+    const stamped: SessionState = { ...session, id: prefixed(machine, session.id) };
     ids.add(stamped.id);
     this.sessions.set(stamped.id, stamped);
     return { type: "session-update", session: stamped };
   }
 
-  private drop(ids: Set<string>, id: string): ServerMessage {
+  private drop(ids: Set<string>, id: string): PlainMessage {
     ids.delete(id);
     this.sessions.delete(id);
     return { type: "session-removed", id };

@@ -1,11 +1,10 @@
-// A lit sign box on the hall's front wall showing the machine's face, like a
+// A lit sign box on the hall's front wall showing the project name, like a
 // company logo above a factory entrance. It glows with the session's activity,
 // the same way the windows do.
 
 import * as THREE from "three";
 import { COLORS, MATERIALS, standard } from "./palette.ts";
-import { drawAvatarCircle, loadAvatar } from "./avatar.ts";
-import { machineSlug, initialsFor } from "./sign-text.ts";
+import { truncate } from "./sign-text.ts";
 
 const CANVAS_SIZE = 512;
 const HOUSING_DEPTH = 0.35;
@@ -25,15 +24,11 @@ export class LightBox {
   private frontMaterial: THREE.MeshStandardMaterial;
   private rimMaterial: THREE.MeshStandardMaterial;
   private ownGeometries: THREE.BufferGeometry[] = [];
-  private accent: THREE.Color;
-  private machine: string | null = null;
-  private token = 0; // bumped on dispose/machine change so a late onload draws nothing
-  private disposed = false;
+  private project: string | null = null;
 
   // `size` is the box's width and height in world units; `accent` is the lot's
-  // accent color, used for the initials fallback.
+  // accent color, used for the rim.
   constructor(accent: THREE.Color, size: number) {
-    this.accent = accent;
     this.group = new THREE.Group();
 
     this.canvas = document.createElement("canvas");
@@ -76,23 +71,14 @@ export class LightBox {
     this.pickables = [front, housing];
 
     // Draw the fallback immediately, so the box is never blank.
-    this.draw(null);
+    this.draw();
   }
 
-  // Swaps the face when the machine changes. Redraws only on a real change.
-  update(machine: string): void {
-    if (machine === this.machine) return;
-    this.machine = machine;
-
-    // Draw the fallback right away so the box never goes blank while the
-    // photo is loading, then swap in the real photo once it resolves.
-    this.draw(null);
-
-    const token = ++this.token;
-    loadAvatar(machineSlug(machine)).then((img) => {
-      if (this.disposed || token !== this.token) return;
-      this.draw(img);
-    });
+  // Swaps the project name. Redraws only on a real change.
+  update(project: string): void {
+    if (project === this.project) return;
+    this.project = project;
+    this.draw();
   }
 
   // 0 = dark (idle), 1 = fully lit (busy). Called every frame.
@@ -101,8 +87,6 @@ export class LightBox {
   }
 
   dispose(): void {
-    this.disposed = true;
-    this.token++; // guard against a late onload
     this.texture.dispose();
     this.frontMaterial.dispose();
     this.rimMaterial.dispose();
@@ -110,11 +94,32 @@ export class LightBox {
     // MATERIALS.darkSteel is shared scene-wide and is never disposed here.
   }
 
-  private draw(image: HTMLImageElement | null): void {
+  private draw(): void {
     const ctx = this.ctx;
     ctx.fillStyle = "#1b1f26";
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-    drawAvatarCircle(ctx, image, 256, 256, 200, `#${this.accent.getHexString()}`, initialsFor(this.machine ?? ""));
+
+    const text = this.project ?? "";
+    const maxWidth = CANVAS_SIZE - 80;
+    ctx.fillStyle = "#f2f2f2";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    // Shrink to fit before cutting: a long project name reads better small
+    // than chopped off. Below 48px it stops shrinking and truncate takes over.
+    let size = 120;
+    const fit = () => {
+      ctx.font = `700 ${size}px system-ui, sans-serif`;
+      return ctx.measureText(text).width;
+    };
+    while (fit() > maxWidth && size > 48) size -= 6;
+    ctx.fillText(
+      truncate(text, maxWidth, (s) => ctx.measureText(s).width),
+      CANVAS_SIZE / 2,
+      CANVAS_SIZE / 2,
+    );
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
+
     this.texture.needsUpdate = true;
   }
 }

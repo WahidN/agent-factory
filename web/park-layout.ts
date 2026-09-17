@@ -4,19 +4,19 @@ import { plotCell } from "./plots.ts";
 
 export const ACCENT_COUNT = 8;
 
-// Same folder name, same accent, also across machines.
-export function accentIndexFor(folder: string): number {
+// Same project name, same accent, also across users.
+export function accentIndexFor(project: string): number {
   let hash = 0;
-  for (const char of folder) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of project) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % ACCENT_COUNT;
 }
 
 export const WALL_TINT_COUNT = 6;
 
-// Same machine, same hall color, also across reloads.
-export function wallTintIndexFor(machine: string): number {
+// Same user, same hall color, also across reloads.
+export function wallTintIndexFor(user: string): number {
   let hash = 0;
-  for (const char of machine) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of user) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % WALL_TINT_COUNT;
 }
 
@@ -33,11 +33,41 @@ export function parkBounds(indexes: number[]): Bounds {
   };
 }
 
+// Half the size of the park, with a margin of one and a half plots so the
+// outer roads and verges are not cut off.
+export const PARK_MARGIN_PLOTS = 1.5;
+
+export function parkHalfExtent(bounds: Bounds, plotSize: number): number {
+  const span = Math.max(bounds.maxCol - bounds.minCol, bounds.maxRow - bounds.minRow);
+  return (span + PARK_MARGIN_PLOTS) * (plotSize / 2);
+}
+
+// The zoom that puts the whole park on screen. A square town seen
+// isometrically is about 1.9 half extents tall and 3 wide.
+export function fitZoom(halfExtent: number, viewHeight: number, viewWidth: number): number {
+  return Math.min(viewHeight / (halfExtent * 1.9), viewWidth / (halfExtent * 3));
+}
+
+// How far the camera may zoom out. It has to be low enough that the park the
+// project is designed for still fits: see the test next to this file, which
+// pins 150 and 300 lots against this number.
+export const MIN_ZOOM = 0.08;
+export const MAX_ZOOM = 4;
+
+// One tight box per user district, plus the whole park's own box (parkBounds
+// above already gives that, fed the union of every user's indexes). Meant
+// for fase 4b: per-district LOD or culling instead of per-lot.
+export type DistrictBounds = Bounds & { user: string };
+
+export function districtBounds(indexesByUser: Map<string, number[]>): DistrictBounds[] {
+  return [...indexesByUser].map(([user, indexes]) => ({ user, ...parkBounds(indexes) }));
+}
+
 export const MAX_MOVING_CARS = 6;
 
-// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per busy subagent, up to 6.
-export function movingCarCount(lotBusy: boolean, busySubagents: number): number {
-  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? busySubagents : 0));
+// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per live subagent, up to 6.
+export function movingCarCount(lotBusy: boolean, subagents: number): number {
+  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? subagents : 0));
 }
 
 // One forklift trip per phase 0..1: lift at `from`, drive to `to`, lower, drive back empty.

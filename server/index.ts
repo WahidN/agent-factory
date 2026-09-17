@@ -1,11 +1,15 @@
-// Glue: watches Claude Code files, feeds the tracker, streams state over WebSocket.
-// Read-only on ~/.claude. Listens on 127.0.0.1 unless started with --hub.
+// Glue: watches Claude Code files, feeds the tracker, streams state over
+// WebSocket, and (unless in reporter mode) serves the built page. One
+// process, one port.
 
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { watch, type FSWatcher } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
-import { basename, join } from "node:path";
+import { basename, extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
+import { createBatcher } from "./batcher.ts";
 import {
   dropPartialFirstLine,
   parseSessionFile,
@@ -15,19 +19,33 @@ import {
   type SessionFile,
   type TranscriptEvent,
 } from "./claude-reader.ts";
-import { Hub, parseRelayMessage, PROTOCOL } from "./hub.ts";
+import { ConfigError, loadConfig } from "./config.ts";
+import { health } from "./health.ts";
+import { createHeartbeat } from "./heartbeat.ts";
+import { Hub, MIN_PROTOCOL, parseRelayMessage, PROTOCOL, protocolSupported } from "./hub.ts";
+import { createMetrics } from "./metrics.ts";
 import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
-import type { ServerMessage } from "./types.ts";
+import type { PlainMessage, ServerMessage } from "./types.ts";
 
-// `--hub` opens the port to the network and takes other machines' sessions on /relay.
-// `HUB=ws://host:4317` sends our sessions to such a hub instead.
-const IS_HUB = process.argv.includes("--hub");
-const HUB_URL = process.env.HUB ?? "";
-const HOST = IS_HUB ? "0.0.0.0" : "127.0.0.1";
-const PORT = Number(process.env.PORT) || 4317;
-// Short host name, `MACHINE=wahid` overrides the default Mac name.
-const MACHINE = process.env.MACHINE || hostname().split(".")[0].toLowerCase();
+const rootDir = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+
+let config: ReturnType<typeof loadConfig>;
+try {
+  config = loadConfig({ env: process.env, argv: process.argv, rootDir });
+} catch (error) {
+  if (error instanceof ConfigError) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  throw error;
+}
+
+const IS_HUB = config.mode === "central";
+const HUB_URL = config.hubUrl;
+const HOST = config.host;
+const PORT = config.port;
+const MACHINE = config.machine;
 const CLAUDE_DIR = join(homedir(), ".claude");
 const SESSIONS_DIR = join(CLAUDE_DIR, "sessions");
 const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
@@ -35,34 +53,83 @@ const TAIL_BYTES = 64 * 1024;
 const DEBOUNCE_MS = 50;
 const CHECK_EVERY_MS = 5_000;
 
-// ---------- WebSocket ----------
+// ---------- HTTP + WebSocket, one server, one port ----------
 
-const wss = new WebSocketServer({ host: HOST, port: PORT });
+const httpServer = createServer(handleRequest);
+const wss = new WebSocketServer({ noServer: true });
 
-function broadcast(message: ServerMessage) {
+// Every connected socket, browsers on /ws and reporters on /relay alike, is
+// pinged every HEARTBEAT_MS. A socket that misses two pings in a row is
+// terminated (not closed: a half dead socket never answers a close either).
+export const HEARTBEAT_MS = 30_000;
+const heartbeat = createHeartbeat<WebSocket>();
+
+setInterval(() => {
+  for (const dead of heartbeat.onTick()) dead.terminate();
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) client.ping();
+  }
+}, HEARTBEAT_MS);
+
+let lastUpdateAt = 0;
+
+function sendToBrowsers(message: ServerMessage) {
   const data = JSON.stringify(message);
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) client.send(data);
   }
 }
 
+// Messages that land in the same tick go out as one "batch", so a snapshot
+// of 150 sessions is one send instead of 150.
+const batcher = createBatcher(sendToBrowsers);
+
+function broadcast(message: PlainMessage) {
+  if (message.type === "session-update") lastUpdateAt = Date.now();
+  batcher.push(message);
+}
+
 const tracker = new SessionTracker((message) => {
   log(message);
   broadcast(message);
   relay?.send(message);
-}, MACHINE);
+}, config.user);
 
-const relay = HUB_URL ? startRelay(HUB_URL, MACHINE, () => tracker.snapshot(Date.now())) : null;
+const relay = HUB_URL
+  ? startRelay(HUB_URL, MACHINE, config.user, config.token, () => tracker.snapshot(Date.now()))
+  : null;
 
 // Browsers connect on /ws and get our sessions plus everything relayed to us.
-// Other machines connect on /relay, hub mode only.
+// Other machines connect on /relay, central mode only.
 const hub = new Hub();
 const reporters = new Map<string, WebSocket>(); // machine -> its open relay socket
+const metrics = createMetrics();
+
+httpServer.on("upgrade", (request, socket, head) => {
+  const path = request.url?.split("?")[0] ?? "";
+  if (path === "/ws") {
+    wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+    return;
+  }
+  if (path === "/relay") {
+    if (!IS_HUB) {
+      socket.write("HTTP/1.1 400 Bad Request\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+    return;
+  }
+  socket.destroy();
+});
 
 wss.on("connection", (socket, request) => {
+  heartbeat.onConnect(socket);
+  socket.on("pong", () => heartbeat.onPong(socket));
+  socket.on("close", () => heartbeat.forget(socket));
+
   if (request.url === "/relay") {
-    if (IS_HUB) acceptReporter(socket, request.socket.remoteAddress ?? "?");
-    else socket.close(1008, "not started with --hub");
+    acceptReporter(socket, request.socket.remoteAddress ?? "?");
     return;
   }
   const sessions = [...tracker.snapshot(Date.now()), ...hub.remote()];
@@ -79,10 +146,19 @@ function acceptReporter(socket: WebSocket, from: string) {
     const message = parseRelayMessage(data.toString());
     if (!machine) {
       if (message?.type !== "hello") return socket.close(1002, "expected hello");
-      if (message.protocol !== PROTOCOL) {
+      if (!protocolSupported(message.protocol)) {
         const time = new Date().toLocaleTimeString();
-        console.log(`${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub speaks ${PROTOCOL}`);
-        return socket.close(1002, `protocol ${PROTOCOL} expected`);
+        console.log(
+          `${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub accepts ${MIN_PROTOCOL}-${PROTOCOL}`,
+        );
+        return socket.close(1002, `protocol ${MIN_PROTOCOL}-${PROTOCOL} expected`);
+      }
+      // A guard rail against a misdirected reporter, not authentication: no
+      // timing safe compare, and a hub with no token configured accepts
+      // everyone.
+      if (config.token && message.token !== config.token) {
+        console.log(`${new Date().toLocaleTimeString()}  refused  ${message.machine}: bad token`);
+        return socket.close(1008, "bad token");
       }
       machine = message.machine;
       // A machine that restarted before its old socket was seen dead takes over its own sessions.
@@ -90,10 +166,14 @@ function acceptReporter(socket: WebSocket, from: string) {
       reporters.set(machine, socket);
       old?.terminate();
       hub.join(machine);
-      console.log(`${new Date().toLocaleTimeString()}  joined   ${machine} from ${from}`);
+      metrics.join(machine, message.protocol, Date.now());
+      console.log(
+        `${new Date().toLocaleTimeString()}  joined   ${machine} (protocol ${message.protocol}) from ${from}`,
+      );
       return;
     }
     if (!message || message.type === "hello") return;
+    metrics.message(machine, Date.now());
     for (const out of hub.apply(machine, message)) {
       log(out);
       broadcast(out);
@@ -102,6 +182,7 @@ function acceptReporter(socket: WebSocket, from: string) {
   socket.on("close", () => {
     if (!machine || reporters.get(machine) !== socket) return; // replaced by a newer socket
     reporters.delete(machine);
+    metrics.leave(machine);
     for (const out of hub.leave(machine)) {
       log(out);
       broadcast(out);
@@ -120,7 +201,10 @@ const readQueues = new Map<string, Promise<unknown>>();
 // Reads of the same file wait for each other, so no bytes are handled twice.
 function readNewEvents(path: string): Promise<ReadResult> {
   const read = (readQueues.get(path) ?? Promise.resolve()).then(() => readNewEventsNow(path));
-  readQueues.set(path, read.catch(() => {}));
+  readQueues.set(
+    path,
+    read.catch(() => {}),
+  );
   return read;
 }
 
@@ -240,7 +324,7 @@ async function syncTranscript(sessionId: string) {
   const watched = watchedSessions.get(sessionId);
   if (!watched?.projectDir) return;
   const result = await readNewEvents(join(watched.projectDir, `${sessionId}.jsonl`));
-  if (result) tracker.applySessionEvents(sessionId, result.events, Date.now());
+  if (result) tracker.applySessionEvents(sessionId, result.events, result.mtimeMs, Date.now());
 }
 
 async function syncSubagent(sessionId: string, fileName: string) {
@@ -315,6 +399,106 @@ async function exists(path: string) {
   return (await stat(path).catch(() => null)) !== null;
 }
 
+// ---------- HTTP: static page + healthz ----------
+
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".woff2": "font/woff2",
+};
+
+const BUILD_MISSING_HTML = `<!doctype html>
+<html><head><meta charset="utf-8"><title>agent-factory</title></head>
+<body><h1>Not built yet</h1><p>Run <code>pnpm build</code> to produce web/dist, then restart the server.</p></body>
+</html>`;
+
+async function handleRequest(request: IncomingMessage, response: ServerResponse) {
+  const path = (request.url ?? "/").split("?")[0];
+
+  if (path === "/healthz") {
+    const result = health({ mode: config.mode, reporters: reporters.size, lastUpdateAt, now: Date.now() });
+    response.writeHead(result.status, { "Content-Type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(result.body));
+    return;
+  }
+
+  if (path === "/metrics") {
+    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(metrics.snapshot(Date.now())));
+    return;
+  }
+
+  if (!config.serveWeb) {
+    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Not found");
+    return;
+  }
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    response.writeHead(405, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Method not allowed");
+    return;
+  }
+
+  await serveStatic(path, request.method, response);
+}
+
+async function serveStatic(urlPath: string, method: string | undefined, response: ServerResponse) {
+  // Decode first: without this a file whose name holds a space or an accent is
+  // never found, and percent escapes would be the only thing standing between a
+  // request and a traversal. The check below is what actually stops traversal,
+  // so decoding costs nothing.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(urlPath);
+  } catch {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end(method === "HEAD" ? undefined : "Bad request");
+    return;
+  }
+
+  const relative = decoded === "/" ? "index.html" : decoded.slice(1);
+  // Normalize and resolve against webRoot, then check the result is still
+  // inside webRoot. This is what stops "/../../etc/passwd" and an absolute
+  // path from ever reading a file outside the built page.
+  const requested = resolve(config.webRoot, normalize(relative));
+  const withinRoot = requested === config.webRoot || requested.startsWith(config.webRoot + sep);
+  if (!withinRoot) {
+    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Not found");
+    return;
+  }
+
+  const info = await stat(requested).catch(() => null);
+  if (!info?.isFile()) {
+    if (await isBuildMissing()) {
+      response.writeHead(503, { "Content-Type": "text/html; charset=utf-8" });
+      response.end(method === "HEAD" ? undefined : BUILD_MISSING_HTML);
+      return;
+    }
+    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end(method === "HEAD" ? undefined : "Not found");
+    return;
+  }
+
+  const contentType = CONTENT_TYPES[extname(requested)] ?? "application/octet-stream";
+  response.writeHead(200, { "Content-Type": contentType });
+  if (method === "HEAD") {
+    response.end();
+    return;
+  }
+  response.end(await readFile(requested));
+}
+
+async function isBuildMissing(): Promise<boolean> {
+  const info = await stat(config.webRoot).catch(() => null);
+  return !info;
+}
+
 // ---------- Logging ----------
 
 function log(message: ServerMessage) {
@@ -325,28 +509,55 @@ function log(message: ServerMessage) {
   }
   if (message.type !== "session-update") return;
   const { session } = message;
-  const tool = session.currentTool ? `${session.currentTool.name} ${session.currentTool.target}`.trim() : "-";
-  const subs = session.subagents.map((s) => `${s.name}:${s.status}`).join(", ");
-  const who = IS_HUB ? `${session.machine}/${session.name}` : session.name;
-  console.log(`${time}  ${who.padEnd(28)} ${session.status.padEnd(5)} ${tool}${subs ? `  [${subs}]` : ""}`);
+  const who = `${session.user}/${session.project}`;
+  console.log(`${time}  ${who.padEnd(28)} ${session.status.padEnd(5)} subagents=${session.subagents}`);
 }
 
 // ---------- Start ----------
 
-wss.on("listening", () => {
-  console.log(`agent-factory server on ws://${HOST}:${PORT}`);
-  if (IS_HUB) console.log(`hub: other machines start with HUB=ws://${hostname()}:${PORT}`);
-  if (HUB_URL) console.log(`relaying to ${HUB_URL} as ${MACHINE}`);
-});
+// A reporter claims no port at all: it only opens one outbound connection to
+// the hub, so it never collides with another process (or another reporter)
+// on the same machine. There is no local /healthz or /metrics in this mode,
+// the hub's copies of those are the ones that matter.
+if (config.mode === "reporter") {
+  console.log(`agent-factory reporter as ${MACHINE}: no local server, no port, relaying to ${HUB_URL}`);
+} else {
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`agent-factory server on http://${HOST}:${PORT}, websocket on /ws`);
+    if (IS_HUB) console.log(`hub: other machines start with HUB=ws://${hostname()}:${PORT}`);
+  });
+}
 
-watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions)).on("error", (error) =>
-  console.error("[watch sessions]", error),
-);
+// fs.watch throws synchronously when the folder is missing, so the error
+// handler below never gets a chance and an uncaught ENOENT would take the
+// whole process down at startup. A central on a Pi has no Claude Code
+// installed and therefore no ~/.claude/sessions at all, which is exactly the
+// machine this has to survive. Without the watcher the five second check
+// below still picks sessions up, and it retries the watch once the folder
+// appears.
+let sessionsWatcher: FSWatcher | null = null;
+
+function watchSessionsDir() {
+  if (sessionsWatcher) return;
+  try {
+    sessionsWatcher = watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions));
+    sessionsWatcher.on("error", (error) => {
+      console.error("[watch sessions]", error);
+      sessionsWatcher?.close();
+      sessionsWatcher = null;
+    });
+  } catch {
+    sessionsWatcher = null; // no sessions folder yet, the periodic check covers it
+  }
+}
+
+watchSessionsDir();
 
 // Safety net for missed file events, dead pids, and subagent timing.
 // Uses its own key so frequent session file writes can't keep postponing it.
 setInterval(() => {
   debounce("check", async () => {
+    watchSessionsDir(); // cheap no-op once the watcher is up
     tracker.tick(Date.now());
     await refreshSessions();
   });

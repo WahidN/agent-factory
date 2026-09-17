@@ -33,6 +33,12 @@ if [[ -z "$HUB" ]]; then
   echo "Een centrale is verplicht." >&2
   exit 1
 fi
+# The server rejects anything else and exits 1, and with KeepAlive on that is a
+# silent crash-loop in a log file nobody opens. Catch the typo here instead.
+if [[ ! "$HUB" =~ ^wss?:// ]]; then
+  echo "De centrale moet met ws:// of wss:// beginnen, niet \"$HUB\"." >&2
+  exit 1
+fi
 
 read -rsp "Token (leeg als de centrale er geen vraagt): " FACTORY_TOKEN
 echo
@@ -40,17 +46,49 @@ echo
 mkdir -p "$LOG_DIR"
 mkdir -p "$(dirname "$PLIST_PATH")"
 
-sed \
-  -e "s#__LABEL__#$LABEL#g" \
-  -e "s#__NODE__#$NODE_PATH#g" \
-  -e "s#__WORKDIR__#$REPO_DIR#g" \
-  -e "s#__HUB__#$HUB#g" \
-  -e "s#__USER__#$RUN_USER#g" \
-  -e "s#__MACHINE__#$MACHINE#g" \
-  -e "s#__FACTORY_TOKEN__#$FACTORY_TOKEN#g" \
-  -e "s#__LOG_OUT__#$LOG_DIR/reporter.out.log#g" \
-  -e "s#__LOG_ERR__#$LOG_DIR/reporter.err.log#g" \
-  "$TEMPLATE" > "$PLIST_PATH"
+# The plist is XML, so & < > in a value have to be escaped or launchd reads a
+# broken file. Everything here comes from what someone types at the prompt, a
+# token especially.
+xml_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  printf '%s' "$value"
+}
+
+# Filled in with bash's own substitution instead of sed: sed reads & and \ in a
+# replacement as references to the match, so a token holding an & used to end
+# up in the plist as the placeholder name, and a # broke the s-command outright.
+fill() {
+  local text="$1" key="$2" value
+  value="$(xml_escape "$3")"
+  printf '%s' "${text//"$key"/$value}"
+}
+
+PLIST="$(cat "$TEMPLATE")"
+PLIST="$(fill "$PLIST" __LABEL__ "$LABEL")"
+PLIST="$(fill "$PLIST" __NODE__ "$NODE_PATH")"
+PLIST="$(fill "$PLIST" __WORKDIR__ "$REPO_DIR")"
+PLIST="$(fill "$PLIST" __HUB__ "$HUB")"
+PLIST="$(fill "$PLIST" __USER__ "$RUN_USER")"
+PLIST="$(fill "$PLIST" __MACHINE__ "$MACHINE")"
+PLIST="$(fill "$PLIST" __FACTORY_TOKEN__ "$FACTORY_TOKEN")"
+PLIST="$(fill "$PLIST" __LOG_OUT__ "$LOG_DIR/reporter.out.log")"
+PLIST="$(fill "$PLIST" __LOG_ERR__ "$LOG_DIR/reporter.err.log")"
+
+# The plist carries the token, so it must not be readable by other accounts on
+# this Mac. Create it private, and fix the mode of one left behind by an older
+# run of this script.
+( umask 077 && printf '%s\n' "$PLIST" > "$PLIST_PATH" )
+chmod 600 "$PLIST_PATH"
+
+# Refuse to hand launchd a file it cannot parse, rather than let the agent
+# crash-loop in the background over a typo nobody sees.
+if ! plutil -lint "$PLIST_PATH" >/dev/null; then
+  echo "De plist is ongeldig geworden, controleer je invoer: $PLIST_PATH" >&2
+  exit 1
+fi
 
 echo "Plist geschreven naar $PLIST_PATH"
 

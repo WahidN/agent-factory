@@ -4,7 +4,9 @@
 
 export type AgentStatus = "busy" | "idle";
 
-// The whole wire format. Seven fields, about 120 bytes per session.
+// The whole wire format. Seven fields, and nothing else ever goes over the
+// line. Measured as JSON: 121 bytes for a short id and a short model name, 180
+// for a session id that is a UUID and a dated model id.
 export type AgentState = {
   id: string;
   user: string; // who runs the session, from USER in the reporter's env

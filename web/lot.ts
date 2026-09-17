@@ -89,6 +89,16 @@ function hallTop(size: LotSize) {
   return YARD_Y + STRIPE + size.bays * WALL_BAY.height;
 }
 
+// The hall's outer box per tier. The far level in instanced-lots.ts builds the
+// same volume from one merged geometry, so a lot does not jump size or move
+// when it swaps between the two levels.
+export type HallShape = { x0: number; z0: number; x1: number; z1: number; top: number };
+
+export function hallShape(tier: ModelTier): HallShape {
+  const size = SIZES[tier];
+  return { x0: size.hall.x0, z0: size.hall.z0, x1: HALL_X1, z1: HALL_Z1, top: hallTop(size) };
+}
+
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
 const HALL_DOOR = { x: 1.5, z: -3.3 };
@@ -190,8 +200,12 @@ export class Lot {
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
-  constructor(state: SessionState) {
+  // `settled` skips the rise out of the ground: a lot that only swapped from
+  // the far level to this one was already standing, so it must not replay its
+  // arrival every time the camera drifts past it.
+  constructor(state: SessionState, settled = false) {
     this.state = state;
+    this.appear = settled ? 1 : 0;
     this.tier = tierFor(state.model);
     this.accent = accentFor(state.project);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
@@ -209,7 +223,7 @@ export class Lot {
     parked.traverse((child) => (child.castShadow = child.receiveShadow = true));
 
     this.body.add(parked, this.workers.mesh);
-    this.body.position.y = -SINK_DEPTH;
+    this.body.position.y = settled ? 0 : -SINK_DEPTH;
     this.group.add(this.body);
     this.update(state, performance.now());
   }

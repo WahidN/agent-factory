@@ -25,6 +25,7 @@ export default defineConfig({
         "web/plots.ts",
         "web/park-layout.ts",
         "web/activity.ts",
+        "web/lod.ts",
         "web/model-tier.ts",
         "web/sign-text.ts",
         "web/static-builder.ts",

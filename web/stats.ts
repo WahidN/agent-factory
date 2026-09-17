@@ -69,7 +69,11 @@ export function interceptNextRenderer(renderer: typeof THREE.WebGLRenderer): {
   return { get: () => captured };
 }
 
-export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () => number) {
+// How many lots are on the park, and how many of those are drawn in full
+// detail. The gap between the two is what keeps the frame budget flat.
+export type LotCount = { detailed: number; total: number };
+
+export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () => LotCount) {
   const frameTimes = new RingBuffer(FRAME_WINDOW);
 
   // scene.ts renders through an EffectComposer, which calls renderer.render()
@@ -102,13 +106,13 @@ export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () 
 
   function render() {
     const { calls, triangles } = renderer.info.render;
-    const lots = countLots();
+    const { detailed, total } = countLots();
     el.textContent = [
       `draw calls  ${calls}`,
       `triangles   ${triangles}`,
       `frame avg   ${average(frameTimes.values()).toFixed(1)} ms`,
       `frame p95   ${percentile95(frameTimes.values()).toFixed(1)} ms`,
-      `lots        ${lots} / ${lots}`,
+      `lots        ${detailed} / ${total}`,
     ].join("\n");
   }
 

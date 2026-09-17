@@ -23,6 +23,14 @@ if [[ -z "$NODE_PATH" ]]; then
   exit 1
 fi
 
+# The agent runs `node --import tsx server/index.ts` straight from this
+# checkout. Without node_modules that fails with ERR_MODULE_NOT_FOUND, and
+# KeepAlive turns it into a crash-loop in a log file nobody opens.
+if [[ ! -d "$REPO_DIR/node_modules/tsx" ]]; then
+  echo "De dependencies staan er nog niet. Draai eerst: pnpm install" >&2
+  exit 1
+fi
+
 RUN_USER="${USER:-$(id -un)}"
 
 read -rp "Machinenaam (leeg = hostname): " MACHINE

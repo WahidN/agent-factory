@@ -15,6 +15,7 @@ export default defineConfig({
   test: {
     root: ".",
     include: ["server/tests/**/*.test.ts", "web/tests/**/*.test.ts"],
+    setupFiles: ["web/tests/setup-canvas.ts"],
     passWithNoTests: true,
     coverage: {
       provider: "v8",
@@ -23,6 +24,7 @@ export default defineConfig({
       include: [
         "server/**/*.ts",
         "web/plots.ts",
+        "web/city-plan.ts",
         "web/park-layout.ts",
         "web/activity.ts",
         "web/lod.ts",

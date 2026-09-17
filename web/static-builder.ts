@@ -85,7 +85,9 @@ export class StaticBuilder {
       const merged = mergeGeometries(pieces);
       for (const piece of pieces) piece.dispose();
       const mesh = new THREE.Mesh(merged, material);
-      mesh.castShadow = !material.transparent;
+      // A material can opt out of casting a shadow even when it is opaque:
+      // see the Waal's water in park.ts for why.
+      mesh.castShadow = !material.transparent && material.userData.castShadow !== false;
       mesh.receiveShadow = true;
       group.add(mesh);
     }

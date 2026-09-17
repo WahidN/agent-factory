@@ -10,9 +10,18 @@ import type { ServerMessage, SessionState } from "./types.ts";
 export const RETRY_MS = 2000;
 export const MAX_RETRY_MS = 30_000;
 
+// The hub pings every connected socket every 30 seconds and `ws` answers those
+// by itself, which is what lets the hub spot a dead reporter. Nothing told the
+// reporter the other way round. A hub that vanishes without a close frame (an
+// unplugged Pi, a switch that drops the LAN for a minute) leaves this socket
+// open as far as TCP is concerned, and the reporter relays into a hole until
+// someone restarts it. Three missed hub pings and we drop it ourselves, which
+// lands in the close handler below and reconnects with the usual backoff.
+export const SILENCE_MS = 90_000;
+
 export type Relay = { send(message: ServerMessage): void; close(): void };
 
-type Options = { retryMs?: number; log?: (line: string) => void; random?: () => number };
+type Options = { retryMs?: number; silenceMs?: number; log?: (line: string) => void; random?: () => number };
 
 // Full jitter: a delay picked uniformly between 0 and the exponentially
 // growing cap for this attempt (0-indexed, reset to 0 after a successful
@@ -32,9 +41,14 @@ export function startRelay(
   snapshot: () => SessionState[],
   options: Options = {},
 ): Relay {
-  const { retryMs = RETRY_MS, log = console.log, random = Math.random } = options;
+  const { retryMs = RETRY_MS, silenceMs = SILENCE_MS, log = console.log, random = Math.random } = options;
   const url = new URL("/relay", hubUrl).toString();
   let socket: WebSocket | null = null;
+  // The socket of the current attempt, open or not. `socket` only holds it once
+  // it opened, so without this a close() lands on nothing while a connect is in
+  // flight, and that attempt goes on to open and set a silence timer nobody
+  // clears.
+  let pending: WebSocket | null = null;
   let timer: NodeJS.Timeout | undefined;
   let stopped = false;
   let announced = false; // one log line per outage, not one per retry
@@ -42,10 +56,22 @@ export function startRelay(
 
   function connect() {
     const ws = new WebSocket(url);
+    pending = ws;
+    let silence: NodeJS.Timeout | undefined;
+    // Anything from the hub counts as a sign of life, but in practice it is the
+    // ping: a reporter gets no messages back.
+    const heard = () => {
+      clearTimeout(silence);
+      silence = setTimeout(() => ws.terminate(), silenceMs);
+    };
+    ws.on("ping", heard);
+    ws.on("pong", heard);
+    ws.on("message", heard);
     ws.on("open", () => {
       socket = ws;
       announced = false;
       attempt = 0;
+      heard();
       log(`relay: connected to ${url}`);
       const hello: RelayMessage = token
         ? { type: "hello", protocol: PROTOCOL, user, machine, token }
@@ -55,7 +81,9 @@ export function startRelay(
     });
     ws.on("error", () => {}); // a close always follows, and that is where we retry
     ws.on("close", (code, reason) => {
+      clearTimeout(silence);
       if (socket === ws) socket = null;
+      if (pending === ws) pending = null;
       if (stopped) return;
       const wait = backoffDelay(attempt, retryMs, MAX_RETRY_MS, random);
       attempt++;
@@ -76,7 +104,8 @@ export function startRelay(
     close() {
       stopped = true;
       clearTimeout(timer);
-      socket?.close();
+      if (socket) socket.close();
+      else pending?.terminate();
     },
   };
 }

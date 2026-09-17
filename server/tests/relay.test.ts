@@ -90,6 +90,35 @@ describe("startRelay", () => {
     expect(received).toHaveLength(2);
   });
 
+  it("drops a hub that goes silent and reconnects", async () => {
+    const hub = await fakeHub();
+    wss = hub.wss;
+    // This hub never pings, which is what a hub looks like from here once it is
+    // gone in a way TCP does not report. The socket must not survive that.
+    const connection = nextConnection(hub.wss);
+    relay = startRelay(hub.url, "mac-b", "dennis", "", () => [], { retryMs: 5, silenceMs: 60, log: () => {} });
+    const first = await connection;
+    await until(() => first.received.length === 2);
+
+    const closed = once(first.socket, "close");
+    await until(() => hub.paths.length === 2, 3000); // the relay came back on its own
+    await closed;
+  });
+
+  it("keeps a socket alive as long as the hub keeps pinging", async () => {
+    const hub = await fakeHub();
+    wss = hub.wss;
+    const connection = nextConnection(hub.wss);
+    relay = startRelay(hub.url, "mac-b", "dennis", "", () => [], { retryMs: 5, silenceMs: 100, log: () => {} });
+    const { socket, received } = await connection;
+    await until(() => received.length === 2);
+
+    const ping = setInterval(() => socket.ping(), 20);
+    await new Promise((r) => setTimeout(r, 300)); // three silence windows
+    clearInterval(ping);
+    expect(hub.paths).toHaveLength(1); // never reconnected
+  });
+
   it("keeps retrying while nothing listens, and logs the outage once", async () => {
     const hub = await fakeHub();
     const url = hub.url;

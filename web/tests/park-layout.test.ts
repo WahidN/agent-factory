@@ -63,16 +63,15 @@ describe("parkBounds", () => {
 });
 
 describe("movingCarCount", () => {
-  it("sends 2 cars from an idle lot", () => {
-    expect(movingCarCount(false, 0)).toBe(2);
-    expect(movingCarCount(false, 3)).toBe(2);
+  it("sends nothing from an idle lot", () => {
+    expect(movingCarCount(false, 0)).toBe(0);
+    expect(movingCarCount(false, 3)).toBe(0);
   });
 
-  it("sends 2 cars plus 1 per busy subagent, up to 6", () => {
-    expect(movingCarCount(true, 0)).toBe(2);
-    expect(movingCarCount(true, 3)).toBe(5);
-    expect(movingCarCount(true, 4)).toBe(6);
-    expect(movingCarCount(true, 6)).toBe(6);
+  it("sends 1 car per busy subagent, up to 6", () => {
+    expect(movingCarCount(true, 0)).toBe(0);
+    expect(movingCarCount(true, 3)).toBe(3);
+    expect(movingCarCount(true, 8)).toBe(6);
   });
 });
 

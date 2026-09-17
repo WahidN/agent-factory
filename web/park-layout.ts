@@ -35,9 +35,9 @@ export function parkBounds(indexes: number[]): Bounds {
 
 export const MAX_MOVING_CARS = 6;
 
-// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per busy subagent, up to 6.
+// An idle lot sends nothing. A busy lot sends 1 car per busy subagent, up to 6.
 export function movingCarCount(lotBusy: boolean, busySubagents: number): number {
-  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? busySubagents : 0));
+  return lotBusy ? Math.min(MAX_MOVING_CARS, busySubagents) : 0;
 }
 
 // One forklift trip per phase 0..1: lift at `from`, drive to `to`, lower, drive back empty.

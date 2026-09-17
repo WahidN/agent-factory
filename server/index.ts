@@ -105,8 +105,14 @@ const hub = new Hub();
 const reporters = new Map<string, WebSocket>(); // machine -> its open relay socket
 const metrics = createMetrics();
 
+// The upgrade handler routes on the path with any query string stripped, and
+// the connection handler below has to read it back the same way: matching on
+// the raw url there would route `/relay?x=1` into the browser branch, where a
+// reporter never joins the hub and its machine silently never shows up.
+const socketPath = (request: IncomingMessage) => request.url?.split("?")[0] ?? "";
+
 httpServer.on("upgrade", (request, socket, head) => {
-  const path = request.url?.split("?")[0] ?? "";
+  const path = socketPath(request);
   if (path === "/ws") {
     wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
     return;
@@ -128,7 +134,7 @@ wss.on("connection", (socket, request) => {
   socket.on("pong", () => heartbeat.onPong(socket));
   socket.on("close", () => heartbeat.forget(socket));
 
-  if (request.url === "/relay") {
+  if (socketPath(request) === "/relay") {
     acceptReporter(socket, request.socket.remoteAddress ?? "?");
     return;
   }

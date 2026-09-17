@@ -5,7 +5,8 @@
 import type { ServerMessage, SessionState } from "./types.ts";
 
 // Bump when ServerMessage or AgentState change shape in a way an older hub cannot show.
-export const PROTOCOL = 1;
+// 2: SessionState carries machineTokens.
+export const PROTOCOL = 2;
 
 export type Hello = { type: "hello"; machine: string; protocol: number };
 export type RelayMessage = Hello | ServerMessage;

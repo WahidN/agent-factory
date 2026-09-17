@@ -15,7 +15,9 @@ export type AgentState = {
   model: string; // model id from the transcript, empty until the first assistant message
 };
 
-export type SessionState = AgentState & { subagents: AgentState[] };
+// `machineTokens` is the season token total of the machine, the same on
+// every session it runs. 0 until the first scan of its transcripts is done.
+export type SessionState = AgentState & { subagents: AgentState[]; machineTokens: number };
 
 export type ServerMessage =
   | { type: "snapshot"; sessions: SessionState[] }

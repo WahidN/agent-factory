@@ -48,6 +48,24 @@ export function initialsFor(machine: string): string {
   return initials === "" ? "?" : initials;
 }
 
+// Short token count for the tooltip: 950, 12k, 2.5M, 408M, 4.4B, 25B. One
+// decimal below 10 of a unit, none above, and no trailing ".0". A value that
+// rounds up to the next unit (999.95k) is shown in that unit (1M).
+export function shortTokens(tokens: number): string {
+  const units: [number, string][] = [
+    [1e9, "B"],
+    [1e6, "M"],
+    [1e3, "k"],
+  ];
+  for (const [size, suffix] of units) {
+    if (tokens < size * 0.9995) continue;
+    const value = tokens / size;
+    const text = value < 9.95 ? value.toFixed(1).replace(/\.0$/, "") : Math.round(value).toString();
+    return text + suffix;
+  }
+  return Math.round(tokens).toString();
+}
+
 // Shortens `text` with a trailing "…" until `measure(result) <= maxWidth`.
 // `measure` is the caller's text width function (canvas measureText).
 // Text that already fits is returned unchanged. Never returns just "…" for

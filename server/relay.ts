@@ -58,15 +58,14 @@ export function startRelay(
     const ws = new WebSocket(url);
     pending = ws;
     let silence: NodeJS.Timeout | undefined;
-    // Anything from the hub counts as a sign of life, but in practice it is the
-    // ping: a reporter gets no messages back.
+    // The hub's ping is the only thing that ever arrives here: a reporter sends
+    // no pings of its own, so no pong comes back, and the hub keeps its
+    // broadcasts to the browser sockets.
     const heard = () => {
       clearTimeout(silence);
       silence = setTimeout(() => ws.terminate(), silenceMs);
     };
     ws.on("ping", heard);
-    ws.on("pong", heard);
-    ws.on("message", heard);
     ws.on("open", () => {
       socket = ws;
       announced = false;

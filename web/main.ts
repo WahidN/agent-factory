@@ -31,8 +31,8 @@ view.scene.add(traffic.group);
 
 // Every session on the park, whether it is drawn in full or as an instance.
 const sessions = new Map<string, SessionState>();
-// Where each session stands. Fixed when the session first arrives, the same
-// as before: a lot never slides to a new plot under a live viewer.
+// Where each session stands, refilled by syncPlaces() every time the set
+// changes, because the packed layout can move a session that did not change.
 const places = new Map<string, { x: number; z: number }>();
 // Only the nearest few sessions get a full Lot. Everything else comes out of
 // the shared instanced meshes, so 150 lots cost the same per frame as 20.
@@ -58,7 +58,7 @@ function upsert(session: SessionState) {
   if (!sessions.has(session.id)) {
     changed = true;
     arriving.add(session.id);
-    places.set(session.id, plotPosition(plots.assign(session.id, session.user)));
+    plots.assign(session.id, session.user); // syncPlaces() fills in where, once the batch is in
   }
   sessions.set(session.id, session);
   lots.get(session.id)?.update(session, performance.now());
@@ -126,8 +126,24 @@ function applyPlain(message: PlainMessage) {
   else remove(message.id);
 }
 
-// Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.
+// The layout is packed, so a session arriving or leaving can change the index
+// of the ones after it. A session that keeps the place it was given on arrival
+// ends up on a cell the park no longer draws a road to, and two of them can
+// land on the same cell. Every place is therefore read from the allocator
+// again whenever the set changes, which is exactly when this runs. Both the
+// detailed lots and the instanced ones read from this map.
+function syncPlaces() {
+  for (const id of sessions.keys()) {
+    const index = plots.indexOf(id);
+    if (index === undefined) continue;
+    const place = plotPosition(index);
+    places.set(id, place);
+    lots.get(id)?.group.position.set(place.x, 0, place.z);
+  }
+}
+
 function refocus(fit = false) {
+  syncPlaces();
   park.update(plots.indexes());
   traffic.setRoads(plots.indexes());
   const { x, z, half } = park.extent();

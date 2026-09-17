@@ -27,6 +27,7 @@ export default defineConfig({
         "web/city-plan.ts",
         "web/park-layout.ts",
         "web/activity.ts",
+        "web/leisure.ts",
         "web/lod.ts",
         "web/model-tier.ts",
         "web/sign-text.ts",

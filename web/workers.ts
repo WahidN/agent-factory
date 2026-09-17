@@ -6,7 +6,7 @@ import { standard } from "./palette.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
 import { createWorker, stepWorker, type Point, type Worker } from "./worker-logic.ts";
 
-export type WorkerSlot = { door: Point; route: [Point, Point] };
+export type WorkerSlot = { door: Point; route: [Point, Point]; gate: Point; destination: Point | null };
 
 // About 1.9 tall, facing +z.
 const workerGeometry = (() => {
@@ -42,10 +42,27 @@ export class LotWorkers {
     for (let i = 0; i < slots.length; i++) this.mesh.setMatrixAt(i, this.hidden);
   }
 
+  // Swaps in new slots (new doors, routes, gate, destinations) without
+  // touching `this.workers`: each worker keeps its current position and mode,
+  // so one already walking toward the old destination steers toward the new
+  // one from where it stands instead of jumping there.
+  setSlots(slots: WorkerSlot[]) {
+    this.slots = slots;
+  }
+
   // `busy` holds one flag per slot, in the same order as the slots.
   tick(dt: number, busy: boolean[]) {
     this.workers = this.workers.map((worker, i) =>
-      stepWorker(worker, dt, busy[i], this.slots[i].door, this.slots[i].route),
+      stepWorker(
+        worker,
+        dt,
+        busy[i],
+        this.slots[i].door,
+        this.slots[i].route,
+        this.slots[i].gate,
+        this.slots[i].destination,
+        i,
+      ),
     );
     this.workers.forEach((worker, i) => {
       if (worker.mode === "inside") {

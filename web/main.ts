@@ -144,12 +144,15 @@ function applyPlain(message: PlainMessage) {
 // again whenever the set changes, which is exactly when this runs. Both the
 // detailed lots and the instanced ones read from this map.
 function syncPlaces() {
+  const rankCount = plots.indexes().length;
   for (const id of sessions.keys()) {
     const index = plots.indexOf(id);
     if (index === undefined) continue;
     const place = plotPosition(index);
     places.set(id, place);
-    lots.get(id)?.group.position.set(place.x, 0, place.z);
+    const lot = lots.get(id);
+    lot?.group.position.set(place.x, 0, place.z);
+    lot?.setPlot(index, rankCount);
   }
 }
 
@@ -208,6 +211,7 @@ function redistribute() {
     view.scene.remove(lot.group);
     lot.dispose();
   }
+  const rankCount = plots.indexes().length;
   for (const id of wanted) {
     if (lots.has(id)) continue;
     const session = sessions.get(id);
@@ -215,7 +219,8 @@ function redistribute() {
     if (!session || !place) continue;
     // Settled unless it just arrived: a lot that was already standing as an
     // instance must not replay its rise every time the camera drifts past.
-    const lot = new Lot(session, !arriving.has(id));
+    const rank = plots.indexOf(id) ?? 0;
+    const lot = new Lot(session, rank, rankCount, !arriving.has(id));
     lot.group.position.set(place.x, 0, place.z);
     view.scene.add(lot.group);
     lots.set(id, lot);

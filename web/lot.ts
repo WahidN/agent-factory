@@ -5,6 +5,7 @@
 import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
+import { destinationFor } from "./leisure.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
@@ -26,6 +27,7 @@ import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
 import { LotWorkers, type WorkerSlot } from "./workers.ts";
+import type { Point } from "./worker-logic.ts";
 
 // The hall keeps its dock side on every tier, so the dock door, hall door,
 // parked cars and worker routes never move. A smaller hall shrinks toward the
@@ -101,8 +103,9 @@ export function hallShape(tier: ModelTier): HallShape {
 
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
+type BaseSlot = { door: Point; route: [Point, Point] };
 const HALL_DOOR = { x: 1.5, z: -3.3 };
-const WORKER_SLOTS: WorkerSlot[] = [
+const WORKER_SLOTS: BaseSlot[] = [
   {
     door: HALL_DOOR,
     route: [
@@ -132,7 +135,7 @@ const WORKER_SLOTS: WorkerSlot[] = [
     ],
   }, // along the walkway to the gate
   ...WAREHOUSE_SLOTS.map(
-    ([x, z]): WorkerSlot => ({
+    ([x, z]): BaseSlot => ({
       door: { x: x + 1.2, z: z + 2.9 },
       route: [
         { x: x - 1.8, z: z + 3.6 },
@@ -141,6 +144,28 @@ const WORKER_SLOTS: WorkerSlot[] = [
     }),
   ),
 ];
+
+// The gate's local point: the opening in the right fence, GATE.z0..z1 at x = YARD_HALF.
+const GATE_POINT: Point = { x: YARD_HALF, z: (GATE.z0 + GATE.z1) / 2 };
+
+const SPREAD_STRIDE = 3; // spacing between neighbouring workers along the edge
+
+// A quiet lot's workers gather near the nearest claimed cell instead of one
+// another, spread along the cell edge their destination sits on so eight of
+// them are not standing on top of each other.
+function spread(point: Point, axis: "x" | "z", index: number, count: number): Point {
+  const offset = (index - (count - 1) / 2) * SPREAD_STRIDE;
+  return axis === "x" ? { x: point.x + offset, z: point.z } : { x: point.x, z: point.z + offset };
+}
+
+function workerSlotsFor(rank: number, rankCount: number): WorkerSlot[] {
+  const destination = destinationFor(rank, rankCount);
+  return WORKER_SLOTS.map((slot, i) => ({
+    ...slot,
+    gate: GATE_POINT,
+    destination: destination ? spread(destination.point, destination.axis, i, WORKER_SLOTS.length) : null,
+  }));
+}
 
 // Rooftop vents and AC boxes, relative to the hall's back left corner. Ones
 // that fall outside a smaller roof are left out.
@@ -191,7 +216,12 @@ export class Lot {
   // tint only changes with a fresh Lot.
   private wallMaterial: THREE.MeshStandardMaterial;
 
-  private workers = new LotWorkers(WORKER_SLOTS);
+  private workers: LotWorkers;
+  // Where this lot's leisure destination was last computed for; kept so a
+  // repeat call with the same rank/rankCount (the common case: most lots
+  // don't move when one session starts or stops) recomputes nothing.
+  private rank: number;
+  private rankCount: number;
 
   private warehouses = new Map<number, Slot>();
   private leavingWarehouses = new Set<Slot>();
@@ -203,7 +233,13 @@ export class Lot {
   // `settled` skips the rise out of the ground: a lot that only swapped from
   // the far level to this one was already standing, so it must not replay its
   // arrival every time the camera drifts past it.
-  constructor(state: SessionState, settled = false) {
+  //
+  // `rank` and `rankCount` fix where this lot's workers hang around while it
+  // is quiet: the nearest claimed cell to `rank`'s own cell, among the
+  // `rankCount` cells the city plan has claimed so far. The park repacks
+  // ranks whenever a session starts or stops, so `setPlot` keeps this current
+  // without rebuilding the lot; it is not recomputed per frame.
+  constructor(state: SessionState, rank: number, rankCount: number, settled = false) {
     this.state = state;
     this.appear = settled ? 1 : 0;
     this.tier = tierFor(state.model);
@@ -213,6 +249,9 @@ export class Lot {
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
     this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.user)]);
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers = new LotWorkers(workerSlotsFor(rank, rankCount));
 
     this.buildStructure();
 
@@ -243,6 +282,18 @@ export class Lot {
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
     this.updateWarehouses(state.subagents, working, nowMs);
+  }
+
+  // Called whenever the park repacks and this lot's rank or the total rank
+  // count changed, so its leisure destination stays pointed at the right
+  // claimed cell. Only the destination points move; a worker already walking
+  // there keeps its position and simply steers toward the new point next
+  // tick, no rebuild and no jump.
+  setPlot(rank: number, rankCount: number) {
+    if (rank === this.rank && rankCount === this.rankCount) return;
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers.setSlots(workerSlotsFor(rank, rankCount));
   }
 
   // What this lot sends onto the park roads: always some cars, the truck only while busy.

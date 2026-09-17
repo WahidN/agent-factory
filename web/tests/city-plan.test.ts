@@ -10,6 +10,7 @@ import {
   FILLER_EVERY,
   indexForRank,
   isWaterEdge,
+  nearestClaim,
   WAAL_EDGE,
 } from "../city-plan.ts";
 import { curveCell, plotCell } from "../plots.ts";
@@ -117,6 +118,41 @@ describe("claimedUpTo", () => {
       if (amenity) expected.push({ index, cell: curveCell(index), amenity });
     }
     expect(claimedUpTo(10)).toEqual(expected);
+  });
+});
+
+describe("nearestClaim", () => {
+  it("is null for an empty city", () => {
+    expect(nearestClaim({ col: 0, row: 0 }, 0)).toBeNull();
+  });
+
+  it("picks the claimed cell with the smallest euclidean distance, on the same bank", () => {
+    // At 300 sessions kronenburgerpark (5:0) is the unique closest south-bank
+    // claim to 4:0: plein1944 (2:0) and valkhof/waalkade (3:1/5:1) are all
+    // further away.
+    expect(nearestClaim({ col: 4, row: 0 }, 300)).toEqual({ col: 5, row: 0 });
+  });
+
+  it("never picks a claim across the river", () => {
+    // Stevenskerk (1:1) sits right next to 1:2, on the opposite bank; houses
+    // (0:2) is the nearest claim the north bank actually has.
+    expect(nearestClaim({ col: 1, row: 2 }, 300)).toEqual({ col: 0, row: 2 });
+  });
+
+  it("is null when the city has claimed nothing yet on that bank", () => {
+    // At 2 sessions the table has only claimed south-bank cells so far.
+    expect(claimedUpTo(2).some((claim) => claim.cell.row >= WAAL_EDGE)).toBe(false);
+    expect(nearestClaim({ col: 0, row: 2 }, 2)).toBeNull();
+  });
+
+  it("breaks a tie deterministically, by the lower curve index", () => {
+    // 0:0 (goffert, curve index 0) and 2:0 (plein1944, curve index later)
+    // both sit distance 1 from 1:0.
+    const claims = claimedUpTo(10);
+    const goffert = claims.find((c) => c.amenity === "goffert")!;
+    const plein = claims.find((c) => c.amenity === "plein1944")!;
+    expect(goffert.index).toBeLessThan(plein.index);
+    expect(nearestClaim({ col: 1, row: 0 }, 10)).toEqual(goffert.cell);
   });
 });
 

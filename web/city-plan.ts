@@ -166,6 +166,38 @@ export function claimedUpTo(rankCount: number): { index: number; cell: Cell; ame
   return claims;
 }
 
+// Whether two cells sit on the same side of the Waal. A worker never gets a
+// destination across the water: nothing walks there, so a claim on the other
+// bank would send it straight into the river.
+function sameBank(a: Cell, b: Cell): boolean {
+  return a.row < WAAL_EDGE === b.row < WAAL_EDGE;
+}
+
+// The claimed cell closest to `from` (euclidean, on cell coordinates) on the
+// same bank of the Waal, or null when the city has nothing claimed yet on
+// that bank. Ties go to the lower curve index: `claimedUpTo` already returns
+// claims in index order, so keeping the first claim found at the best
+// distance (never replacing on an equal distance) is enough, no separate
+// tie-break needed.
+export function nearestClaim(from: Cell, rankCount: number): Cell | null {
+  const claims = claimedUpTo(rankCount).filter((claim) => sameBank(claim.cell, from));
+  if (claims.length === 0) return null;
+  let best = claims[0];
+  let bestDist = cellDistance(from, best.cell);
+  for (let i = 1; i < claims.length; i++) {
+    const dist = cellDistance(from, claims[i].cell);
+    if (dist < bestDist) {
+      best = claims[i];
+      bestDist = dist;
+    }
+  }
+  return best.cell;
+}
+
+function cellDistance(a: Cell, b: Cell): number {
+  return Math.hypot(a.col - b.col, a.row - b.row);
+}
+
 // True for the one horizontal cell edge the Waal runs along. Roads on that
 // edge are water instead.
 export function isWaterEdge(row: number): boolean {

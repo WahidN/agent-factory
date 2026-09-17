@@ -180,10 +180,10 @@ describe("the park fits on screen", () => {
 
   // The city plan claims cells, so 300 sessions now walk 360 curve indexes and
   // the park runs 32 columns wide instead of 24. 150 lots still need the same
-  // zoom; 300 lots need 0.065, which is under the current floor of 0.08. The
-  // floor is deliberately left alone here: either it drops to about 0.06, or
-  // the plan hands out filler less often (FILLER_EVERY), and that is a call to
-  // make on a screenshot, not in a test.
+  // zoom; 300 lots need about 0.065, which is why MIN_ZOOM dropped from 0.08
+  // to 0.06 in the same change: 0.065 sits just above the new floor. Claims
+  // more cells (or hands out filler more often via FILLER_EVERY) and this
+  // number sinks under the floor again, so the values are pinned here.
   it("names the zoom each size needs, so a change to the floor is deliberate", () => {
     expect(zoomForLots(150)).toBeCloseTo(0.128, 3);
     expect(zoomForLots(300)).toBeCloseTo(0.065, 3);

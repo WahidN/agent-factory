@@ -281,6 +281,10 @@ function redistribute() {
   }
   arriving.clear();
   pickablesCache = null;
+  // A lot promoted here is brand new and therefore visible. The camera can
+  // promote one on any frame, long after the filter was set, so the filter has
+  // to be applied on this path too and not only in handle() below.
+  applyDetailVisibility();
   syncFar();
 }
 

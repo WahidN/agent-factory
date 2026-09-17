@@ -205,6 +205,20 @@ describe("stepWorker", () => {
       expect(stepped.mode).toBe("in");
     });
 
+    // A fresh lot starts every worker inside. If the session is already idle
+    // (a snapshot, or a lot the LOD rebuilt), they still have to go out, or a
+    // quiet city never shows anyone in its parks.
+    it("leaves for the destination straight from inside when idle", () => {
+      const worker = run(createWorker(door), 3, false, destination);
+      expect(worker.mode === "leaving" || worker.mode === "leisure").toBe(true);
+      expect(Math.hypot(worker.x - door.x, worker.z - door.z)).toBeGreaterThan(0.5);
+    });
+
+    it("stays inside when idle without a destination", () => {
+      const worker = run(createWorker(door), 3, false, null);
+      expect(worker.mode).toBe("inside");
+    });
+
     it("keeps the old behavior exactly when there is no destination", () => {
       let worker = run(createWorker(door), 5 / WALK_SPEED + 0.2, true, null);
       worker = run(worker, 1, false, null);

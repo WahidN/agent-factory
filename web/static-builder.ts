@@ -10,6 +10,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 const box = new THREE.BoxGeometry(1, 1, 1);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
+const cone = new THREE.ConeGeometry(1, 1, 8);
 const euler = new THREE.Euler();
 const quaternion = new THREE.Quaternion();
 
@@ -77,6 +78,11 @@ export class StaticBuilder {
   // Scale x and z are radii, y is height.
   cylinder(material: THREE.Material, position: Vec3, scale: Vec3, rotation: Vec3 = [0, 0, 0]) {
     this.add(cylinder, material, position, scale, rotation);
+  }
+
+  // Apex up, base radius 1 at y = -0.5: scale x and z are radii, y is height.
+  cone(material: THREE.Material, position: Vec3, scale: Vec3, rotation: Vec3 = [0, 0, 0]) {
+    this.add(cone, material, position, scale, rotation);
   }
 
   build(): THREE.Group {

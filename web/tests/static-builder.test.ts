@@ -56,7 +56,8 @@ describe("StaticBuilder", () => {
     // The apex is a single point: at the top there is no width, at the base there is.
     const pos = mesh.geometry.attributes.position;
     let topSpread = 0;
-    for (let i = 0; i < pos.count; i++) if (Math.abs(pos.getY(i) - 12) < 1e-6) topSpread = Math.max(topSpread, Math.abs(pos.getX(i)));
+    for (let i = 0; i < pos.count; i++)
+      if (Math.abs(pos.getY(i) - 12) < 1e-6) topSpread = Math.max(topSpread, Math.abs(pos.getX(i)));
     expect(topSpread).toBeCloseTo(0);
     expect(box.max.x).toBeCloseTo(2);
   });

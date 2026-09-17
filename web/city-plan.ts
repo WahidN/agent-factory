@@ -58,6 +58,10 @@ export const BRIDGES: { col: number; kind: "oversteek" | "waalbrug" }[] = [
 const PLAIN_CROSSING_START = 8;
 const PLAIN_CROSSING_SPACING = 5;
 
+// The gladiola arch of the Vierdaagse: not a building but a span over a road,
+// on the southern edge of the city, where the walkers come in.
+export const GLADIOLA = { col: 2, row: 0, side: "south" as const };
+
 // Claimed cells, keyed by `col:row`. Landmarks sit in the first few dozen
 // curve indexes so that even a quiet park shows a recognisable city; the
 // generic filler thins out as the park grows (see FILLER_EVERY).

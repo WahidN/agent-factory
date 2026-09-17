@@ -3,36 +3,39 @@
 
 import * as THREE from "three";
 import type { CellBuilder } from "./cell-build.ts";
-import { type Amenity, type Cell, claimedUpTo, crossingAt, isWaterEdge, WAAL_EDGE, WAAL_WIDTH } from "./city-plan.ts";
+import {
+  type Amenity,
+  BRIDGES,
+  type Cell,
+  claimedUpTo,
+  crossingAt,
+  GLADIOLA,
+  isWaterEdge,
+  WAAL_EDGE,
+  WAAL_WIDTH,
+} from "./city-plan.ts";
 import { FILLER_BUILDERS } from "./filler.ts";
+import { CITY_LANDMARKS } from "./landmarks-city.ts";
+import { bridgeArch, gladiolaArch, RIVER_LANDMARKS } from "./landmarks-river.ts";
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
 import { parkBounds, parkHalfExtent } from "./park-layout.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 import { BAKED_MATERIAL, StaticBuilder, type Vec3 } from "./static-builder.ts";
 
 // Every amenity a claimed cell can hold, keyed by Amenity so TypeScript
-// enforces that the builder modules between them cover the whole union: a
-// new Amenity with no builder becomes a type error here, not a silently
-// empty cell.
-//
-// The plan already claims the cells the Nijmegen landmarks will stand on, so
-// that the layout does not shift again once they arrive. Until then they get
-// a plantsoen, which is why seven amenities share one builder here.
+// enforces that the three builder modules between them cover the whole
+// union: a new Amenity with no builder becomes a type error here, not a
+// silently empty cell.
 const AMENITY_BUILDERS: Record<Amenity, CellBuilder> = {
   ...FILLER_BUILDERS,
-  goffert: FILLER_BUILDERS.park,
-  stevenskerk: FILLER_BUILDERS.park,
-  valkhof: FILLER_BUILDERS.park,
-  kronenburgerpark: FILLER_BUILDERS.park,
-  waalkade: FILLER_BUILDERS.park,
-  plein1944: FILLER_BUILDERS.park,
-  station: FILLER_BUILDERS.park,
+  ...CITY_LANDMARKS,
+  ...RIVER_LANDMARKS,
 };
 
 const UP_Y = new THREE.Vector3(0, 1, 0);
 
 // A StaticBuilder that shifts, and optionally rotates around y, every piece
-// a CellBuilder draws. A CellBuilder only knows
+// a CellBuilder or bridgeArch/gladiolaArch draws. A CellBuilder only knows
 // cell-local coordinates; this is what turns that into a world position
 // without every builder having to take an offset itself.
 class OffsetBuilder extends StaticBuilder {
@@ -145,7 +148,7 @@ export class Park {
       claims.map((claim) => claim.cell),
       river,
     );
-    this.rebuildClaims(claims);
+    this.rebuildClaims(claims, river);
   }
 
   // Center and half size of the park, for camera and shadows. parkBounds folds
@@ -306,11 +309,15 @@ export class Park {
   }
 
   // Every claimed cell's own building, drawn by its amenity's builder and
-  // merged into one small group of meshes. This changes only when the city
-  // plan hands out another cell, not on every session that starts, so it
-  // lives here rather than in the per-session rebuild above.
-  private rebuildClaims(claims: { cell: Cell; amenity: Amenity }[]) {
-    const key = claims.map(({ cell, amenity }) => `${cell.col}:${cell.row}:${amenity}`).join(",");
+  // merged into one small group of meshes, plus the bridge arches and the
+  // gladiolenboog: fixed city structure that does not belong to any one
+  // cell. All of this changes only when the city plan hands out another
+  // cell, not on every session that starts, so it lives here rather than in
+  // the per-session rebuild above.
+  private rebuildClaims(claims: { cell: Cell; amenity: Amenity }[], river: RiverSpan) {
+    const key = `${claims.map(({ cell, amenity }) => `${cell.col}:${cell.row}:${amenity}`).join(",")}|${
+      river ? `${river.minCol}:${river.maxCol}` : "none"
+    }`;
     if (key === this.claimKey) return;
     this.claimKey = key;
     for (const child of this.claims.children) disposeTree(child);
@@ -321,6 +328,27 @@ export class Park {
       builder.place(cell.col * PLOT_SIZE, cell.row * PLOT_SIZE);
       const rand = random(cell.col * 7919 + cell.row * 104729 + 17);
       AMENITY_BUILDERS[amenity](builder, rand);
+    }
+
+    // A named bridge's arch appears under the exact same condition as its
+    // deck (see waal()): only once a cell on either side of it is actually
+    // part of the city.
+    for (const { col, kind } of BRIDGES) {
+      if (!river || col < river.minCol || col > river.maxCol + 1) continue;
+      builder.place((col - 0.5) * PLOT_SIZE, waterZ);
+      bridgeArch(builder, kind);
+    }
+
+    // The gladiolenboog only stands once the cell it spans is actually part
+    // of the city; that cell is Plein 1944, on the far side of GLADIOLA's
+    // road. bridgeArch's deck runs along z, matching bridge()'s own deck, so
+    // it needs no rotation; the gladiolenboog is built for a road whose
+    // width runs along x (a north-south, column-boundary road), but GLADIOLA
+    // sits on a south, row-boundary edge, whose road runs east-west with its
+    // width along z instead, so it is rotated a quarter turn to fit.
+    if (claims.some(({ cell }) => cell.col === GLADIOLA.col && cell.row === GLADIOLA.row)) {
+      builder.place(GLADIOLA.col * PLOT_SIZE, (GLADIOLA.row - 0.5) * PLOT_SIZE, Math.PI / 2);
+      gladiolaArch(builder);
     }
 
     this.claims.add(builder.build());

@@ -16,6 +16,16 @@ function parkInScene() {
   return { park, streets, claims };
 }
 
+function vertexCount(object: THREE.Object3D) {
+  let sum = 0;
+  object.traverse((child) => {
+    if (child instanceof THREE.Mesh) sum += child.geometry.attributes.position.count;
+  });
+  return sum;
+}
+
+const ranks = (count: number) => Array.from({ length: count }, (_, i) => i);
+
 describe("Park and the Waal", () => {
   it("draws no water for a city that does not reach the river", () => {
     // One session sits on row 0 with the Goffert beside it; the nearest bank
@@ -26,10 +36,21 @@ describe("Park and the Waal", () => {
     expect(box.max.z).toBeLessThan(southBank);
   });
 
-  it("keeps a claimed cell's own buildings out of the water", () => {
+  it("puts no bridge arch over a city without a river", () => {
     const { park, claims } = parkInScene();
     park.update([0]);
     const box = new THREE.Box3().setFromObject(claims);
     expect(box.max.z).toBeLessThan(southBank);
+  });
+
+  it("grows its bridges with the city, also when the claimed cells do not change", () => {
+    // At five and at six sessions the plan has claimed exactly the same
+    // cells, but the sixth lot is the first to reach the column the Waalbrug
+    // crosses, so its arch has to appear anyway.
+    const { park, claims } = parkInScene();
+    park.update(ranks(5));
+    const before = vertexCount(claims);
+    park.update(ranks(6));
+    expect(vertexCount(claims)).toBeGreaterThan(before);
   });
 });

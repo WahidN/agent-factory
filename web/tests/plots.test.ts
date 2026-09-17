@@ -92,18 +92,31 @@ describe("assignPlots", () => {
 });
 
 describe("plotCell", () => {
-  it("gives every index a unique cell, growing outward in square shells", () => {
-    const cells = Array.from({ length: 25 }, (_, i) => plotCell(i));
-    expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(25);
-    for (let i = 0; i < 25; i++) {
-      const shell = Math.floor(Math.sqrt(i));
-      expect(Math.max(cells[i].col, cells[i].row)).toBe(shell);
+  it("gives every index its own cell", () => {
+    const cells = Array.from({ length: 500 }, (_, i) => plotCell(i));
+    expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(500);
+  });
+
+  it("steps one cell at a time, so the curve never jumps", () => {
+    for (let i = 1; i < 500; i++) {
+      const a = plotCell(i - 1);
+      const b = plotCell(i);
+      expect(Math.abs(a.col - b.col) + Math.abs(a.row - b.row)).toBe(1);
     }
-    expect(cells.slice(0, 4)).toEqual([
-      { col: 0, row: 0 },
-      { col: 1, row: 0 },
-      { col: 1, row: 1 },
-      { col: 0, row: 1 },
-    ]);
+  });
+
+  // This is the whole reason for the Hilbert curve. assignPlots gives each
+  // user a contiguous run of indexes, so a run has to sit in a blob. On the
+  // square-shell order this replaced, a run of five near index 140 stretched
+  // thirteen cells wide, which is why one user's factories used to lie in a
+  // diagonal streak across the park instead of next to each other.
+  it("keeps a contiguous run of indexes in a compact blob, wherever it starts", () => {
+    for (const start of [0, 7, 20, 40, 97, 140, 260]) {
+      const cells = Array.from({ length: 5 }, (_, i) => plotCell(start + i));
+      const cols = cells.map((c) => c.col);
+      const rows = cells.map((c) => c.row);
+      const widest = Math.max(Math.max(...cols) - Math.min(...cols), Math.max(...rows) - Math.min(...rows)) + 1;
+      expect(widest).toBeLessThanOrEqual(4);
+    }
   });
 });

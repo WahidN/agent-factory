@@ -58,7 +58,13 @@ describe("parkBounds", () => {
       expect(row).toBeGreaterThanOrEqual(bounds.minRow);
       expect(row).toBeLessThanOrEqual(bounds.maxRow);
     }
-    expect(bounds).toEqual({ minCol: 0, maxCol: 2, minRow: 0, maxRow: 1 });
+    // Tight means every edge is touched by a cell, rather than a fixed pair
+    // of coordinates: the order indexes walk is free to change.
+    const cells = indexes.map(plotCell);
+    expect(Math.min(...cells.map((c) => c.col))).toBe(bounds.minCol);
+    expect(Math.max(...cells.map((c) => c.col))).toBe(bounds.maxCol);
+    expect(Math.min(...cells.map((c) => c.row))).toBe(bounds.minRow);
+    expect(Math.max(...cells.map((c) => c.row))).toBe(bounds.maxRow);
   });
 
   it("falls back to the first cell when nothing is used", () => {
@@ -146,7 +152,7 @@ describe("the park fits on screen", () => {
   });
 
   it("names the zoom each size needs, so a change to the floor is deliberate", () => {
-    expect(zoomForLots(150)).toBeCloseTo(0.156, 3);
-    expect(zoomForLots(300)).toBeCloseTo(0.114, 3);
+    expect(zoomForLots(150)).toBeCloseTo(0.128, 3);
+    expect(zoomForLots(300)).toBeCloseTo(0.086, 3);
   });
 });

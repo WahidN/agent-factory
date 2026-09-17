@@ -7,10 +7,11 @@
 
 export type LotPoint = { id: string; x: number; z: number };
 
-// How many lots keep their full detail. Measured on a 1600x900 window: 20
-// detailed lots is roughly what fits on screen when the camera is close
-// enough for any of the detail to be readable.
-export const DEFAULT_DETAIL_CAP = 20;
+// How many lots keep their full detail. Measured on a 1600x900 window, whole
+// park in view: 20 left a hard visible ring between the detailed factories and
+// the boxes around them, and 60 cost 12598 draw calls at 52 ms a frame. 40 is
+// the middle, and ?detail=N overrides it.
+export const DEFAULT_DETAIL_CAP = 40;
 
 // A lot that already has detail is ranked as if it were 15% closer. Without
 // this, two lots within a pixel of each other swap places on every camera

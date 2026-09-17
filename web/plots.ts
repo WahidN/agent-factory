@@ -92,11 +92,36 @@ export class PlotAllocator {
   }
 }
 
-// Shell s holds indexes s² .. (s+1)² - 1: down column x = s, then back along row z = s.
+// Indexes walk a Hilbert curve, so a run of consecutive indexes lands in a
+// compact blob rather than a line. That is what puts one user's sessions next
+// to each other: assignPlots hands each user a contiguous run, and on the
+// square-shell order this used to follow, a run near the edge of the park
+// stretched into a diagonal streak thirteen cells wide.
+//
+// The curve is a fixed order 6 (64 by 64, 4096 cells) so that the cell for an
+// index never depends on how many sessions are on the park. Beyond 4096 lots
+// the grid wraps onto itself; the park is designed for 150 and tested at 300.
+const CURVE_SIDE = 64;
+
 export function plotCell(index: number): { col: number; row: number } {
-  const shell = Math.floor(Math.sqrt(index));
-  const offset = index - shell * shell;
-  return offset <= shell ? { col: shell, row: offset } : { col: 2 * shell - offset, row: shell };
+  let col = 0;
+  let row = 0;
+  let rest = index % (CURVE_SIDE * CURVE_SIDE);
+  for (let size = 1; size < CURVE_SIDE; size *= 2) {
+    const flipX = 1 & (rest >> 1);
+    const flipY = 1 & (rest ^ flipX);
+    [col, row] = rotate(size, col, row, flipX, flipY);
+    col += size * flipX;
+    row += size * flipY;
+    rest >>= 2;
+  }
+  return { col, row };
+}
+
+// Reflects a quadrant so the curve stays connected where quadrants meet.
+function rotate(size: number, col: number, row: number, flipX: number, flipY: number): [number, number] {
+  if (flipY !== 0) return [col, row];
+  return flipX === 1 ? [size - 1 - row, size - 1 - col] : [row, col];
 }
 
 export function plotPosition(index: number): { x: number; z: number } {

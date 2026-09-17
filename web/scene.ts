@@ -39,7 +39,10 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
-  controls.enablePan = false;
+  // Panning is what makes the detail set worth redistributing: drag the view
+  // to a corner of the park and the nearest lots there get the full treatment.
+  // With it off, the detailed set never moved off the park's centre.
+  controls.enablePan = true;
   // Both live in park-layout.ts, next to the test that pins them against the
   // zoom 150 and 300 lots actually need. The old floor of 0.3 cropped the
   // park from 37 lots onward.

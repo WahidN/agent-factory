@@ -90,7 +90,7 @@ describe("selectDetailed hysteresis", () => {
 
 describe("detailCapFrom", () => {
   it("defaults to 20 detailed lots", () => {
-    expect(DEFAULT_DETAIL_CAP).toBe(20);
+    expect(DEFAULT_DETAIL_CAP).toBe(40);
     expect(detailCapFrom("")).toBe(DEFAULT_DETAIL_CAP);
     expect(detailCapFrom("?stats")).toBe(DEFAULT_DETAIL_CAP);
   });

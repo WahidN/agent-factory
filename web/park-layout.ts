@@ -51,7 +51,7 @@ export function fitZoom(halfExtent: number, viewHeight: number, viewWidth: numbe
 // How far the camera may zoom out. It has to be low enough that the park the
 // project is designed for still fits: see the test next to this file, which
 // pins 150 and 300 lots against this number.
-export const MIN_ZOOM = 0.1;
+export const MIN_ZOOM = 0.08;
 export const MAX_ZOOM = 4;
 
 // One tight box per user district, plus the whole park's own box (parkBounds

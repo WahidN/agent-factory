@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { YARD_Y } from "./machines.ts";
 import { standard } from "./palette.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
-import { createWorker, stepWorker, type Point, type Worker } from "./worker-logic.ts";
+import { createWorker, isOutside, stepWorker, type Point, type Worker } from "./worker-logic.ts";
 
 export type WorkerSlot = { door: Point; route: [Point, Point]; gate: Point; destination: Point | null };
 
@@ -50,17 +50,28 @@ export class LotWorkers {
     this.slots = slots;
   }
 
-  // `busy` holds one flag per slot, in the same order as the slots.
-  tick(dt: number, busy: boolean[]) {
+  // The lot moved by (-dx, -dz) in the world. Workers out beyond the gate are
+  // standing on world ground, so they shift the other way in lot coordinates
+  // and stay where they were on screen; workers on the yard ride along.
+  translate(dx: number, dz: number) {
+    this.workers = this.workers.map((worker) =>
+      isOutside(worker) ? { ...worker, x: worker.x + dx, z: worker.z + dz } : worker,
+    );
+  }
+
+  // `busy` holds one flag per slot, in the same order as the slots. `null`
+  // means there is no worker for that slot right now (a warehouse that is not
+  // there): it never leaves for the park and walks back in if it was out.
+  tick(dt: number, busy: (boolean | null)[]) {
     this.workers = this.workers.map((worker, i) =>
       stepWorker(
         worker,
         dt,
-        busy[i],
+        busy[i] ?? false,
         this.slots[i].door,
         this.slots[i].route,
         this.slots[i].gate,
-        this.slots[i].destination,
+        busy[i] === null ? null : this.slots[i].destination,
         i,
       ),
     );

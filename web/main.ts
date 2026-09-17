@@ -151,7 +151,7 @@ function syncPlaces() {
     const place = plotPosition(index);
     places.set(id, place);
     const lot = lots.get(id);
-    lot?.group.position.set(place.x, 0, place.z);
+    lot?.relocate(place.x, place.z);
     lot?.setPlot(index, rankCount);
   }
 }

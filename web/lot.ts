@@ -289,6 +289,15 @@ export class Lot {
   // claimed cell. Only the destination points move; a worker already walking
   // there keeps its position and simply steers toward the new point next
   // tick, no rebuild and no jump.
+  // Moves the lot to a new place. The worker mesh hangs under `body`, so it
+  // would carry every worker along; the ones out in the world are shifted
+  // back by the same delta and keep their spot on screen.
+  relocate(x: number, z: number) {
+    const { x: oldX, z: oldZ } = this.group.position;
+    this.group.position.set(x, 0, z);
+    this.workers.translate(oldX - x, oldZ - z);
+  }
+
   setPlot(rank: number, rankCount: number) {
     if (rank === this.rank && rankCount === this.rankCount) return;
     this.rank = rank;
@@ -570,9 +579,9 @@ export class Lot {
   }
 
   // Yard workers follow the session; each warehouse worker follows the same busy state.
-  private workerBusyFlags(): boolean[] {
+  private workerBusyFlags(): (boolean | null)[] {
     const lotBusy = this.state.status === "busy" && !this.exit;
-    const slotBusy = new Array(MAX_WAREHOUSES).fill(false);
+    const slotBusy: (boolean | null)[] = new Array(MAX_WAREHOUSES).fill(null);
     for (const slot of this.warehouses.keys()) slotBusy[slot] = lotBusy;
     return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
   }

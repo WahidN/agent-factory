@@ -7,6 +7,9 @@
 //   leaving  -> idle: walk out through the gate, then to the destination
 //   leisure  -> walk back and forth near the destination, pausing at each end
 //   returning -> busy again: walk back through the gate, then to the route
+// A worker that is inside while idle also leaves, as long as it has a
+// destination; otherwise a lot that starts idle (a snapshot, an LOD rebuild)
+// never sends anyone to the park.
 // Without a destination the old, simpler loop still applies: idle sends a
 // working/out worker straight to "in", back to the door, then inside.
 
@@ -72,6 +75,17 @@ function startLeaving(worker: Worker, destination: Point | null, index: number):
   return { ...worker, mode: "leaving", viaGate: true, pause: index * LEAVE_DELAY_STEP };
 }
 
+// True while the worker is beyond the gate, out in the world rather than on
+// its lot's yard. Its x/z are still lot-local, so when the lot moves these
+// are the ones that must be compensated to stay put on screen.
+export function isOutside(worker: Worker): boolean {
+  return (
+    (worker.mode === "leaving" && !worker.viaGate) ||
+    worker.mode === "leisure" ||
+    (worker.mode === "returning" && worker.viaGate)
+  );
+}
+
 export function stepWorker(
   worker: Worker,
   dt: number,
@@ -84,7 +98,8 @@ export function stepWorker(
 ): Worker {
   switch (worker.mode) {
     case "inside":
-      return busy ? { ...worker, x: door.x, z: door.z, mode: "out" } : worker;
+      if (busy) return { ...worker, x: door.x, z: door.z, mode: "out" };
+      return destination ? startLeaving({ ...worker, x: door.x, z: door.z }, destination, index) : worker;
 
     case "out": {
       if (!busy) return startLeaving(worker, destination, index);

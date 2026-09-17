@@ -120,8 +120,10 @@ function stevenskerk(b: StaticBuilder, rand: () => number) {
 function goffert(b: StaticBuilder, rand: () => number) {
   const fieldHalfX = 8;
   const fieldHalfZ = 12;
-  const fieldY = -1.3;
-  const rimY = 0.6;
+  // Park draws one grass plane at y = 0 over the whole scene, so the field
+  // sits just above it and the tribunes rising around it suggest the bowl.
+  const fieldY = 0.05;
+  const rimY = 2.4;
 
   b.box(fieldGreen, [0, fieldY, 0], [fieldHalfX * 2, 0.1, fieldHalfZ * 2]);
   b.box(lineWhite, [0, fieldY + 0.06, 0], [fieldHalfX * 2, 0.02, 0.15]);
@@ -132,19 +134,23 @@ function goffert(b: StaticBuilder, rand: () => number) {
     b.box(lineWhite, [Math.cos(a) * 3, fieldY + 0.06, Math.sin(a) * 3], [0.15, 0.02, 0.15]);
   }
 
-  // Flat tribunes on all four sides, raked from the sunken field up to grade.
+  // Flat tribunes on all four sides, raked from the field edge up to the rim.
+  // The long dimension runs along the slope, so the x-rotation (north/south)
+  // or z-rotation (east/west) tilts it from fieldY to rimY over depth.
   const depth = 6;
   const northSouthWidth = fieldHalfX * 2 + 4;
   const eastWestWidth = fieldHalfZ * 2 + 4;
   const rise = rimY - fieldY;
   const slopeLength = Math.hypot(depth, rise);
   const angle = Math.atan2(rise, depth);
-  const midY = (fieldY + rimY) / 2;
+  // Lift the slab by half its thickness so its lower corner rests on grade
+  // instead of poking under the grass plane.
+  const midY = (fieldY + rimY) / 2 + 0.3 * Math.cos(angle);
 
-  b.box(MATERIALS.concrete, [0, midY, -fieldHalfZ - depth / 2], [northSouthWidth, slopeLength, 0.6], [angle, 0, 0]);
-  b.box(MATERIALS.concrete, [0, midY, fieldHalfZ + depth / 2], [northSouthWidth, slopeLength, 0.6], [-angle, 0, 0]);
-  b.box(MATERIALS.concrete, [-fieldHalfX - depth / 2, midY, 0], [0.6, slopeLength, eastWestWidth], [0, 0, -angle]);
-  b.box(MATERIALS.concrete, [fieldHalfX + depth / 2, midY, 0], [0.6, slopeLength, eastWestWidth], [0, 0, angle]);
+  b.box(MATERIALS.concrete, [0, midY, -fieldHalfZ - depth / 2], [northSouthWidth, 0.6, slopeLength], [angle, 0, 0]);
+  b.box(MATERIALS.concrete, [0, midY, fieldHalfZ + depth / 2], [northSouthWidth, 0.6, slopeLength], [-angle, 0, 0]);
+  b.box(MATERIALS.concrete, [-fieldHalfX - depth / 2, midY, 0], [slopeLength, 0.6, eastWestWidth], [0, 0, -angle]);
+  b.box(MATERIALS.concrete, [fieldHalfX + depth / 2, midY, 0], [slopeLength, 0.6, eastWestWidth], [0, 0, angle]);
 
   // Four floodlight masts, one per corner.
   const mastX = fieldHalfX + depth - 1;

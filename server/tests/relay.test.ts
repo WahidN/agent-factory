@@ -119,6 +119,14 @@ describe("startRelay", () => {
     expect(hub.paths).toHaveLength(1); // never reconnected
   });
 
+  it("close() stops an attempt that is still connecting", async () => {
+    const hub = await fakeHub();
+    wss = hub.wss;
+    startRelay(hub.url, "mac-b", "dennis", "", () => [], { retryMs: 5, log: () => {} }).close();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(hub.paths).toEqual([]); // never finished the handshake, never retried
+  });
+
   it("keeps retrying while nothing listens, and logs the outage once", async () => {
     const hub = await fakeHub();
     const url = hub.url;

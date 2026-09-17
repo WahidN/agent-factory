@@ -1,9 +1,11 @@
+import * as THREE from "three";
 import type { PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
 import { Lot } from "./lot.ts";
 import { flattenBatch } from "./message-logic.ts";
 import { Park } from "./park.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { createScene } from "./scene.ts";
+import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
 
@@ -13,6 +15,9 @@ const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;
 const hint = document.querySelector<HTMLElement>("#hint")!;
 
+// Grab the renderer scene.ts is about to build, only when asked, so a normal
+// visit never touches this path.
+const rendererCapture = statsRequested(location.search) ? interceptNextRenderer(THREE.WebGLRenderer) : undefined;
 const view = createScene(canvas);
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
@@ -22,6 +27,7 @@ view.scene.add(traffic.group);
 const lots = new Map<string, Lot>();
 const leaving = new Set<Lot>();
 let everReceived = false;
+const stats = rendererCapture ? createStatsOverlay(rendererCapture.get()!, () => lots.size) : undefined;
 let fitted = false;
 
 // Returns whether a new lot was created, so the caller can refocus once after
@@ -31,7 +37,7 @@ function upsert(session: SessionState): boolean {
   let added = false;
   if (!lot) {
     lot = new Lot(session);
-    const { x, z } = plotPosition(plots.assign(session.id));
+    const { x, z } = plotPosition(plots.assign(session.id, session.user));
     lot.group.position.set(x, 0, z);
     view.scene.add(lot.group);
     lots.set(session.id, lot);
@@ -130,6 +136,7 @@ const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLEl
 );
 
 view.onFrame((dt, now) => {
+  stats?.recordFrame(dt * 1000);
   for (const lot of [...lots.values(), ...leaving]) lot.tick(dt, now);
   // Leaving lots send nothing, so their vehicles shrink away.
   traffic.tick(

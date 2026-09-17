@@ -78,13 +78,25 @@ Claude Code owns the format of these files, so an update can break the reader.
 
 Draait het park op de vaste centrale machine, dan hoef je niets te installeren om mee te kijken. Open in de browser `http://agentfactory.local:4317` en je ziet het park van iedereen.
 
-Wil je met je eigen sessies meedoen, dan draai je op je Mac:
+## Meedoen op je eigen Mac
+
+Meedoen is één commando:
 
 ```
-HUB=ws://agentfactory.local:4317 pnpm start
+scripts/install.sh
 ```
 
-Je Mac stuurt dan zijn sessies naar de centrale en serveert zelf geen pagina. Zie [`deploy/pi.md`](deploy/pi.md) voor het opzetten van de centrale zelf, op een Raspberry Pi.
+Het script vraagt om een machinenaam, het adres van de centrale (bijvoorbeeld `ws://agentfactory.local:4317`) en een token als de centrale er een vraagt. Daarna zet het een launchd-agent klaar die je sessies naar de centrale stuurt, ook na een herstart van je Mac. Draai je het script een tweede keer, dan vervangt het de bestaande agent in plaats van er een tweede naast te zetten.
+
+Deze modus is een reporter: hij opent alleen een verbinding naar buiten, hij start zelf geen pagina en claimt geen poort.
+
+Stoppen is ook één commando, het script print hem aan het eind:
+
+```
+launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
+```
+
+Zie [`deploy/pi.md`](deploy/pi.md) voor het opzetten van de centrale zelf, op een Raspberry Pi.
 
 ## Develop
 

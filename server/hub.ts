@@ -6,6 +6,16 @@ import type { PlainMessage, SessionState } from "./types.ts";
 
 // Bump when ServerMessage or AgentState change shape in a way an older hub cannot show.
 export const PROTOCOL = 2;
+// The oldest protocol a hub still accepts. Thirty Macs cannot update in
+// lockstep, so a hub takes a range [MIN_PROTOCOL, PROTOCOL] instead of one
+// exact number. Raise this only once every reporter in the fleet has moved
+// past it.
+export const MIN_PROTOCOL = 2;
+
+// Whether a hub speaking PROTOCOL still understands a reporter on `protocol`.
+export function protocolSupported(protocol: number): boolean {
+  return protocol >= MIN_PROTOCOL && protocol <= PROTOCOL;
+}
 
 // `machine` stays in the hello even though it left the session state: the
 // hello is one message per connection, not per session, so it costs nothing

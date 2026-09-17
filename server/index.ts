@@ -22,7 +22,8 @@ import {
 import { ConfigError, loadConfig } from "./config.ts";
 import { health } from "./health.ts";
 import { createHeartbeat } from "./heartbeat.ts";
-import { Hub, parseRelayMessage, PROTOCOL } from "./hub.ts";
+import { Hub, MIN_PROTOCOL, parseRelayMessage, PROTOCOL, protocolSupported } from "./hub.ts";
+import { createMetrics } from "./metrics.ts";
 import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
 import type { PlainMessage, ServerMessage } from "./types.ts";
@@ -102,6 +103,7 @@ const relay = HUB_URL
 // Other machines connect on /relay, central mode only.
 const hub = new Hub();
 const reporters = new Map<string, WebSocket>(); // machine -> its open relay socket
+const metrics = createMetrics();
 
 httpServer.on("upgrade", (request, socket, head) => {
   const path = request.url?.split("?")[0] ?? "";
@@ -144,10 +146,12 @@ function acceptReporter(socket: WebSocket, from: string) {
     const message = parseRelayMessage(data.toString());
     if (!machine) {
       if (message?.type !== "hello") return socket.close(1002, "expected hello");
-      if (message.protocol !== PROTOCOL) {
+      if (!protocolSupported(message.protocol)) {
         const time = new Date().toLocaleTimeString();
-        console.log(`${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub speaks ${PROTOCOL}`);
-        return socket.close(1002, `protocol ${PROTOCOL} expected`);
+        console.log(
+          `${time}  refused  ${message.machine}: protocol ${message.protocol}, this hub accepts ${MIN_PROTOCOL}-${PROTOCOL}`,
+        );
+        return socket.close(1002, `protocol ${MIN_PROTOCOL}-${PROTOCOL} expected`);
       }
       // A guard rail against a misdirected reporter, not authentication: no
       // timing safe compare, and a hub with no token configured accepts
@@ -162,10 +166,14 @@ function acceptReporter(socket: WebSocket, from: string) {
       reporters.set(machine, socket);
       old?.terminate();
       hub.join(machine);
-      console.log(`${new Date().toLocaleTimeString()}  joined   ${machine} from ${from}`);
+      metrics.join(machine, message.protocol, Date.now());
+      console.log(
+        `${new Date().toLocaleTimeString()}  joined   ${machine} (protocol ${message.protocol}) from ${from}`,
+      );
       return;
     }
     if (!message || message.type === "hello") return;
+    metrics.message(machine, Date.now());
     for (const out of hub.apply(machine, message)) {
       log(out);
       broadcast(out);
@@ -174,6 +182,7 @@ function acceptReporter(socket: WebSocket, from: string) {
   socket.on("close", () => {
     if (!machine || reporters.get(machine) !== socket) return; // replaced by a newer socket
     reporters.delete(machine);
+    metrics.leave(machine);
     for (const out of hub.leave(machine)) {
       log(out);
       broadcast(out);
@@ -417,6 +426,12 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return;
   }
 
+  if (path === "/metrics") {
+    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(metrics.snapshot(Date.now())));
+    return;
+  }
+
   if (!config.serveWeb) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     response.end("Not found");
@@ -500,11 +515,18 @@ function log(message: ServerMessage) {
 
 // ---------- Start ----------
 
-httpServer.listen(PORT, HOST, () => {
-  console.log(`agent-factory server on http://${HOST}:${PORT}, websocket on /ws`);
-  if (IS_HUB) console.log(`hub: other machines start with HUB=ws://${hostname()}:${PORT}`);
-  if (HUB_URL) console.log(`relaying to ${HUB_URL} as ${MACHINE}`);
-});
+// A reporter claims no port at all: it only opens one outbound connection to
+// the hub, so it never collides with another process (or another reporter)
+// on the same machine. There is no local /healthz or /metrics in this mode,
+// the hub's copies of those are the ones that matter.
+if (config.mode === "reporter") {
+  console.log(`agent-factory reporter as ${MACHINE}: no local server, no port, relaying to ${HUB_URL}`);
+} else {
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`agent-factory server on http://${HOST}:${PORT}, websocket on /ws`);
+    if (IS_HUB) console.log(`hub: other machines start with HUB=ws://${hostname()}:${PORT}`);
+  });
+}
 
 // fs.watch throws synchronously when the folder is missing, so the error
 // handler below never gets a chance and an uncaught ENOENT would take the

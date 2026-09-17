@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Hub, parseRelayMessage, PROTOCOL } from "../hub.ts";
+import { Hub, MIN_PROTOCOL, parseRelayMessage, PROTOCOL, protocolSupported } from "../hub.ts";
 import type { SessionState } from "../types.ts";
 
 function session(id: string, extra: Partial<SessionState> = {}): SessionState {
@@ -94,5 +94,17 @@ describe("parseRelayMessage", () => {
 describe("PROTOCOL", () => {
   it("is bumped to 2 for the flat wire format", () => {
     expect(PROTOCOL).toBe(2);
+  });
+});
+
+describe("protocolSupported", () => {
+  it("accepts anything in [MIN_PROTOCOL, PROTOCOL]", () => {
+    expect(protocolSupported(MIN_PROTOCOL)).toBe(true);
+    expect(protocolSupported(PROTOCOL)).toBe(true);
+  });
+
+  it("rejects below MIN_PROTOCOL and above PROTOCOL", () => {
+    expect(protocolSupported(MIN_PROTOCOL - 1)).toBe(false);
+    expect(protocolSupported(PROTOCOL + 1)).toBe(false);
   });
 });

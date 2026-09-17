@@ -73,9 +73,15 @@ setInterval(() => {
 
 let lastUpdateAt = 0;
 
+// Only the sockets on /ws. wss.clients also holds every reporter's relay
+// socket, and those want nothing back: a hub that broadcast to all of them
+// sent the whole park to all thirty Macs on every tick, for them to parse and
+// throw away.
+const browsers = new Set<WebSocket>();
+
 function sendToBrowsers(message: ServerMessage) {
   const data = JSON.stringify(message);
-  for (const client of wss.clients) {
+  for (const client of browsers) {
     if (client.readyState === WebSocket.OPEN) client.send(data);
   }
 }
@@ -138,6 +144,8 @@ wss.on("connection", (socket, request) => {
     acceptReporter(socket, request.socket.remoteAddress ?? "?");
     return;
   }
+  browsers.add(socket);
+  socket.on("close", () => browsers.delete(socket));
   const sessions = [...tracker.snapshot(Date.now()), ...hub.remote()];
   socket.send(JSON.stringify({ type: "snapshot", sessions } satisfies ServerMessage));
 });

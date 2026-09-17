@@ -110,7 +110,12 @@ function remove(id: string) {
     leaving.delete(lot);
     view.scene.remove(lot.group);
     lot.dispose();
-    plots.release(id);
+    // The sink takes about a second, and a session can come back inside it: a
+    // reporter that reconnects makes the hub drop its sessions and then send
+    // them again. Releasing here regardless would take the plot away from the
+    // session that is standing on it, leaving it without a road and on the
+    // same cell as whoever the repacking moved into its place.
+    if (!sessions.has(id)) plots.release(id);
     refocus();
   });
 }

@@ -24,8 +24,8 @@ if [[ -z "$NODE_PATH" ]]; then
 fi
 
 # The agent runs `node --import tsx server/index.ts` straight from this
-# checkout. Without node_modules that fails with ERR_MODULE_NOT_FOUND, and
-# KeepAlive turns it into a crash-loop in a log file nobody opens.
+# checkout. Without node_modules that dies with ERR_MODULE_NOT_FOUND every
+# time launchd restarts it.
 if [[ ! -d "$REPO_DIR/node_modules/tsx" ]]; then
   echo "De dependencies staan er nog niet. Draai eerst: pnpm install" >&2
   exit 1
@@ -65,9 +65,9 @@ xml_escape() {
   printf '%s' "$value"
 }
 
-# Filled in with bash's own substitution instead of sed: sed reads & and \ in a
-# replacement as references to the match, so a token holding an & used to end
-# up in the plist as the placeholder name, and a # broke the s-command outright.
+# Substitution stays in bash on purpose. Do not reach for sed here: it reads &
+# and \ in a replacement as references to the match, so a token holding an &
+# lands in the plist as the placeholder name, and any # ends the s-command.
 fill() {
   local text="$1" key="$2" value
   value="$(xml_escape "$3")"

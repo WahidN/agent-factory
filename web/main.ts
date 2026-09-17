@@ -38,7 +38,7 @@ function upsert(session: SessionState): boolean {
   if (!lot) {
     lot = new Lot(session);
     const { x, z } = plotPosition(plots.assign(session.id, session.user));
-    lot.group.position.set(x, 0, z);
+    lot.group.position.set(x, 0, z); // refocus() corrects this once the batch is in
     view.scene.add(lot.group);
     lots.set(session.id, lot);
     added = true;
@@ -103,7 +103,22 @@ function applyPlain(message: PlainMessage): boolean {
 }
 
 // Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.
+// The layout is packed, so a session arriving or leaving can move the ones
+// after it. A lot that keeps the position it was given on arrival ends up on
+// a cell the park no longer draws a road to, and two lots can land on top of
+// each other. Every lot therefore takes its place from the allocator again
+// whenever the set changes, which is exactly when this runs.
+function syncPlaces() {
+  for (const [id, lot] of lots) {
+    const index = plots.indexOf(id);
+    if (index === undefined) continue;
+    const { x, z } = plotPosition(index);
+    lot.group.position.set(x, 0, z);
+  }
+}
+
 function refocus(fit = false) {
+  syncPlaces();
   park.update(plots.indexes());
   traffic.setRoads(plots.indexes());
   const { x, z, half } = park.extent();

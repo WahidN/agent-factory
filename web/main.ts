@@ -1,4 +1,5 @@
 import type { ServerMessage, SessionState } from "../server/types.ts";
+import { createLadderDialog } from "./ladder-dialog.ts";
 import { Lot } from "./lot.ts";
 import { Park } from "./park.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
@@ -11,6 +12,11 @@ const RECONNECT_MS = 2000;
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;
 const hint = document.querySelector<HTMLElement>("#hint")!;
+const ladder = createLadderDialog(
+  document.querySelector<HTMLElement>("#ladder-button")!,
+  document.querySelector<HTMLDialogElement>("#ladder")!,
+  document.querySelector<HTMLElement>("#ladder-body")!,
+);
 
 const view = createScene(canvas);
 const plots = new PlotAllocator();
@@ -69,8 +75,11 @@ function handle(message: ServerMessage) {
     remove(message.id);
   }
   // Machine names on signs and tooltips only once the park mixes machines.
-  const machines = new Set([...lots.values()].map((lot) => lot.state.machine));
-  document.body.classList.toggle("many-machines", machines.size > 1);
+  // Every session of a machine carries the same total, so one entry each.
+  const totals = new Map<string, number>();
+  for (const lot of lots.values()) totals.set(lot.state.machine, lot.state.machineTokens);
+  document.body.classList.toggle("many-machines", totals.size > 1);
+  ladder.setTotals([...totals].map(([machine, tokens]) => ({ machine, tokens })).sort((a, b) => a.machine.localeCompare(b.machine)));
 }
 
 // Roads, trees, and traffic follow the used lots; the camera and shadows follow the park.

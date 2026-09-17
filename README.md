@@ -80,9 +80,10 @@ Draait het park op de vaste centrale machine, dan hoef je niets te installeren o
 
 ## Meedoen op je eigen Mac
 
-Meedoen is één commando:
+Kloon deze repo, haal de dependencies op en draai het installatiescript:
 
 ```
+pnpm install
 scripts/install.sh
 ```
 

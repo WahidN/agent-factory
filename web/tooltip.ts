@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import type { AgentState } from "../server/types.ts";
+import type { AgentState, SessionState } from "../server/types.ts";
+import { shortTokens } from "./sign-text.ts";
 
 // Anything hoverable puts itself in `mesh.userData.hover`.
 type Hoverable = { state: AgentState; gone: boolean };
@@ -39,7 +40,10 @@ export function createTooltip(
 
     const { name, status, currentTool, model, machine } = hovered.state;
     const tool = currentTool ? `${currentTool.name} ${currentTool.target}`.trim() : "no tool running";
-    const key = [name, status, tool, model, machine].join("\n");
+    // Only a hall's session state carries the machine's token total; warehouses show no token line.
+    const machineTokens = (hovered.state as Partial<SessionState>).machineTokens;
+    const tokens = typeof machineTokens === "number" ? `${shortTokens(machineTokens)} tokens` : "";
+    const key = [name, status, tool, model, machine, tokens].join("\n");
     if (key !== rendered) {
       rendered = key;
       element.replaceChildren(
@@ -48,6 +52,7 @@ export function createTooltip(
         line("tool", tool),
         ...(model ? [line("model", model)] : []), // no line until the transcript names a model
         ...(machine ? [line("machine", machine)] : []), // shown only while body.many-machines
+        ...(tokens ? [line("tokens", tokens)] : []),
       );
     }
 

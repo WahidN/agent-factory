@@ -404,19 +404,24 @@ export class CoolingTower {
 
 // ---------- Trucks ----------
 
-// Built once and cloned; clones share merged geometry. Faces +x, about 12 long.
+// Truck parts facing +x, about 12 long, with the ground at `at`. Used for the
+// road truck template and to bake a parked truck into a lot's static mesh.
+export function addTruckParts(b: StaticBuilder, [ox, oy, oz]: Vec3 = [0, 0, 0]) {
+  const box = (material: THREE.Material, [x, y, z]: Vec3, size: Vec3) => b.box(material, [ox + x, oy + y, oz + z], size);
+  box(MATERIALS.trailer, [-1.6, 2.35, 0], [8.8, 2.9, 2.6]);
+  box(MATERIALS.darkSteel, [-0.6, 0.8, 0], [11, 0.35, 1.8]); // chassis
+  box(MATERIALS.cab, [4.55, 1.95, 0], [2.3, 2.3, 2.5]);
+  box(MATERIALS.glass, [5.72, 2.4, 0], [0.06, 1.0, 2.2]);
+  box(MATERIALS.darkSteel, [5.75, 1.1, 0], [0.1, 0.5, 2.3]); // bumper
+  for (const x of [-4.6, -3.4, 2.6, 4.7]) {
+    for (const z of [-1.1, 1.1]) b.cylinder(MATERIALS.tire, [ox + x, oy + 0.5, oz + z], [0.5, 0.4, 0.5], [Math.PI / 2, 0, 0]);
+  }
+}
+
+// Built once and cloned; clones share merged geometry.
 let truckTemplate: THREE.Group | null = null;
 
 export function createTruck(): THREE.Group {
-  truckTemplate ??= mergedGroup((b) => {
-    b.box(MATERIALS.trailer, [-1.6, 2.35, 0], [8.8, 2.9, 2.6]);
-    b.box(MATERIALS.darkSteel, [-0.6, 0.8, 0], [11, 0.35, 1.8]); // chassis
-    b.box(MATERIALS.cab, [4.55, 1.95, 0], [2.3, 2.3, 2.5]);
-    b.box(MATERIALS.glass, [5.72, 2.4, 0], [0.06, 1.0, 2.2]);
-    b.box(MATERIALS.darkSteel, [5.75, 1.1, 0], [0.1, 0.5, 2.3]); // bumper
-    for (const x of [-4.6, -3.4, 2.6, 4.7]) {
-      for (const z of [-1.1, 1.1]) b.cylinder(MATERIALS.tire, [x, 0.5, z], [0.5, 0.4, 0.5], [Math.PI / 2, 0, 0]);
-    }
-  });
+  truckTemplate ??= mergedGroup((b) => addTruckParts(b));
   return truckTemplate.clone();
 }

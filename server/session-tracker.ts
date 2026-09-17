@@ -54,6 +54,7 @@ function applyEvent(target: { tools: PendingTools; model: string }, event: Trans
 export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
+  private machineTokens = 0;
 
   // `machine` is stamped on every state, so a hub can tell sessions apart by origin.
   constructor(
@@ -127,6 +128,14 @@ export class SessionTracker {
     }
   }
 
+  // The machine's season token total rides on every session, so a change
+  // sends every session again.
+  setMachineTokens(total: number, now: number) {
+    if (total === this.machineTokens) return;
+    this.machineTokens = total;
+    for (const sessionId of this.sessions.keys()) this.emit(sessionId, now);
+  }
+
   // Call regularly so subagents turn idle and get removed as time passes.
   tick(now: number) {
     for (const [sessionId, session] of this.sessions) {
@@ -170,6 +179,7 @@ export class SessionTracker {
       startedAt: file.startedAt,
       model: session.model,
       subagents,
+      machineTokens: this.machineTokens,
     };
   }
 

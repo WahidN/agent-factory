@@ -8,7 +8,15 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
-    <div id="pill" class="pill offline">reconnecting...</div>
+    <div id="hud">
+      <button id="ladder-button" type="button">milestones</button>
+      <div id="pill" class="pill offline">reconnecting...</div>
+    </div>
+    <dialog id="ladder">
+      <form method="dialog"><button class="close" aria-label="close">&times;</button></form>
+      <h2>Token milestones</h2>
+      <div id="ladder-body"></div>
+    </dialog>
     <div id="hint" hidden>run <code>pnpm dev</code></div>
     <div id="tooltip" hidden></div>
     <script type="module" src="./main.ts"></script>

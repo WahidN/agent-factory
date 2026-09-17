@@ -13,6 +13,7 @@ function session(id: string, extra: Partial<SessionState> = {}): SessionState {
     startedAt: 1,
     model: "",
     subagents: [],
+    machineTokens: 0,
     ...extra,
   };
 }

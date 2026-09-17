@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   ACCENT_COUNT,
   accentIndexFor,
+  districtBounds,
+  fitZoom,
   forkliftPose,
+  MIN_ZOOM,
   movingCarCount,
   parkBounds,
+  parkHalfExtent,
   WALL_TINT_COUNT,
   wallTintIndexFor,
 } from "../park-layout.ts";
-import { plotCell } from "../plots.ts";
+import { assignPlots, PLOT_SIZE, plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
   it("gives the same accent for the same project", () => {
@@ -62,6 +66,33 @@ describe("parkBounds", () => {
   });
 });
 
+describe("districtBounds", () => {
+  // The compact layout no longer reserves a private area per user (that is
+  // what made the park too big to fit), so two users' boxes may overlap.
+  // What districtBounds still owes fase 4b is one tight box per user, built
+  // from exactly that user's own cells.
+  it("gives each user a tight box around their own cells", () => {
+    const sessions = [
+      { id: "s1", user: "dennis" },
+      { id: "s2", user: "dennis" },
+      { id: "s3", user: "wahid" },
+    ];
+    const assignment = assignPlots(sessions);
+    const byUser = new Map<string, number[]>();
+    for (const { id, user } of sessions) {
+      const indexes = byUser.get(user) ?? [];
+      indexes.push(assignment.get(id)!);
+      byUser.set(user, indexes);
+    }
+
+    const bounds = districtBounds(byUser);
+    expect(bounds).toHaveLength(2);
+    for (const { user, ...box } of bounds) {
+      expect(box).toEqual(parkBounds(byUser.get(user)!));
+    }
+  });
+});
+
 describe("movingCarCount", () => {
   it("sends 2 cars from an idle lot", () => {
     expect(movingCarCount(false, 0)).toBe(2);
@@ -91,5 +122,31 @@ describe("forkliftPose", () => {
     expect(forkliftPose(0.3, -2.5, 3).carrying).toBe(true);
     expect(forkliftPose(0.8, -2.5, 3).carrying).toBe(false);
     expect(forkliftPose(0.5, -2.5, 3).z).toBeCloseTo(3);
+  });
+});
+
+// The project is designed for 150 lots and tested at 300. A zoom floor that
+// sits above the zoom those need silently crops the park, which is what the
+// old floor of 0.3 did from 37 lots onward.
+describe("the park fits on screen", () => {
+  const VIEW_HEIGHT = 120; // must match web/scene.ts
+  const WIDE = (VIEW_HEIGHT * 16) / 9;
+
+  function zoomForLots(count: number): number {
+    const indexes = Array.from({ length: count }, (_, i) => i);
+    return fitZoom(parkHalfExtent(parkBounds(indexes), PLOT_SIZE), VIEW_HEIGHT, WIDE);
+  }
+
+  it("still fits at 150 lots", () => {
+    expect(zoomForLots(150)).toBeGreaterThanOrEqual(MIN_ZOOM);
+  });
+
+  it("still fits at 300 lots, the size the park is tested at", () => {
+    expect(zoomForLots(300)).toBeGreaterThanOrEqual(MIN_ZOOM);
+  });
+
+  it("names the zoom each size needs, so a change to the floor is deliberate", () => {
+    expect(zoomForLots(150)).toBeCloseTo(0.156, 3);
+    expect(zoomForLots(300)).toBeCloseTo(0.114, 3);
   });
 });

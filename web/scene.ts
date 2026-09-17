@@ -4,6 +4,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { fitZoom, MAX_ZOOM, MIN_ZOOM } from "./park-layout.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
@@ -34,8 +35,11 @@ export function createScene(canvas: HTMLCanvasElement) {
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
   controls.enablePan = false;
-  controls.minZoom = 0.3;
-  controls.maxZoom = 4;
+  // Both live in park-layout.ts, next to the test that pins them against the
+  // zoom 150 and 300 lots actually need. The old floor of 0.3 cropped the
+  // park from 37 lots onward.
+  controls.minZoom = MIN_ZOOM;
+  controls.maxZoom = MAX_ZOOM;
   controls.minPolarAngle = 0.15;
   controls.maxPolarAngle = Math.PI * 0.42; // stays above the ground
 
@@ -70,10 +74,8 @@ export function createScene(canvas: HTMLCanvasElement) {
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
     if (fit) {
-      // A square town seen isometrically is about 1.9 half extents tall and 3 wide on screen.
-      const byHeight = VIEW_HEIGHT / (halfExtent * 1.9);
-      const byWidth = (camera.right - camera.left) / (halfExtent * 3);
-      camera.zoom = THREE.MathUtils.clamp(Math.min(byHeight, byWidth), controls.minZoom, controls.maxZoom);
+      const wanted = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left);
+      camera.zoom = THREE.MathUtils.clamp(wanted, controls.minZoom, controls.maxZoom);
       camera.updateProjectionMatrix();
     }
   }

@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
-import { parkBounds } from "./park-layout.ts";
+import { parkBounds, parkHalfExtent } from "./park-layout.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
 
@@ -51,7 +51,7 @@ export class Park {
     const bounds = parkBounds(this.key ? this.key.split(",").map(Number) : []);
     const x = ((bounds.minCol + bounds.maxCol) / 2) * PLOT_SIZE;
     const z = ((bounds.minRow + bounds.maxRow) / 2) * PLOT_SIZE;
-    const half = (Math.max(bounds.maxCol - bounds.minCol, bounds.maxRow - bounds.minRow) + 1.5) * (PLOT_SIZE / 2);
+    const half = parkHalfExtent(bounds, PLOT_SIZE);
     return { x, z, half };
   }
 

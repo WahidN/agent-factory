@@ -114,6 +114,10 @@ export class RoofSign {
       mesh.position.set((left - width / 2) * scale, baseline, (-DEPTH / 2) * scale); // extrusion straddles z = 0
       mesh.scale.setScalar(scale);
       mesh.castShadow = true;
+      // The geometry belongs to the cache above, shared with every other lot
+      // showing this letter. Lot.disposeStructure() walks the whole structure
+      // and disposes what it finds, so it has to be told to leave this one be.
+      mesh.userData.sharedGeometry = true;
       this.group.add(mesh);
     }
 

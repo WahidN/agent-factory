@@ -435,7 +435,12 @@ export class Lot {
     // The sign's own geometries (posts, board, stripe, text planes) are disposed
     // above by Sign.dispose(); this traversal disposes them a second time, which
     // is harmless in Three.js since geometry.dispose() is idempotent.
+    // `sharedGeometry` marks a mesh whose geometry belongs to a cache other lots
+    // draw from too (the roof sign's letters): disposing it here would free the
+    // GPU buffers of every other lot spelling the same letter, and the renderer
+    // would upload the whole alphabet again on the next frame.
     this.structure.traverse((child) => {
+      if (child.userData.sharedGeometry) return;
       if (child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh)) child.geometry.dispose();
     });
   }

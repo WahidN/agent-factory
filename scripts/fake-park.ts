@@ -4,7 +4,7 @@
 // Macs open.
 //
 // Usage: pnpm fake-park
-// Env: SPOKES, SESSIONS_PER_SPOKE, HUB, SEED (see README below).
+// Env: SPOKES, SESSIONS_PER_SPOKE, HUB, SEED, FREEZE (see README below).
 
 import { startRelay, type Relay } from "../server/relay.ts";
 import type { ServerMessage, SessionState } from "../server/types.ts";
@@ -13,6 +13,10 @@ const SPOKES = Number(process.env.SPOKES) || 10;
 const SESSIONS_PER_SPOKE = Number(process.env.SESSIONS_PER_SPOKE) || 5;
 const HUB = process.env.HUB ?? "ws://127.0.0.1:4317";
 const SEED = process.env.SEED;
+// Builds the park and then leaves it alone: no status flips, no sessions
+// coming or going. Visual checks need a park that holds still long enough to
+// follow one thing across two screenshots.
+const FREEZE = process.env.FREEZE === "1";
 
 const CONNECT_SPREAD_MS = 300;
 const STATUS_EVERY_MS = 5_000;
@@ -191,7 +195,7 @@ function scheduleTick(spoke: Spoke) {
   timers.push(timer);
 }
 
-for (const spoke of spokes) scheduleTick(spoke);
+if (!FREEZE) for (const spoke of spokes) scheduleTick(spoke);
 
 const statusTimer = setInterval(() => {
   const connected = spokes.filter((s) => s.connected).length;

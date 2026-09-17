@@ -55,6 +55,15 @@ describe("CITY_LANDMARKS", () => {
     });
   }
 
+  // Park draws one unbroken grass plane at y = 0 over the whole scene, so
+  // anything a landmark sinks below grade loses the depth test and vanishes.
+  it("keeps the Goffert field and its lines above the shared ground plane", () => {
+    const builder = new StaticBuilder();
+    CITY_LANDMARKS.goffert(builder, random(3));
+    const box = new THREE.Box3().setFromObject(builder.build());
+    expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+  });
+
   it("makes the Stevenskerk the tallest of the five landmarks", () => {
     const heights = Object.fromEntries(
       NAMES.map((name) => {

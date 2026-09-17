@@ -71,7 +71,7 @@ const valkhof: CellBuilder = (b, rand) => {
   const kapelRadius = 3.2;
   const kapelHeight = 6;
   b.cylinder(tufa, [kapelX, 3 + kapelHeight / 2, kapelZ], [kapelRadius, kapelHeight, kapelRadius]);
-  b.cylinder(kapelRoof, [kapelX, 3 + kapelHeight + 1.5, kapelZ], [kapelRadius + 0.4, 3, kapelRadius + 0.4]);
+  b.cone(kapelRoof, [kapelX, 3 + kapelHeight + 1.5, kapelZ], [kapelRadius + 0.4, 3, kapelRadius + 0.4]);
 
   // Barbarossaruïne: a broken ring of wall segments with round arch openings,
   // missing one side entirely.
@@ -147,12 +147,14 @@ const waalkade: CellBuilder = (b, rand) => {
       b.cylinder(wall, [x, height + 0.4, rowZ - depth / 2 + 0.3], [width * 0.4, 0.8, 0.4]);
       b.box(wall, [x, height + 1.4, rowZ - depth / 2 + 0.3], [width * 0.5, 1.2, 0.5]);
     } else {
-      // Tuitgevel: a plain triangular top.
+      // Tuitgevel: two sloping sides meeting at the ridge. Each side runs
+      // along x from the wall's corner to the apex and is tilted about z.
       const rise = 2 + rand();
       const slope = Math.sqrt(rise * rise + (width / 2) * (width / 2));
       const angle = Math.atan2(rise, width / 2);
-      b.box(wall, [x, height + rise / 2, rowZ - depth / 2 + 0.15], [width - 0.2, 0.2, slope], [0, 0, angle]);
-      b.box(wall, [x, height + rise / 2, rowZ - depth / 2 + 0.15], [width - 0.2, 0.2, slope], [0, 0, -angle]);
+      const gevelZ = rowZ - depth / 2 + 0.15;
+      b.box(wall, [x - width / 4, height + rise / 2, gevelZ], [slope, 0.2, 0.5], [0, 0, angle]);
+      b.box(wall, [x + width / 4, height + rise / 2, gevelZ], [slope, 0.2, 0.5], [0, 0, -angle]);
     }
 
     // Verlichte ramen op de gevel naar het water.

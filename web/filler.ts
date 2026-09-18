@@ -11,20 +11,29 @@ import type { StaticBuilder } from "./static-builder.ts";
 
 // ---------- Shared materials (module-level, so lots merge across sessions) ----------
 
-const pathMaterial = standard("#8a8578", { roughness: 1 });
-const waterMaterial = standard("#39586b", { roughness: 0.4, metalness: 0.1 });
+const pathMaterial = standard("#b4aa91", { roughness: 1 });
+const waterMaterial = standard("#4a9fc8", { roughness: 0.35, metalness: 0.05 });
 const benchMaterial = standard(COLORS.wood);
-const hedgeMaterial = standard("#274a30", { roughness: 1 });
+const hedgeMaterial = standard("#3d6f43", { roughness: 1 });
+const sandMaterial = standard("#d8c38f", { roughness: 1 });
+const meadowMaterial = standard("#6c984b", { roughness: 1 });
+const plazaMaterial = standard("#aaa28f", { roughness: 1 });
+const leafMaterials = ["#35643b", "#4f7c45", "#6e8d49"].map((c) => standard(c, { roughness: 1 }));
+const flowerMaterials = ["#d9b44a", "#b86d72", "#758eb3"].map((c) => standard(c, { roughness: 1 }));
 
-const brickReds = ["#8a4a3c", "#93553f", "#7c4436"].map((c) => standard(c));
-const brickTans = ["#a08b6a", "#8f7a58", "#b0997a"].map((c) => standard(c));
+// Low-poly planting geometry is shared by every park cell. StaticBuilder
+// bakes it into the cell mesh, so the extra silhouettes add no draw calls.
+const canopyGeometry = new THREE.DodecahedronGeometry(1, 0);
+
+const brickReds = ["#a75845", "#b56850", "#914b3c"].map((c) => standard(c));
+const brickTans = ["#b39a72", "#a88c62", "#c0a986"].map((c) => standard(c));
 const houseWalls = [...brickReds, ...brickTans];
-const roofDarks = ["#3c3936", "#4a423c"].map((c) => standard(c));
+const roofDarks = ["#3d4648", "#554842"].map((c) => standard(c));
 
 const shopFronts = ["#4c6b73", "#7a5a4a", "#5a6b4c", "#6a5a73"].map((c) => standard(c));
 const awningColors = ["#a13c3c", "#3c7a6b", "#c48a2a"].map((c) => standard(c));
 
-const fieldGreen = standard("#2e5b3a", { roughness: 1 });
+const fieldGreen = standard("#4a823f", { roughness: 1 });
 const lineWhite = standard("#e8e8e0");
 const goalWhite = standard("#dcdcd6");
 const fenceGrey = standard("#5a5d61");
@@ -65,36 +74,126 @@ function pineTree(b: StaticBuilder, x: number, z: number, scale: number) {
   b.cylinder(MATERIALS.pineDark, [x, 4.1 * scale, z], [0.75 * scale, 1.6 * scale, 0.75 * scale]);
 }
 
+function deciduousTree(b: StaticBuilder, x: number, z: number, scale: number, leaf: THREE.Material) {
+  b.cylinder(MATERIALS.trunk, [x, 1.25 * scale, z], [0.2 * scale, 2.5 * scale, 0.2 * scale]);
+  b.add(canopyGeometry, leaf, [x, 3.35 * scale, z], [1.45 * scale, 1.65 * scale, 1.45 * scale]);
+}
+
+function parkTree(b: StaticBuilder, rand: () => number, x: number, z: number, scale = 1) {
+  if (rand() < 0.22) pineTree(b, x, z, scale * 0.9);
+  else deciduousTree(b, x, z, scale, pick(rand, leafMaterials));
+}
+
+function pathBetween(b: StaticBuilder, from: [number, number], to: [number, number], width = 2.2) {
+  const dx = to[0] - from[0];
+  const dz = to[1] - from[1];
+  b.box(
+    pathMaterial,
+    [(from[0] + to[0]) / 2, 0.02, (from[1] + to[1]) / 2],
+    [width, 0.04, Math.hypot(dx, dz)],
+    [0, Math.atan2(dx, dz), 0],
+  );
+}
+
+function picnicTable(b: StaticBuilder, x: number, z: number, rotationY: number) {
+  b.box(benchMaterial, [x, 0.72, z], [2.2, 0.12, 0.8], [0, rotationY, 0]);
+  for (const side of [-1, 1]) {
+    const ox = Math.sin(rotationY) * side * 0.9;
+    const oz = Math.cos(rotationY) * side * 0.9;
+    b.box(benchMaterial, [x + ox, 0.45, z + oz], [2.2, 0.1, 0.38], [0, rotationY, 0]);
+  }
+  for (const side of [-0.72, 0.72]) {
+    b.box(
+      MATERIALS.darkSteel,
+      [x + Math.cos(rotationY) * side, 0.35, z - Math.sin(rotationY) * side],
+      [0.08, 0.7, 0.08],
+    );
+  }
+}
+
+function flowerBed(b: StaticBuilder, x: number, z: number, radius: number, flower: THREE.Material) {
+  b.cylinder(MATERIALS.curb, [x, 0.12, z], [radius, 0.24, radius]);
+  b.cylinder(flower, [x, 0.2, z], [radius - 0.22, 0.18, radius - 0.22]);
+}
+
 // ---------- park ----------
 
 const park: CellBuilder = (b, rand) => {
   b.box(MATERIALS.grass, [0, -0.05, 0], [CELL_HALF * 2, 0.1, CELL_HALF * 2]);
+  const variant = Math.floor(rand() * 4);
+  let reserved: (x: number, z: number) => boolean;
 
-  // A pair of paths crossing near the middle, offset so they don't sit
-  // exactly on the diagonal.
-  b.box(pathMaterial, [0, 0.02, 3], [CELL_HALF * 2 - 4, 0.04, 2.4]);
-  b.box(pathMaterial, [-3, 0.02, 0], [2.4, 0.04, CELL_HALF * 2 - 4]);
+  if (variant === 0) {
+    // Watertuin: a loose bank path, a bright pond and tree groups rather
+    // than the former evenly scattered conifers.
+    pathBetween(b, [-18, 7], [-7, 4]);
+    pathBetween(b, [-7, 4], [3, 7]);
+    pathBetween(b, [3, 7], [18, 2]);
+    pathBetween(b, [3, 7], [7, 18]);
+    b.cylinder(MATERIALS.curb, [-8, 0.11, -9], [5.7, 0.22, 4.5]);
+    b.cylinder(waterMaterial, [-8, 0.02, -9], [5.3, 0.08, 4.1]);
+    bench(b, -1, 4.7, 0.2);
+    bench(b, 8, 4.7, -0.25);
+    flowerBed(b, 11.5, -10, 2.2, flowerMaterials[2]);
+    reserved = (x, z) => Math.hypot((x + 8) / 1.2, z + 9) < 7 || Math.abs(z - 6) < 3;
+  } else if (variant === 1) {
+    // Stadstuin: clipped hedges and four planted rooms around a small
+    // central plaza make this read as designed public space.
+    b.box(pathMaterial, [0, 0.02, 0], [CELL_HALF * 2 - 4, 0.04, 2.2]);
+    b.box(pathMaterial, [0, 0.02, 0], [2.2, 0.04, CELL_HALF * 2 - 4]);
+    b.cylinder(plazaMaterial, [0, 0.04, 0], [4.2, 0.08, 4.2]);
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        b.box(hedgeMaterial, [sx * 9, 0.48, sz * 9], [7, 0.95, 0.55], [0, sx * sz * 0.08, 0]);
+        flowerBed(b, sx * 9, sz * 7, 1.7, flowerMaterials[(sx + sz + 4) % flowerMaterials.length]);
+      }
+    }
+    bench(b, 5.6, 2, Math.PI / 2);
+    bench(b, -5.6, -2, -Math.PI / 2);
+    reserved = (x, z) => Math.abs(x) < 5 || Math.abs(z) < 4;
+  } else if (variant === 2) {
+    // Stadsweide: broad open grass, a faceted walking loop, picnic tables
+    // and irregular wildflower islands.
+    b.box(meadowMaterial, [0, 0.01, 0], [24, 0.02, 22]);
+    const loop: [number, number][] = [
+      [-15, -11],
+      [-10, 13],
+      [7, 15],
+      [15, 5],
+      [12, -13],
+      [-15, -11],
+    ];
+    for (let i = 1; i < loop.length; i++) pathBetween(b, loop[i - 1], loop[i], 1.8);
+    picnicTable(b, -3, -4, 0.3);
+    picnicTable(b, 4, 2, -0.45);
+    flowerBed(b, -8, 6, 1.6, flowerMaterials[0]);
+    flowerBed(b, 8, -6, 2, flowerMaterials[1]);
+    reserved = (x, z) => Math.abs(x) < 8 && Math.abs(z) < 7;
+  } else {
+    // Buurtpark: a sandy play garden, pergola-like frame and a small orchard.
+    pathBetween(b, [-18, -9], [-4, -3]);
+    pathBetween(b, [-4, -3], [5, 7]);
+    pathBetween(b, [5, 7], [18, 11]);
+    b.cylinder(sandMaterial, [-8, 0.06, -7], [5.2, 0.12, 4.4]);
+    for (const x of [-10, -7, -4]) {
+      b.box(MATERIALS.darkSteel, [x, 1.4, -7], [0.12, 2.8, 0.12]);
+    }
+    b.box(MATERIALS.darkSteel, [-7, 2.75, -7], [6.2, 0.12, 0.12]);
+    b.box(benchMaterial, [-7, 0.8, -7], [2.8, 1.6, 1.2], [0, 0, -0.2]);
+    bench(b, 3, 8.4, 0.35);
+    flowerBed(b, 10, -10, 2.1, flowerMaterials[1]);
+    reserved = (x, z) => Math.hypot((x + 8) / 1.15, z + 7) < 6 || Math.abs(z - x * 0.55 - 4) < 3;
+  }
 
-  // A small pond in one corner, with a low rim.
-  const pondX = -11;
-  const pondZ = -11;
-  b.cylinder(MATERIALS.curb, [pondX, 0.12, pondZ], [5.4, 0.24, 5.4]);
-  b.cylinder(waterMaterial, [pondX, 0.06, pondZ], [4.9, 0.1, 4.9]);
-
-  // Benches along the paths.
-  bench(b, 6, 4.4, 0);
-  bench(b, -6.4, 1.6, Math.PI / 2);
-  bench(b, 4, -6, Math.PI);
-
-  // Trees scattered on the remaining lawn, away from the paths and pond.
-  for (let i = 0; i < 10; i++) {
-    const x = (rand() - 0.5) * (CELL_HALF * 2 - 6);
-    const z = (rand() - 0.5) * (CELL_HALF * 2 - 6);
-    const nearPond = Math.hypot(x - pondX, z - pondZ) < 8;
-    const nearPathA = Math.abs(z - 3) < 3;
-    const nearPathB = Math.abs(x + 3) < 3;
-    if (nearPond || nearPathA || nearPathB) continue;
-    pineTree(b, x, z, 0.7 + rand() * 0.4);
+  // A bounded number of seeded attempts gives every cell its own silhouette
+  // while keeping the vertex budget predictable. Failed attempts simply
+  // preserve useful clearings around paths and amenities.
+  const attempts = variant === 2 ? 13 : 16;
+  for (let i = 0; i < attempts; i++) {
+    const x = (rand() - 0.5) * 32;
+    const z = (rand() - 0.5) * 32;
+    if (reserved(x, z)) continue;
+    parkTree(b, rand, x, z, 0.72 + rand() * 0.32);
   }
 };
 

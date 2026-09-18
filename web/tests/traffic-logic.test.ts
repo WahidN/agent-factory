@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BRIDGES, crossingAt, WAAL_EDGE } from "../city-plan.ts";
+import { BRIDGES, crossingAt, RAIL_BRIDGE, WAAL_EDGE } from "../city-plan.ts";
 import { PLOT_SIZE, plotCell } from "../plots.ts";
 import {
   advance,
@@ -82,6 +82,11 @@ describe("the Waal in the road graph", () => {
     const columns = new Set(bankCrossings.map((lane) => colOf(lane.from)));
     for (const { col } of BRIDGES) expect(columns).toContain(col);
     for (const col of columns) expect(crossingAt(col)).not.toBeNull();
+  });
+
+  it("never treats the Spoorbrug landmark as a road crossing", () => {
+    expect(crossingAt(RAIL_BRIDGE.col)).toBeNull();
+    expect(bankCrossings.some((lane) => colOf(lane.from) === RAIL_BRIDGE.col)).toBe(false);
   });
 
   it("never lets a car drive onto a lane that ends in the water", () => {

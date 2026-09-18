@@ -16,6 +16,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Activity } from "./activity.ts";
+import { factoryStyleFor } from "./factory-style.ts";
 import { hallShape } from "./lot.ts";
 import type { ModelTier } from "./model-tier.ts";
 import { COLORS } from "./palette.ts";
@@ -107,10 +108,29 @@ function hallGeometry(tier: ModelTier): THREE.BufferGeometry {
   ]);
 }
 
+function rooflineMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
+  const { x0, z0, x1, z1, top } = hallShape(lot.tier);
+  const style = factoryStyleFor(lot.id);
+  return matrix.compose(
+    new THREE.Vector3(lot.x + (x0 + x1) / 2, top + 0.8 + style.roofHeight / 2, lot.z + (z0 + z1) / 2),
+    new THREE.Quaternion(),
+    new THREE.Vector3(
+      Math.max(3, (x1 - x0) * style.roofWidth),
+      style.roofHeight,
+      Math.max(3, (z1 - z0) * style.roofDepth),
+    ),
+  );
+}
+
 // Where the beacon sits: the middle of the roof of the tier's hall.
-function beaconMatrix(tier: ModelTier, x: number, z: number, matrix: THREE.Matrix4): THREE.Matrix4 {
+function beaconMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
+  const { tier, x, z, id } = lot;
   const { x0, z0, x1, z1, top } = hallShape(tier);
-  return matrix.makeTranslation(x + (x0 + x1) / 2, top + 0.8 + BEACON.height / 2, z + (z0 + z1) / 2);
+  return matrix.makeTranslation(
+    x + (x0 + x1) / 2,
+    top + 0.8 + factoryStyleFor(id).roofHeight + BEACON.height / 2,
+    z + (z0 + z1) / 2,
+  );
 }
 
 // One instanced mesh that grows when the park outgrows it. Three.js fixes an
@@ -210,10 +230,16 @@ export class InstancedLots {
     BEACON_BUSY,
   );
   private readonly yardMaterial = new THREE.MeshStandardMaterial({ color: COLORS.yard, roughness: 0.95 });
+  private readonly rooflineMaterial = new THREE.MeshStandardMaterial({
+    color: "#667078",
+    roughness: 0.82,
+    metalness: 0.08,
+  });
 
   private readonly halls = new Map<ModelTier, Slab>();
   private readonly beacons: Slab;
   private readonly yards: Slab;
+  private readonly rooflines: Slab;
 
   private slots = new Map<string, Slot>();
   private key = "";
@@ -229,6 +255,7 @@ export class InstancedLots {
       this.group,
       true,
     );
+    this.rooflines = new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false);
     this.yards = new Slab(
       box(YARD_HALF * 2, YARD_Y, YARD_HALF * 2, 0, YARD_Y / 2, 0),
       this.yardMaterial,
@@ -263,9 +290,11 @@ export class InstancedLots {
   dispose() {
     for (const hall of this.halls.values()) hall.dispose();
     this.beacons.dispose();
+    this.rooflines.dispose();
     this.yards.dispose();
     this.hallMaterial.dispose();
     this.beaconMaterial.dispose();
+    this.rooflineMaterial.dispose();
     this.yardMaterial.dispose();
   }
 
@@ -277,6 +306,7 @@ export class InstancedLots {
     for (const lot of lots) perTier.get(lot.tier)?.push(lot);
 
     this.beacons.reset(lots.length);
+    this.rooflines.reset(lots.length);
     this.yards.reset(lots.length);
 
     let shared = 0;
@@ -287,7 +317,8 @@ export class InstancedLots {
       group.forEach((lot, index) => {
         slab.place(index, this.matrix.makeTranslation(lot.x, 0, lot.z), lot.wall);
         this.yards.place(shared, this.matrix.makeTranslation(lot.x, 0, lot.z));
-        this.beacons.place(shared, beaconMatrix(tier, lot.x, lot.z, this.matrix), lot.accent);
+        this.rooflines.place(shared, rooflineMatrix(lot, this.matrix));
+        this.beacons.place(shared, beaconMatrix(lot, this.matrix), lot.accent);
         // A lot that was already far keeps its eased glow, so swapping the set
         // never flashes a hall on or off.
         const activity = previous.get(lot.id)?.activity ?? new Activity();
@@ -299,6 +330,7 @@ export class InstancedLots {
       slab.uploadPlacements();
     }
     this.beacons.uploadPlacements();
+    this.rooflines.uploadPlacements();
     this.yards.uploadPlacements();
   }
 }

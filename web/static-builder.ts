@@ -16,7 +16,12 @@ const quaternion = new THREE.Quaternion();
 
 export type Vec3 = [number, number, number];
 
-export const BAKED_MATERIAL = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+export const BAKED_MATERIAL = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 0.82,
+  metalness: 0,
+  flatShading: true,
+});
 
 function isPlain(material: THREE.Material): material is THREE.MeshStandardMaterial {
   return (

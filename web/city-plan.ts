@@ -44,13 +44,18 @@ export const WAAL_EDGE = 2;
 // and both verges without reaching into a yard.
 export const WAAL_WIDTH = 20;
 
-// The two crossings, named by the column boundary they sit on: the road at
+// The two road crossings, named by the column boundary they sit on: the road at
 // column boundary c runs at x = (c - 0.5) * PLOT_SIZE. De Oversteek lies west
 // of the Waalbrug, as it does in the city.
 export const BRIDGES: { col: number; kind: "oversteek" | "waalbrug" }[] = [
   { col: 1, kind: "oversteek" },
   { col: 3, kind: "waalbrug" },
 ];
+
+// The Spoorbrug sits geographically between the two road bridges. It is kept
+// deliberately separate from BRIDGES and crossingAt: the traffic graph may
+// never mistake rails for another road across the Waal.
+export const RAIL_BRIDGE = { col: 2 } as const;
 
 // East of the two named bridges the city gets plain crossings too, so it does
 // not split in two once the park passes column 3: the first one at column 8,

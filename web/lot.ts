@@ -6,6 +6,7 @@ import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
 import { destinationFor } from "./leisure.ts";
+import { factoryStyleFor } from "./factory-style.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
@@ -357,13 +358,14 @@ export class Lot {
 
   private buildStructure() {
     const size = SIZES[this.tier];
+    const style = factoryStyleFor(this.state.id);
     this.builtModel = this.state.model;
     const builder = new StaticBuilder();
     this.buildYard(builder);
     this.buildHall(builder, size);
 
     const { at: stacksAt, ...stacksOptions } = size.stacks;
-    const stacks = new Stacks(builder, stacksAt, stacksOptions);
+    const stacks = new Stacks(builder, stacksAt, { ...stacksOptions, axis: style.stackAxis });
     const forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
     const searchlight = new Searchlight(builder, [-17, 12], { tower: true, ...size.searchlight, aimAt: [-4, 2] });
     const cooling = new CoolingTower(builder, size.cooling.at, size.cooling.radius, size.cooling.height);
@@ -492,6 +494,7 @@ export class Lot {
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     const wallY = YARD_Y + STRIPE + wall / 2;
+    const style = factoryStyleFor(this.state.id);
 
     b.box(this.accentMaterial, [cx, YARD_Y + STRIPE / 2, cz], [width + 0.1, STRIPE, depth + 0.1]);
     const wallPlane = (length: number) =>
@@ -501,6 +504,18 @@ export class Lot {
     b.add(wallPlane(depth), this.wallMaterial, [x1, wallY, cz], [1, 1, 1], [0, Math.PI / 2, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x0, wallY, cz], [1, 1, 1], [0, -Math.PI / 2, 0]);
 
+    // Slim colored pilasters and a crisp cornice turn the plain box into a
+    // deliberate industrial pavilion. They reuse the animated accent
+    // material, so all pieces still collapse into its existing draw call.
+    const pilasterHeight = top - YARD_Y;
+    for (const x of [x0 + 0.16, x1 - 0.16]) {
+      for (const z of [z0 - 0.02, z1 + 0.02]) {
+        b.box(this.accentMaterial, [x, YARD_Y + pilasterHeight / 2, z], [0.38, pilasterHeight, 0.18]);
+      }
+    }
+    b.box(this.accentMaterial, [cx, top - 0.18, z1 + 0.08], [width + 0.2, 0.36, 0.18]);
+    b.box(this.accentMaterial, [cx, top - 0.18, z0 - 0.08], [width + 0.2, 0.36, 0.18]);
+
     // Flat roof with parapet
     b.box(MATERIALS.roof, [cx, top + 0.15, cz], [width, 0.3, depth]);
     for (const s of [-1, 1]) {
@@ -508,10 +523,26 @@ export class Lot {
       b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), top + 0.4, cz], [0.4, 0.8, depth + 0.1]);
     }
 
+    // A stable hall profile: longitudinal clerestory, transverse lantern, or
+    // compact high monitor. The far instanced LOD mirrors these dimensions.
+    const monitorWidth = Math.max(3, width * style.roofWidth);
+    const monitorDepth = Math.max(3, depth * style.roofDepth);
+    b.box(MATERIALS.roof, [cx, top + 0.8 + style.roofHeight / 2, cz], [monitorWidth, style.roofHeight, monitorDepth]);
+    b.box(
+      this.accentMaterial,
+      [cx, top + 0.8 + style.roofHeight * 0.58, cz + monitorDepth / 2 + 0.04],
+      [Math.max(2.2, monitorWidth - 0.7), Math.min(0.42, style.roofHeight * 0.28), 0.08],
+    );
+
     // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
-    // half size inside the parapet.
-    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) =>
-      vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+    // half size inside the parapet and clear of this hall's roof monitor.
+    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => {
+      const inside = vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+      const clearMonitor =
+        Math.abs(vx - width / 2) > monitorWidth / 2 + halfX + 0.3 ||
+        Math.abs(vz - depth / 2) > monitorDepth / 2 + halfZ + 0.3;
+      return inside && clearMonitor;
+    };
     for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
       const x = x0 + vent[0];
       const z = z0 + vent[1];
@@ -545,7 +576,7 @@ export class Lot {
 
     for (let slot = 0; slot < target; slot++) {
       if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
-      const warehouse = new Warehouse(this.accent);
+      const warehouse = new Warehouse(this.accent, slot);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
       for (const mesh of warehouse.pickables) mesh.userData.hover = this;

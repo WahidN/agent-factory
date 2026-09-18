@@ -11,6 +11,7 @@ import {
   indexForRank,
   isWaterEdge,
   nearestClaim,
+  RAIL_BRIDGE,
   WAAL_EDGE,
 } from "../city-plan.ts";
 import { curveCell, plotCell } from "../plots.ts";
@@ -165,7 +166,8 @@ describe("the Waal", () => {
   it("is crossed on the bridge columns and nowhere else close by", () => {
     for (const { col, kind } of BRIDGES) expect(crossingAt(col)).toBe(kind);
     expect(crossingAt(0)).toBeNull();
-    expect(crossingAt(2)).toBeNull();
+    expect(crossingAt(RAIL_BRIDGE.col)).toBeNull();
+    expect(BRIDGES.some(({ col }) => col === RAIL_BRIDGE.col)).toBe(false);
   });
 
   it("gets a plain crossing every 5 columns from column 8 on", () => {

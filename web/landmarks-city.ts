@@ -18,17 +18,24 @@ const cone = new THREE.ConeGeometry(1, 1, 8);
 // the evening palette); everything else that repeats across landmarks shares
 // one material so a landmark never buys its own draw calls for common parts.
 
-const brickChurch = standard("#4a2620");
-const brickTower = standard("#63332a");
-const brickStation = standard("#57291f");
-const roofDark = standard("#2e3138");
-const plaza = standard("#8f8d86");
-const fieldGreen = standard("#2c6238");
+const brickChurch = standard("#865043");
+const brickTower = standard("#9b5d4c");
+const brickStation = standard("#8f493a");
+const roofDark = standard("#35444a");
+const copperRoof = standard("#3f756e", { roughness: 0.72, metalness: 0.08 });
+const windowDark = standard("#252e33", { roughness: 0.35 });
+const plaza = standard("#b7b0a3");
+const plazaBrick = standard("#9d735d");
+const fieldGreen = standard("#4b843f");
 const lineWhite = standard("#dedad0");
-const stone = standard("#9b978c");
+const necRed = standard("#b62f32");
+const necBlack = standard("#25272a");
+const stone = standard("#c5bcaa");
+const bronze = standard("#5c6652", { roughness: 0.65, metalness: 0.2 });
+const stationGlass = standard("#7293a0", { roughness: 0.25, metalness: 0.08 });
 const awningRed = standard("#9c3a34");
 const awningCream = standard("#cfc6a8");
-const water = standard("#1e2c34", { roughness: 0.25, metalness: 0.1 });
+const water = standard("#4298bf", { roughness: 0.3, metalness: 0.05 });
 
 // Glowing windows and floodlights share the scene's existing lamp glow
 // material instead of a bespoke emissive per landmark.
@@ -71,13 +78,22 @@ function gableRoof(
 // ---------- Grote of Sint-Stevenskerk ----------
 
 function stevenskerk(b: StaticBuilder, rand: () => number) {
-  const towerHeight = 30 + rand() * 4;
+  const towerHeight = 25 + rand() * 2;
   const towerZ = -8;
 
-  // Tower: tall, straight, flat-capped, clearly the highest of the five.
-  b.box(brickChurch, [0, towerHeight / 2, towerZ], [8, towerHeight, 8]);
-  b.box(roofDark, [0, towerHeight + 0.5, towerZ], [8.8, 1, 8.8]);
-  b.cylinder(stone, [0, towerHeight * 0.72, towerZ + 4.01], [1.1, 0.15, 1.1], [Math.PI / 2, 0, 0]);
+  // The square west tower and its green, layered Renaissance crown are the
+  // church's skyline signature. The slimmer belfry keeps that silhouette
+  // legible from every map angle without a high-poly bespoke mesh.
+  b.box(brickChurch, [0, towerHeight / 2, towerZ], [8.2, towerHeight, 8.2]);
+  b.box(stone, [0, 7.5, towerZ + 4.12], [1.4, 3.8, 0.12]);
+  b.box(windowDark, [0, towerHeight - 3, towerZ + 4.13], [1.5, 3.6, 0.1]);
+  b.box(windowDark, [4.13, towerHeight - 3, towerZ], [0.1, 3.6, 1.5]);
+  b.box(stone, [0, towerHeight + 0.45, towerZ], [9, 0.9, 9]);
+  b.cylinder(copperRoof, [0, towerHeight + 2.2, towerZ], [4.1, 3.5, 4.1]);
+  b.cone(copperRoof, [0, towerHeight + 5.4, towerZ], [3.4, 3.2, 3.4]);
+  b.cylinder(copperRoof, [0, towerHeight + 7.4, towerZ], [1.1, 1.3, 1.1]);
+  b.cone(copperRoof, [0, towerHeight + 9.6, towerZ], [1.35, 3.2, 1.35]);
+  b.box(MATERIALS.darkSteel, [0, towerHeight + 11.7, towerZ], [0.14, 1.4, 0.14]);
 
   // Nave with a saddle roof, steunberen along both long walls.
   const naveHalfWidth = 4.5;
@@ -86,6 +102,13 @@ function stevenskerk(b: StaticBuilder, rand: () => number) {
   const naveLength = 14;
   b.box(brickChurch, [0, naveWallTop / 2, naveZ], [naveHalfWidth * 2, naveWallTop, naveLength]);
   gableRoof(b, roofDark, 0, naveWallTop, naveZ, naveHalfWidth, 3.4, naveLength);
+
+  // Broad transept and polygonal choir make the ground plan read as a Gothic
+  // church instead of a hall behind a tower.
+  b.box(brickChurch, [0, 5, 4.5], [14, 10, 5]);
+  gableRoof(b, roofDark, 0, 10, 4.5, 7, 3.1, 5);
+  b.cylinder(brickChurch, [0, 4.5, 10], [4.4, 9, 4.4]);
+  b.cone(roofDark, [0, 10.7, 10], [4.7, 3.4, 4.7]);
 
   const buttresses = 5;
   for (let i = 0; i < buttresses; i++) {
@@ -152,6 +175,30 @@ function goffert(b: StaticBuilder, rand: () => number) {
   b.box(MATERIALS.concrete, [-fieldHalfX - depth / 2, midY, 0], [slopeLength, 0.6, eastWestWidth], [0, 0, -angle]);
   b.box(MATERIALS.concrete, [fieldHalfX + depth / 2, midY, 0], [slopeLength, 0.6, eastWestWidth], [0, 0, angle]);
 
+  // The NEC identity comes from its red-black seating bowl and bright white
+  // roofs over the long stands. These are broad color blocks rather than
+  // individual seats, so the extra detail remains one baked mesh.
+  b.box(
+    necRed,
+    [0, midY + 0.35, -fieldHalfZ - depth / 2 + 0.3],
+    [northSouthWidth - 1, 0.18, slopeLength - 0.5],
+    [angle, 0, 0],
+  );
+  b.box(
+    necRed,
+    [0, midY + 0.35, fieldHalfZ + depth / 2 - 0.3],
+    [northSouthWidth - 1, 0.18, slopeLength - 0.5],
+    [-angle, 0, 0],
+  );
+  b.box(necBlack, [0, rimY + 0.25, -fieldHalfZ - depth + 0.3], [northSouthWidth - 1, 0.3, 0.7]);
+  b.box(necBlack, [0, rimY + 0.25, fieldHalfZ + depth - 0.3], [northSouthWidth - 1, 0.3, 0.7]);
+  b.box(lineWhite, [0, 5.1, -fieldHalfZ - depth + 0.2], [northSouthWidth + 1.5, 0.45, 4], [-0.08, 0, 0]);
+  b.box(lineWhite, [0, 5.1, fieldHalfZ + depth - 0.2], [northSouthWidth + 1.5, 0.45, 4], [0.08, 0, 0]);
+  for (const x of [-7, 0, 7]) {
+    b.box(MATERIALS.steel, [x, 3.8, -fieldHalfZ - depth + 0.2], [0.22, 3.2, 0.22]);
+    b.box(MATERIALS.steel, [x, 3.8, fieldHalfZ + depth - 0.2], [0.22, 3.2, 0.22]);
+  }
+
   // Four floodlight masts, one per corner.
   const mastX = fieldHalfX + depth - 1;
   const mastZ = fieldHalfZ + depth - 1;
@@ -174,16 +221,30 @@ function goffert(b: StaticBuilder, rand: () => number) {
 // ---------- Plein 1944 ----------
 
 function plein1944(b: StaticBuilder, rand: () => number) {
-  // Paved plaza in alternating stone strips.
+  // Warm brick and pale-stone bands echo the rebuilt, enclosed city square.
   const strips = 16;
   for (let i = 0; i < strips; i++) {
     const x = -15 + i * 2;
-    b.box(i % 2 === 0 ? plaza : MATERIALS.curb, [x, 0.02, 0], [1.9, 0.04, 30]);
+    b.box(i % 2 === 0 ? plazaBrick : plaza, [x, 0.02, 0], [1.9, 0.04, 30]);
   }
 
-  // A monument on a sokkel at the center.
-  b.box(stone, [0, 1, 0], [3, 2, 3]);
-  b.box(stone, [0, 5, 0], [1, 6, 1]);
+  // The lowered entrance to the underground bicycle parking is the strongest
+  // contemporary feature: a long glazed opening with stairs and a red rim.
+  b.box(windowDark, [-2, 0.08, 2], [13, 0.12, 5]);
+  for (let i = 0; i < 5; i++) {
+    b.box(plaza, [-5 + i * 1.25, 0.2 + i * 0.14, 2], [1.15, 0.12, 4.2]);
+  }
+  b.box(necRed, [-2, 1.25, -0.4], [14, 0.35, 0.35]);
+  b.box(stationGlass, [-2, 0.7, -0.15], [14, 1.1, 0.12]);
+
+  // A compact post-war edge block and its vertical accent make the square
+  // read as Plein 1944 instead of an open market field.
+  b.box(brickStation, [-12.8, 4.2, 0], [3.5, 8.4, 24]);
+  for (const z of [-8, -3, 2, 7]) {
+    b.box(windowDark, [-11.02, 4.7, z], [0.1, 2.2, 2.4]);
+  }
+  b.box(brickStation, [-10.5, 9, -9], [4, 18, 4]);
+  b.box(bronze, [-8.45, 8.4, -9], [0.1, 2.6, 1.6]);
 
   // Market stalls with striped awnings along the east edge.
   const stalls = 4;
@@ -218,6 +279,13 @@ function kronenburgerpark(b: StaticBuilder, rand: () => number) {
   const towerRadius = 3.2;
 
   b.cylinder(brickTower, [towerX, towerHeight / 2, towerZ], [towerRadius, towerHeight, towerRadius]);
+  b.cylinder(stone, [towerX, towerHeight - 1.2, towerZ], [towerRadius + 0.18, 0.5, towerRadius + 0.18]);
+
+  // Narrow red-black shutters are a conspicuous feature of the Kruittoren.
+  for (const y of [4.2, 8.2, 11.5]) {
+    b.box(windowDark, [towerX, y, towerZ - towerRadius - 0.03], [0.75, 1.5, 0.08]);
+    b.box(awningRed, [towerX + towerRadius + 0.03, y, towerZ], [0.08, 1.5, 0.75]);
+  }
 
   // Crenellations around the top rim.
   const merlons = 12;
@@ -230,11 +298,17 @@ function kronenburgerpark(b: StaticBuilder, rand: () => number) {
     );
   }
 
-  // A short stretch of old city wall running off the tower, ending in nothing.
+  // A crenellated stretch of the old city wall and the moat link the tower
+  // visually to the preserved medieval fortifications.
   b.box(brickTower, [towerX + towerRadius + 3, 3, towerZ + 2], [6, 6, 1.2]);
+  for (let x = towerX + towerRadius + 0.8; x < 17; x += 1.8) {
+    b.box(brickTower, [x, 6.5, towerZ + 2], [0.9, 1, 1.3]);
+  }
 
   // A small pond.
   b.cylinder(water, [-6, 0.05, -5], [4, 0.1, 3]);
+  b.box(MATERIALS.wood, [-1.7, 0.55, -5], [4.5, 0.35, 1.4]);
+  for (const x of [-3.4, 0]) b.box(MATERIALS.darkSteel, [x, 0.85, -5], [0.08, 1, 1.2]);
 
   // Gravel paths radiating from near the tower.
   const paths = 3;
@@ -264,12 +338,14 @@ function station(b: StaticBuilder, rand: () => number) {
   b.box(brickStation, [0, hallHeight / 2, hallZ], [hallHalfWidth * 2, hallHeight, hallDepth]);
   b.box(roofDark, [0, hallHeight + 0.2, hallZ], [hallHalfWidth * 2 + 0.6, 0.4, hallDepth + 0.6]);
 
-  // Windows along the entrance-facing wall.
+  // The broad glazed entrance is framed by the dark-red Van Ravesteijn facade.
   const windows = 7;
   for (let i = 0; i < windows; i++) {
     const x = -hallHalfWidth + 2 + i * ((hallHalfWidth * 2 - 4) / (windows - 1));
     b.box(glow, [x, 3.2, hallZ + hallDepth / 2 + 0.05], [1.6, 2.4, 0.1]);
   }
+  b.box(stationGlass, [4.5, 3.4, hallZ + hallDepth / 2 + 0.08], [7, 4.6, 0.12]);
+  b.box(stone, [4.5, 6.25, hallZ + hallDepth / 2 + 0.12], [8, 0.5, 0.18]);
 
   // Colonnade in front, with a flat canopy.
   const pillars = 9;
@@ -280,12 +356,16 @@ function station(b: StaticBuilder, rand: () => number) {
   }
   b.box(roofDark, [0, 5.2, colonnadeZ], [27, 0.4, 4]);
 
-  // A slim, freestanding clock tower with a pointed top.
+  // The offset square clock tower and open lantern are the station's most
+  // recognizable silhouette; the real tower has a shallow cap, not a spire.
   const towerX = -hallHalfWidth - 2;
   const towerHeight = 18;
   b.box(brickStation, [towerX, towerHeight / 2, hallZ], [2.6, towerHeight, 2.6]);
-  b.add(cone, roofDark, [towerX, towerHeight + 1, hallZ], [1.6, 2, 1.6]);
-  b.cylinder(stone, [towerX, towerHeight * 0.7, hallZ + 1.31], [1, 0.15, 1], [Math.PI / 2, 0, 0]);
+  b.box(stone, [towerX, towerHeight + 0.35, hallZ], [3.2, 0.7, 3.2]);
+  b.box(roofDark, [towerX, towerHeight + 1, hallZ], [2.4, 0.6, 2.4]);
+  b.cylinder(stone, [towerX, towerHeight * 0.72, hallZ + 1.31], [0.9, 0.15, 0.9], [Math.PI / 2, 0, 0]);
+  b.cylinder(stone, [towerX + 1.31, towerHeight * 0.72, hallZ], [0.9, 0.15, 0.9], [0, 0, Math.PI / 2]);
+  b.box(MATERIALS.darkSteel, [towerX, towerHeight * 0.72, hallZ + 1.43], [0.08, 0.65, 0.08], [0, 0, 0.55]);
 
   // Platform and canopy on the far side, with a short stub of track.
   const platformZ = hallZ - hallDepth / 2 - 3;

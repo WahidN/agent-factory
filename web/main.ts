@@ -10,6 +10,7 @@ import { accentFor, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
 import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
+import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
 import { createTooltip } from "./tooltip.ts";
@@ -28,7 +29,8 @@ const view = createScene(canvas);
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
 const traffic = new ParkTraffic();
-view.scene.add(traffic.group);
+const boats = new RiverBoats();
+view.scene.add(traffic.group, boats.group);
 
 // Every session on the park, whether it is drawn in full or as an instance.
 const sessions = new Map<string, SessionState>();
@@ -159,6 +161,7 @@ function syncPlaces() {
 function refocus(fit = false) {
   syncPlaces();
   park.update(plots.indexes());
+  boats.setRiver(park.riverBounds());
   traffic.setRoads(plots.indexes());
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
@@ -314,6 +317,7 @@ view.onFrame((dt, now) => {
       truck: session.status === "busy",
     })),
   );
+  boats.tick(dt);
   tooltip.update();
 });
 

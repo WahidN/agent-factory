@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { CELL_HALF } from "../cell-build.ts";
 import { WAAL_WIDTH } from "../city-plan.ts";
-import { bridgeArch, gladiolaArch, RIVER_LANDMARKS } from "../landmarks-river.ts";
+import { bridgeArch, gladiolaArch, railBridge, RIVER_LANDMARKS } from "../landmarks-river.ts";
 import { StaticBuilder } from "../static-builder.ts";
 
 function random(seed: number) {
@@ -78,6 +78,31 @@ describe("bridgeArch", () => {
     // highest point sits near z = 0. The oversteek's asymmetric arch climbs
     // steeply on one side, so its peak sits well off-center.
     expect(waalbrugBox.max.y).not.toBeCloseTo(oversteekBox.max.y, 0);
+  });
+});
+
+describe("railBridge", () => {
+  it("builds a distinct fixed span that reaches both banks", () => {
+    const builder = new StaticBuilder();
+    railBridge(builder);
+    const group = builder.build();
+    const box = new THREE.Box3().setFromObject(group);
+
+    expect(group.children.length).toBeGreaterThan(0);
+    expect(box.max.z - box.min.z).toBeGreaterThan(WAAL_WIDTH);
+    expect(box.max.y).toBeGreaterThan(10);
+  });
+
+  it("has a different geometry signature from both road bridges", () => {
+    const railBuilder = new StaticBuilder();
+    railBridge(railBuilder);
+    const railVertices = vertexCount(railBuilder.build());
+
+    for (const kind of ["oversteek", "waalbrug"] as const) {
+      const roadBuilder = new StaticBuilder();
+      bridgeArch(roadBuilder, kind);
+      expect(railVertices).not.toBe(vertexCount(roadBuilder.build()));
+    }
   });
 });
 

@@ -11,12 +11,13 @@ import {
   crossingAt,
   GLADIOLA,
   isWaterEdge,
+  RAIL_BRIDGE,
   WAAL_EDGE,
   WAAL_WIDTH,
 } from "./city-plan.ts";
 import { FILLER_BUILDERS } from "./filler.ts";
 import { CITY_LANDMARKS } from "./landmarks-city.ts";
-import { bridgeArch, gladiolaArch, RIVER_LANDMARKS } from "./landmarks-river.ts";
+import { bridgeArch, gladiolaArch, railBridge, RIVER_LANDMARKS } from "./landmarks-river.ts";
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
 import { parkBounds, parkHalfExtent } from "./park-layout.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
@@ -74,18 +75,17 @@ const ROAD_DASH_REPEAT = 7.5; // divides a 60 unit cell edge evenly
 const roadMaterial = standard("#ffffff", { map: TEXTURES.road, roughness: 0.95 });
 const plainRoadMaterial = standard(COLORS.road, { roughness: 0.95 });
 const sidewalkMaterial = standard("#b9b8b2", { roughness: 0.95 });
+const terrainMaterial = standard("#ffffff", { map: TEXTURES.grass, roughness: 1 });
 
-// The Waal. Darker than the grass and smooth, so it catches the sky and the
-// street lamps instead of reading as another field. It keeps its own material
-// rather than being baked flat into the merged mesh, which is what the sheen
-// needs.
-const waterMaterial = standard("#0e141c", { roughness: 0.18, metalness: 0.4 });
+// The Waal stays unmistakably blue in daylight. A shared static current
+// texture supplies detail without an animated shader or extra geometry.
+const waterMaterial = standard(COLORS.water, { map: TEXTURES.water, roughness: 0.28, metalness: 0.08 });
 waterMaterial.userData.separate = true;
 // A flat plane this size casting its own shadow draws a dark stripe along
 // the bank where it self-shadows at a grazing sun angle; the water does not
 // need to cast one, only catch the sky and the lamps.
 waterMaterial.userData.castShadow = false;
-const quayMaterial = standard("#575a60", { roughness: 0.9 });
+const quayMaterial = standard("#777b79", { roughness: 0.92 });
 
 const WATER_Y = 0.02; // just above the ground plane, just under the roads
 const QUAY_HEIGHT = 1.4;
@@ -94,6 +94,7 @@ const BRIDGE_GAP = ROAD_WIDTH / 2 + 1; // the hole a bridge leaves in a quay wal
 
 const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
+const bridgeGapAt = (col: number) => crossingAt(col) !== null || col === RAIL_BRIDGE.col;
 
 // The columns the river actually touches right now: at least one of the
 // given cells sits on a bank in each of them. Null when nothing does yet, so
@@ -102,6 +103,8 @@ const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
 // columns that are riverfront, not the span of every cell's column: a gap
 // inside it still fills with water rather than leaving a hole in the river.
 type RiverSpan = { minCol: number; maxCol: number } | null;
+
+export type RiverBounds = { west: number; east: number; z: number; width: number };
 
 function riverSpan(cells: Cell[]): RiverSpan {
   const cols = cells.filter((cell) => isWaterEdge(cell.row) || isWaterEdge(cell.row + 1)).map((cell) => cell.col);
@@ -127,9 +130,10 @@ export class Park {
   private claims = new THREE.Group();
   private key = "";
   private claimKey = "";
+  private river: RiverSpan = null;
 
   constructor(scene: THREE.Scene) {
-    const grass = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), MATERIALS.grass);
+    const grass = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), terrainMaterial);
     grass.rotation.x = -Math.PI / 2;
     grass.receiveShadow = true;
     scene.add(grass, this.group, this.claims);
@@ -143,6 +147,7 @@ export class Park {
     const claims = claimedUpTo(ranks.length);
     const lots = ranks.map(plotCell);
     const river = riverSpan([...lots, ...claims.map((claim) => claim.cell)]);
+    this.river = river;
     this.rebuild(
       lots,
       claims.map((claim) => claim.cell),
@@ -159,6 +164,16 @@ export class Park {
     const z = ((bounds.minRow + bounds.maxRow) / 2) * PLOT_SIZE;
     const half = parkHalfExtent(bounds, PLOT_SIZE);
     return { x, z, half };
+  }
+
+  riverBounds(): RiverBounds | null {
+    if (!this.river) return null;
+    return {
+      west: (this.river.minCol - 0.5) * PLOT_SIZE,
+      east: (this.river.maxCol + 0.5) * PLOT_SIZE,
+      z: waterZ,
+      width: WAAL_WIDTH,
+    };
   }
 
   // Streets for every cell the city uses, lots and claimed cells alike: a
@@ -278,8 +293,8 @@ export class Park {
 
     // Quay walls on both banks, one run per column so a crossing can pass.
     for (let col = minCol; col <= maxCol; col++) {
-      const from = (col - 0.5) * PLOT_SIZE + (crossingAt(col) ? BRIDGE_GAP : 0);
-      const to = (col + 0.5) * PLOT_SIZE - (crossingAt(col + 1) ? BRIDGE_GAP : 0);
+      const from = (col - 0.5) * PLOT_SIZE + (bridgeGapAt(col) ? BRIDGE_GAP : 0);
+      const to = (col + 0.5) * PLOT_SIZE - (bridgeGapAt(col + 1) ? BRIDGE_GAP : 0);
       if (to <= from) continue;
       for (const side of [-1, 1]) {
         builder.box(quayMaterial, [(from + to) / 2, 0.1, bankZ(side)], [to - from, QUAY_HEIGHT, 1.2]);
@@ -337,6 +352,14 @@ export class Park {
       if (!river || col < river.minCol || col > river.maxCol + 1) continue;
       builder.place((col - 0.5) * PLOT_SIZE, waterZ);
       bridgeArch(builder, kind);
+    }
+
+    // The Spoorbrug shares the river but not the road graph. Its complete rail
+    // deck and truss live here with the other fixed structures; waal() only
+    // leaves the corresponding opening in the quay wall.
+    if (river && RAIL_BRIDGE.col >= river.minCol && RAIL_BRIDGE.col <= river.maxCol + 1) {
+      builder.place((RAIL_BRIDGE.col - 0.5) * PLOT_SIZE, waterZ);
+      railBridge(builder);
     }
 
     // The gladiolenboog only stands once the cell it spans is actually part

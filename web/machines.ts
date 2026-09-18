@@ -119,7 +119,7 @@ class Emitter {
 
 // ---------- Chimney stacks ----------
 
-export type StacksOptions = { count: number; height: number; radius: number; frame: boolean };
+export type StacksOptions = { count: number; height: number; radius: number; frame: boolean; axis?: "x" | "z" };
 
 export class Stacks {
   readonly group = new THREE.Group();
@@ -133,7 +133,7 @@ export class Stacks {
     [ox, oz]: [number, number],
     private options: StacksOptions,
   ) {
-    const { count, height, radius, frame } = options;
+    const { count, height, radius, frame, axis = "x" } = options;
     const spacing = radius * 2.5;
     this.smoke = new Smoke(count * 14, MATERIALS.smoke);
     this.group.add(this.smoke.mesh);
@@ -183,17 +183,19 @@ export class Stacks {
 
     const rims: THREE.BufferGeometry[] = [];
     for (let i = 0; i < count; i++) {
-      const x = ox + (i - (count - 1) / 2) * spacing;
-      builder.cylinder(MATERIALS.concrete, [x, YARD_Y + height / 2, oz], [radius, height, radius]);
-      builder.cylinder(MATERIALS.darkSteel, [x, YARD_Y + height + 0.02, oz], [radius * 0.78, 0.1, radius * 0.78]);
+      const offset = (i - (count - 1) / 2) * spacing;
+      const x = ox + (axis === "x" ? offset : 0);
+      const z = oz + (axis === "z" ? offset : 0);
+      builder.cylinder(MATERIALS.concrete, [x, YARD_Y + height / 2, z], [radius, height, radius]);
+      builder.cylinder(MATERIALS.darkSteel, [x, YARD_Y + height + 0.02, z], [radius * 0.78, 0.1, radius * 0.78]);
       rims.push(
         new THREE.CylinderGeometry(radius * 1.08, radius * 1.08, radius * 1.3, 20, 1, true).translate(
           x,
           YARD_Y + height - radius * 0.6,
-          oz,
+          z,
         ),
       );
-      this.tops.push([x, YARD_Y + height + 0.3, oz]);
+      this.tops.push([x, YARD_Y + height + 0.3, z]);
       this.emitters.push(new Emitter());
     }
     // All rims share one glowing material, so they can be one mesh.

@@ -24,9 +24,13 @@ export function createScene(canvas: HTMLCanvasElement) {
   renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.needsUpdate = true;
   renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.08;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#14181f");
+  // Clear Dutch daylight keeps the diorama legible while the giant meadow
+  // plane below guarantees that every visible piece of terrain is grass.
+  scene.background = new THREE.Color("#a9ced7");
+  scene.fog = new THREE.Fog("#a9ced7", 900, 1450);
 
   // Orthographic: parallel edges stay parallel, like the reference render.
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 3);
@@ -43,6 +47,15 @@ export function createScene(canvas: HTMLCanvasElement) {
   // to a corner of the park and the nearest lots there get the full treatment.
   // With it off, the detailed set never moved off the park's centre.
   controls.enablePan = true;
+  controls.enableRotate = true;
+  controls.enableZoom = true;
+  controls.zoomToCursor = true;
+  controls.screenSpacePanning = false;
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+  controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+  controls.touches.ONE = THREE.TOUCH.ROTATE;
+  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   // Both live in park-layout.ts, next to the test that pins them against the
   // zoom 150 and 300 lots actually need. The old floor of 0.3 cropped the
   // park from 37 lots onward.
@@ -51,8 +64,8 @@ export function createScene(canvas: HTMLCanvasElement) {
   controls.minPolarAngle = 0.15;
   controls.maxPolarAngle = Math.PI * 0.42; // stays above the ground
 
-  scene.add(new THREE.HemisphereLight("#e6f2ff", "#6d8f58", 1.3));
-  const sun = new THREE.DirectionalLight("#fff3e0", 2.6);
+  scene.add(new THREE.HemisphereLight("#effaff", "#62794b", 1.55));
+  const sun = new THREE.DirectionalLight("#fff2d1", 2.75);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.radius = 3;
@@ -73,11 +86,26 @@ export function createScene(canvas: HTMLCanvasElement) {
   composer.addPass(new OutputPass());
 
   const focusTarget = new THREE.Vector3();
+  let focusActive = false;
+
+  // A deliberate drag/rotate/zoom owns the camera from that moment onward.
+  // Without this, the old focus loop pulled a manual pan back to the park
+  // centre every frame, making the controls feel broken.
+  controls.addEventListener("start", () => {
+    focusActive = false;
+    canvas.style.cursor = "grabbing";
+  });
+  controls.addEventListener("end", () => {
+    canvas.style.cursor = "grab";
+  });
+  canvas.style.cursor = "grab";
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
   // Moves the orbit center to the town and sizes the sun's shadow area to it.
   // With `fit`, also zooms so the whole town is in view.
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     focusTarget.set(x, 0, z);
+    focusActive = true;
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
@@ -117,12 +145,15 @@ export function createScene(canvas: HTMLCanvasElement) {
     const dt = Math.min(timer.getDelta(), 0.1);
     const now = performance.now();
 
-    move
-      .copy(focusTarget)
-      .sub(controls.target)
-      .multiplyScalar(Math.min(1, dt * 3));
-    controls.target.add(move);
-    camera.position.add(move);
+    if (focusActive) {
+      move
+        .copy(focusTarget)
+        .sub(controls.target)
+        .multiplyScalar(Math.min(1, dt * 3));
+      controls.target.add(move);
+      camera.position.add(move);
+      if (controls.target.distanceToSquared(focusTarget) < 0.0001) focusActive = false;
+    }
     controls.update();
 
     sun.target.position.copy(controls.target);
@@ -140,6 +171,7 @@ export function createScene(canvas: HTMLCanvasElement) {
   // the zoom, for a "jump to me" click rather than a layout change.
   function panTo(x: number, z: number) {
     focusTarget.set(x, 0, z);
+    focusActive = true;
   }
 
   return {

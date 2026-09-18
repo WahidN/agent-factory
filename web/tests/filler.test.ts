@@ -17,6 +17,14 @@ function vertexCount(group: THREE.Group) {
   return group.children.reduce((sum, child) => sum + (child as THREE.Mesh).geometry.attributes.position.count, 0);
 }
 
+function geometrySignature(seed: number) {
+  const builder = new StaticBuilder();
+  FILLER_BUILDERS.park(builder, random(seed));
+  const group = builder.build();
+  const box = new THREE.Box3().setFromObject(group);
+  return `${vertexCount(group)}:${box.max.y.toFixed(2)}`;
+}
+
 describe("FILLER_BUILDERS", () => {
   for (const archetype of ["park", "houses", "shops", "field"] as const) {
     describe(archetype, () => {
@@ -52,4 +60,19 @@ describe("FILLER_BUILDERS", () => {
       });
     });
   }
+
+  it("uses seeded park compositions instead of repeating one layout", () => {
+    // These seeds deliberately make the first random value land once in
+    // each of the four composition buckets.
+    const signatures = new Set([1, 1000, 3000, 4000].map(geometrySignature));
+    expect(signatures.size).toBe(4);
+  });
+
+  it("bakes a detailed park into one static mesh", () => {
+    for (const seed of [1, 2, 3, 4, 11, 29]) {
+      const builder = new StaticBuilder();
+      FILLER_BUILDERS.park(builder, random(seed));
+      expect(builder.build().children).toHaveLength(1);
+    }
+  });
 });

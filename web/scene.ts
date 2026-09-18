@@ -5,6 +5,7 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { fitZoom, MAX_ZOOM, MIN_ZOOM } from "./park-layout.ts";
+import type { ViewOptions } from "./view-options.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
@@ -13,7 +14,7 @@ const CAMERA_DISTANCE = 600;
 const AZIMUTH = Math.PI / 4;
 const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
 
-export function createScene(canvas: HTMLCanvasElement) {
+export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { autoFit: false, fitScale: 1 }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
@@ -87,6 +88,7 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   const focusTarget = new THREE.Vector3();
   let focusActive = false;
+  let focusedHalfExtent: number | null = null;
 
   // A deliberate drag/rotate/zoom owns the camera from that moment onward.
   // Without this, the old focus loop pulled a manual pan back to the park
@@ -103,18 +105,21 @@ export function createScene(canvas: HTMLCanvasElement) {
 
   // Moves the orbit center to the town and sizes the sun's shadow area to it.
   // With `fit`, also zooms so the whole town is in view.
+  function fitCamera(halfExtent: number) {
+    const wanted = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left) * options.fitScale;
+    camera.zoom = THREE.MathUtils.clamp(wanted, controls.minZoom, controls.maxZoom);
+    camera.updateProjectionMatrix();
+  }
+
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     focusTarget.set(x, 0, z);
     focusActive = true;
+    focusedHalfExtent = halfExtent;
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
     renderer.shadowMap.needsUpdate = true; // layout changed, the map is stale
-    if (fit) {
-      const wanted = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left);
-      camera.zoom = THREE.MathUtils.clamp(wanted, controls.minZoom, controls.maxZoom);
-      camera.updateProjectionMatrix();
-    }
+    if (fit || options.autoFit) fitCamera(halfExtent);
   }
 
   function resize() {
@@ -130,6 +135,7 @@ export function createScene(canvas: HTMLCanvasElement) {
       bottom: -VIEW_HEIGHT / 2,
     });
     camera.updateProjectionMatrix();
+    if (options.autoFit && focusedHalfExtent !== null) fitCamera(focusedHalfExtent);
   }
   window.addEventListener("resize", resize);
   resize();

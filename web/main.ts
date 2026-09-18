@@ -21,6 +21,7 @@ import { StreetLife } from "./street-life.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
 import { UrbanMobility } from "./urban-mobility.ts";
+import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
@@ -32,7 +33,7 @@ const hint = document.querySelector<HTMLElement>("#hint")!;
 // Grab the renderer scene.ts is about to build, only when asked, so a normal
 // visit never touches this path.
 const rendererCapture = statsRequested(location.search) ? interceptNextRenderer(THREE.WebGLRenderer) : undefined;
-const view = createScene(canvas);
+const view = createScene(canvas, viewOptionsFrom(location.search));
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
 const traffic = new ParkTraffic();

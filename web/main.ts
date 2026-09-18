@@ -1,22 +1,29 @@
 import * as THREE from "three";
 import type { PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
+import { cityActivity, eventModeForTime } from "./city-activity.ts";
+import { claimedUpTo } from "./city-plan.ts";
+import { CityEvents } from "./city-events.ts";
 import { createFilterPanel, EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom, type Filter } from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
+import { LandmarkLabels } from "./landmark-labels.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
 import { Lot } from "./lot.ts";
 import { flattenBatch } from "./message-logic.ts";
 import { tierFor } from "./model-tier.ts";
 import { accentFor, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
-import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
+import { movingCarCount, parkBounds, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
+import { StreetLife } from "./street-life.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
+import { UrbanMobility } from "./urban-mobility.ts";
 
 const RECONNECT_MS = 2000;
+const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;
@@ -30,7 +37,11 @@ const plots = new PlotAllocator();
 const park = new Park(view.scene);
 const traffic = new ParkTraffic();
 const boats = new RiverBoats();
-view.scene.add(traffic.group, boats.group);
+const mobility = new UrbanMobility();
+const cityEvents = new CityEvents();
+const streetLife = new StreetLife();
+const labels = new LandmarkLabels(canvas, view.camera);
+view.scene.add(traffic.group, boats.group, mobility.group, cityEvents.group, streetLife.group);
 
 // Every session on the park, whether it is drawn in full or as an instance.
 const sessions = new Map<string, SessionState>();
@@ -122,7 +133,10 @@ function handle(message: ServerMessage) {
   // Only the set changing can move a lot between the two detail levels; a
   // plain status change just rides along in the instance data.
   if (changed) redistribute();
-  else syncFar();
+  else {
+    syncFar();
+    refreshActivity();
+  }
   applyDetailVisibility();
   const { users, projects } = optionsFrom([...sessions.values()]);
   filterPanel.setOptions(users, projects);
@@ -160,11 +174,37 @@ function syncPlaces() {
 
 function refocus(fit = false) {
   syncPlaces();
-  park.update(plots.indexes());
-  boats.setRiver(park.riverBounds());
-  traffic.setRoads(plots.indexes());
+  const indexes = plots.indexes();
+  const rankCount = indexes.length;
+  const claims = claimedUpTo(rankCount);
+  const activity = currentActivity();
+  park.update(indexes);
+  const river = park.riverBounds();
+  boats.setRiver(river);
+  labels.setCity(rankCount, river);
+  traffic.setRoads(indexes);
+  mobility.setCity({
+    seed: 1944,
+    cyclists: Math.min(24, Math.max(0, Math.ceil(rankCount / 3))),
+    buses: rankCount >= 24 ? 2 : rankCount >= 8 ? 1 : 0,
+    train: river !== null,
+  });
+  mobility.setRoads(indexes);
+  cityEvents.setCity(claims, parkBounds(indexes, true), activity);
+  streetLife.setCity(claims, activity);
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
+}
+
+function currentActivity() {
+  const now = new Date();
+  return cityActivity(sessions.values(), now.getHours(), eventModeForTime(now));
+}
+
+function refreshActivity() {
+  const activity = currentActivity();
+  cityEvents.setActivity(activity);
+  streetLife.setActivity(activity);
 }
 
 // ---------- Level of detail ----------
@@ -301,6 +341,8 @@ function connect() {
 // ---------- Frame loop ----------
 
 const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLElement>("#tooltip")!, pickables);
+let activityClockCheckedAt = 0;
+let activeClockHour = new Date().getHours();
 
 view.onFrame((dt, now) => {
   stats?.recordFrame(dt * 1000);
@@ -318,6 +360,16 @@ view.onFrame((dt, now) => {
     })),
   );
   boats.tick(dt);
+  mobility.tick(dt);
+  if (now - activityClockCheckedAt >= ACTIVITY_CLOCK_CHECK_MS) {
+    activityClockCheckedAt = now;
+    const clockHour = new Date().getHours();
+    if (clockHour !== activeClockHour) {
+      activeClockHour = clockHour;
+      refreshActivity();
+    }
+  }
+  labels.update();
   tooltip.update();
 });
 

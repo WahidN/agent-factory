@@ -16,12 +16,14 @@ import {
   WAAL_WIDTH,
 } from "./city-plan.ts";
 import { FILLER_BUILDERS } from "./filler.ts";
+import { buildDistrictFiller, isFillerAmenity } from "./district-style.ts";
 import { CITY_LANDMARKS } from "./landmarks-city.ts";
 import { bridgeArch, gladiolaArch, railBridge, RIVER_LANDMARKS } from "./landmarks-river.ts";
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
 import { parkBounds, parkHalfExtent } from "./park-layout.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 import { BAKED_MATERIAL, StaticBuilder, type Vec3 } from "./static-builder.ts";
+import { appendTerrainRelief } from "./terrain.ts";
 
 // Every amenity a claimed cell can hold, keyed by Amenity so TypeScript
 // enforces that the three builder modules between them cover the whole
@@ -342,8 +344,18 @@ export class Park {
     for (const { cell, amenity } of claims) {
       builder.place(cell.col * PLOT_SIZE, cell.row * PLOT_SIZE);
       const rand = random(cell.col * 7919 + cell.row * 104729 + 17);
-      AMENITY_BUILDERS[amenity](builder, rand);
+      if (isFillerAmenity(amenity)) buildDistrictFiller(amenity, builder, rand, cell);
+      else AMENITY_BUILDERS[amenity](builder, rand);
     }
+
+    // Relief uses world coordinates. Reset the OffsetBuilder first so the
+    // last claimed cell cannot accidentally offset the riverbank features.
+    builder.place(0, 0);
+    appendTerrainRelief(
+      builder,
+      claims.map(({ cell }) => cell),
+      river,
+    );
 
     // A named bridge's arch appears under the exact same condition as its
     // deck (see waal()): only once a cell on either side of it is actually

@@ -89,3 +89,52 @@ body {
   color: #8f98a3;
   font-size: 12px;
 }
+
+.landmark-labels {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4;
+}
+
+.landmark-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 4px 8px 4px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.52);
+  border-radius: 999px;
+  background: rgba(31, 45, 42, 0.82);
+  color: #f7f1df;
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(19, 35, 28, 0.2);
+  transform-origin: left bottom;
+  translate: -8px -100%;
+  transition: opacity 120ms ease;
+  will-change: transform;
+}
+
+.landmark-label::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: #efc84a;
+}
+
+.landmark-label.bridge {
+  background: rgba(34, 72, 84, 0.86);
+}
+
+.landmark-label.bridge::before {
+  background: #7fd4e5;
+}

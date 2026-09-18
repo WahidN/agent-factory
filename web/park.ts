@@ -2,6 +2,7 @@
 // Lots only draw what is inside their fence.
 
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { CellBuilder } from "./cell-build.ts";
 import {
   type Amenity,
@@ -22,6 +23,7 @@ import { bridgeArch, gladiolaArch, railBridge, RIVER_LANDMARKS } from "./landmar
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
 import { parkBounds, parkHalfExtent } from "./park-layout.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
+import { appendRailCorridor } from "./rail-corridor.ts";
 import { BAKED_MATERIAL, StaticBuilder, type Vec3 } from "./static-builder.ts";
 import { appendTerrainRelief } from "./terrain.ts";
 
@@ -89,14 +91,32 @@ waterMaterial.userData.separate = true;
 waterMaterial.userData.castShadow = false;
 const quayMaterial = standard("#777b79", { roughness: 0.92 });
 
-const WATER_Y = 0.02; // just above the ground plane, just under the roads
-const QUAY_HEIGHT = 1.4;
+export const WATER_Y = -1.35;
+export const ROAD_BRIDGE_UNDERSIDE_Y = -0.45;
+const CHANNEL_FLOOR_Y = -1.7;
+const QUAY_TOP_Y = 1;
+const QUAY_HEIGHT = QUAY_TOP_Y - CHANNEL_FLOOR_Y;
+const QUAY_CENTER_Y = (QUAY_TOP_Y + CHANNEL_FLOOR_Y) / 2;
 const BRIDGE_LENGTH = WAAL_WIDTH + 4; // reaches a little onto both banks
 const BRIDGE_GAP = ROAD_WIDTH / 2 + 1; // the hole a bridge leaves in a quay wall
 
 const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
 const bridgeGapAt = (col: number) => crossingAt(col) !== null || col === RAIL_BRIDGE.col;
+
+function meadowGeometry() {
+  const edge = 3000;
+  const southLength = bankZ(-1) + edge;
+  const northLength = edge - bankZ(1);
+  const pieces = [
+    new THREE.PlaneGeometry(edge * 2, southLength).rotateX(-Math.PI / 2).translate(0, 0, -edge + southLength / 2),
+    new THREE.PlaneGeometry(edge * 2, WAAL_WIDTH).rotateX(-Math.PI / 2).translate(0, CHANNEL_FLOOR_Y, waterZ),
+    new THREE.PlaneGeometry(edge * 2, northLength).rotateX(-Math.PI / 2).translate(0, 0, bankZ(1) + northLength / 2),
+  ];
+  const merged = mergeGeometries(pieces)!;
+  for (const piece of pieces) piece.dispose();
+  return merged;
+}
 
 // The columns the river actually touches right now: at least one of the
 // given cells sits on a bank in each of them. Null when nothing does yet, so
@@ -135,8 +155,7 @@ export class Park {
   private river: RiverSpan = null;
 
   constructor(scene: THREE.Scene) {
-    const grass = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), terrainMaterial);
-    grass.rotation.x = -Math.PI / 2;
+    const grass = new THREE.Mesh(meadowGeometry(), terrainMaterial);
     grass.receiveShadow = true;
     scene.add(grass, this.group, this.claims);
   }
@@ -215,6 +234,7 @@ export class Park {
       // edge the Waal runs along carries water instead of tarmac.
       const [roadLow, roadHigh] = clip(half);
       for (const c of [col, col + 1]) {
+        if (c === RAIL_BRIDGE.col) continue;
         once(`v:${c}:${row}`, () =>
           this.road(builder, (c - 0.5) * PLOT_SIZE, (roadLow + roadHigh) / 2, true, roadHigh - roadLow),
         );
@@ -246,9 +266,12 @@ export class Park {
       const walkZ = (walkLow + walkHigh) / 2;
       const walkLength = walkHigh - walkLow;
       for (const side of [-1, 1]) {
+        const boundaryCol = side < 0 ? col : col + 1;
         const edge = side * (inner - SIDEWALK / 2);
-        builder.box(sidewalkMaterial, [cx + edge, 0.1, walkZ], [SIDEWALK, 0.2, walkLength]);
-        builder.box(MATERIALS.curb, [cx + side * (inner - 0.15), 0.14, walkZ], [0.3, 0.28, walkLength]);
+        if (boundaryCol !== RAIL_BRIDGE.col) {
+          builder.box(sidewalkMaterial, [cx + edge, 0.1, walkZ], [SIDEWALK, 0.2, walkLength]);
+          builder.box(MATERIALS.curb, [cx + side * (inner - 0.15), 0.14, walkZ], [0.3, 0.28, walkLength]);
+        }
         if (wet[(side + 1) / 2]) continue;
         builder.box(sidewalkMaterial, [cx, 0.1, cz + edge], [inner * 2 - SIDEWALK * 2, 0.2, SIDEWALK]);
         builder.box(MATERIALS.curb, [cx, 0.14, cz + side * (inner - 0.15)], [inner * 2, 0.28, 0.3]);
@@ -258,6 +281,7 @@ export class Park {
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
           if (wet[(sz + 1) / 2]) continue;
+          if ((sx < 0 ? col : col + 1) === RAIL_BRIDGE.col) continue;
           this.lamp(builder, cx + sx * (inner - 1), cz + sz * (inner - 1), sx, sz);
         }
       }
@@ -268,12 +292,13 @@ export class Park {
         for (const side of [-1, 1]) {
           if (rand() < 0.45 && !wet[(side + 1) / 2])
             trees.push({ x: cx + t + (rand() - 0.5), z: cz + side * strip, scale: 0.8 + rand() * 0.4 });
-          if (rand() < 0.45)
+          if (rand() < 0.45 && (side < 0 ? col : col + 1) !== RAIL_BRIDGE.col)
             trees.push({ x: cx + side * strip, z: cz + t + (rand() - 0.5), scale: 0.8 + rand() * 0.4 });
         }
       }
     }
 
+    appendRailCorridor(builder, cells);
     this.waal(builder, river);
     this.group.add(builder.build(), createTrees(trees));
     patch.dispose();
@@ -299,7 +324,7 @@ export class Park {
       const to = (col + 0.5) * PLOT_SIZE - (bridgeGapAt(col + 1) ? BRIDGE_GAP : 0);
       if (to <= from) continue;
       for (const side of [-1, 1]) {
-        builder.box(quayMaterial, [(from + to) / 2, 0.1, bankZ(side)], [to - from, QUAY_HEIGHT, 1.2]);
+        builder.box(quayMaterial, [(from + to) / 2, QUAY_CENTER_Y, bankZ(side)], [to - from, QUAY_HEIGHT, 1.2]);
       }
     }
 
@@ -342,7 +367,7 @@ export class Park {
 
     const builder = new OffsetBuilder();
     for (const { cell, amenity } of claims) {
-      builder.place(cell.col * PLOT_SIZE, cell.row * PLOT_SIZE);
+      builder.place(cell.col * PLOT_SIZE, cell.row * PLOT_SIZE, amenity === "station" ? Math.PI / 2 : 0);
       const rand = random(cell.col * 7919 + cell.row * 104729 + 17);
       if (isFillerAmenity(amenity)) buildDistrictFiller(amenity, builder, rand, cell);
       else AMENITY_BUILDERS[amenity](builder, rand);

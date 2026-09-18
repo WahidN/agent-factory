@@ -22,6 +22,7 @@ describe("amenityAt", () => {
   it("reads the table by cell", () => {
     expect(amenityAt({ col: 1, row: 1 })).toBe("stevenskerk");
     expect(amenityAt({ col: 0, row: 0 })).toBe("goffert");
+    expect(amenityAt({ col: 2, row: 0 })).toBe("station");
   });
 
   it("gives null for a cell nobody claimed", () => {
@@ -147,12 +148,10 @@ describe("nearestClaim", () => {
   });
 
   it("breaks a tie deterministically, by the lower curve index", () => {
-    // 0:0 (goffert, curve index 0) and 2:0 (plein1944, curve index later)
-    // both sit distance 1 from 1:0.
     const claims = claimedUpTo(10);
     const goffert = claims.find((c) => c.amenity === "goffert")!;
-    const plein = claims.find((c) => c.amenity === "plein1944")!;
-    expect(goffert.index).toBeLessThan(plein.index);
+    const station = claims.find((c) => c.amenity === "station")!;
+    expect(goffert.index).toBeLessThan(station.index);
     expect(nearestClaim({ col: 1, row: 0 }, 10)).toEqual(goffert.cell);
   });
 });

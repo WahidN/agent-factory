@@ -33,6 +33,9 @@ const necBlack = standard("#25272a");
 const stone = standard("#c5bcaa");
 const bronze = standard("#5c6652", { roughness: 0.65, metalness: 0.2 });
 const stationGlass = standard("#7293a0", { roughness: 0.25, metalness: 0.08 });
+const busAsphalt = standard("#4b5354", { roughness: 0.96 });
+const brengYellow = standard("#f2cf16", { roughness: 0.72 });
+const brengBlue = standard("#174d73", { roughness: 0.66 });
 const awningRed = standard("#9c3a34");
 const awningCream = standard("#cfc6a8");
 const water = standard("#4298bf", { roughness: 0.3, metalness: 0.05 });
@@ -329,7 +332,7 @@ function kronenburgerpark(b: StaticBuilder, rand: () => number) {
 
 // ---------- Station Nijmegen ----------
 
-function station(b: StaticBuilder, rand: () => number) {
+function station(b: StaticBuilder, _rand: () => number) {
   const hallHalfWidth = 13;
   const hallDepth = 8;
   const hallHeight = 6;
@@ -356,6 +359,31 @@ function station(b: StaticBuilder, rand: () => number) {
   }
   b.box(roofDark, [0, 5.2, colonnadeZ], [27, 0.4, 4]);
 
+  // Nijmegen's bus station sits directly in front of the railway station:
+  // a broad dark apron, three saw-tooth platform roofs and a parked yellow-
+  // blue Breng bus make the interchange legible at map scale.
+  const busZ = 11;
+  b.box(busAsphalt, [0, 0.02, busZ], [38, 0.04, 14]);
+  for (const x of [-12, 0, 12]) {
+    b.box(plaza, [x, 0.11, busZ], [3.2, 0.22, 12]);
+    b.box(roofDark, [x, 3.25, busZ], [5.2, 0.26, 10], [0, 0, x === 0 ? 0 : x < 0 ? -0.08 : 0.08]);
+    for (const z of [7.5, 14.5]) b.cylinder(MATERIALS.steel, [x, 1.65, z], [0.12, 3.3, 0.12]);
+  }
+  // One static bus guarantees the terminal reads as a bus station even in a
+  // tiny live city; the moving fleet uses the same Breng colours on roads.
+  const parkedBusX = -6;
+  const parkedBusZ = 11;
+  b.box(brengYellow, [parkedBusX, 1.25, parkedBusZ], [8.5, 2.5, 2.35]);
+  b.box(brengBlue, [parkedBusX, 1.85, parkedBusZ - 1.2], [7.2, 0.62, 0.08]);
+  b.box(stationGlass, [parkedBusX + 4.3, 1.8, parkedBusZ], [0.08, 0.8, 1.8]);
+  for (const x of [parkedBusX - 2.7, parkedBusX + 2.7]) {
+    for (const z of [parkedBusZ - 1.15, parkedBusZ + 1.15]) {
+      b.cylinder(MATERIALS.darkSteel, [x, 0.45, z], [0.34, 0.22, 0.34], [Math.PI / 2, 0, 0]);
+    }
+  }
+  b.box(brengBlue, [16.5, 2.5, 16.5], [1.2, 5, 1.2]);
+  b.box(brengYellow, [16.5, 4.2, 16.5], [1.35, 0.7, 1.35]);
+
   // The offset square clock tower and open lantern are the station's most
   // recognizable silhouette; the real tower has a shallow cap, not a spire.
   const towerX = -hallHalfWidth - 2;
@@ -367,22 +395,16 @@ function station(b: StaticBuilder, rand: () => number) {
   b.cylinder(stone, [towerX + 1.31, towerHeight * 0.72, hallZ], [0.9, 0.15, 0.9], [0, 0, Math.PI / 2]);
   b.box(MATERIALS.darkSteel, [towerX, towerHeight * 0.72, hallZ + 1.43], [0.08, 0.65, 0.08], [0, 0, 0.55]);
 
-  // Platform and canopy on the far side, with a short stub of track.
-  const platformZ = hallZ - hallDepth / 2 - 3;
+  // Platform and canopy on the far side. Park rotates this landmark so the
+  // platform edge meets the scene-wide railway; the corridor owns the actual
+  // rails and sleepers, avoiding a disconnected decorative track stub.
+  const platformZ = -16;
   b.box(plaza, [0, 0.15, platformZ], [hallHalfWidth * 2, 0.3, 6]);
   b.box(roofDark, [0, 4.5, platformZ], [hallHalfWidth * 2 - 2, 0.3, 5]);
   const posts = 5;
   for (let i = 0; i < posts; i++) {
     const x = -10 + i * 5;
     b.cylinder(MATERIALS.steel, [x, 2.25, platformZ], [0.15, 4.5, 0.15]);
-  }
-  const trackZ = platformZ - 4;
-  b.box(MATERIALS.darkSteel, [0, 0.1, trackZ - 0.8], [hallHalfWidth * 2 - 4, 0.1, 0.15]);
-  b.box(MATERIALS.darkSteel, [0, 0.1, trackZ + 0.8], [hallHalfWidth * 2 - 4, 0.1, 0.15]);
-  const sleepers = 8;
-  for (let i = 0; i < sleepers; i++) {
-    const x = -hallHalfWidth + 1 + i * ((hallHalfWidth * 2 - 2) / (sleepers - 1)) + (rand() - 0.5) * 0.2;
-    b.box(MATERIALS.wood, [x, 0.06, trackZ], [0.3, 0.12, 2]);
   }
 }
 

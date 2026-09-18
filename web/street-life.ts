@@ -5,6 +5,7 @@ import * as THREE from "three";
 import type { CityActivity, CityClaim } from "./city-events.ts";
 import { standard } from "./palette.ts";
 import { hashString, PLOT_SIZE } from "./plots.ts";
+import { railSafeX } from "./rail-corridor.ts";
 
 const MAX_TABLES = 30;
 const MAX_PARASOLS = 24;
@@ -161,8 +162,9 @@ export class StreetLife {
 
   private setVisitor(index: number, x: number, z: number, paletteIndex: number) {
     const colors = ["#3d7182", "#d37b38", "#7a5d8c", "#547849", "#b84949"];
-    this.setColoredMatrix(this.visitors, index, x, z, 0, colors[Math.abs(paletteIndex) % colors.length]);
-    this.setMatrix(this.heads, index, x, z, 0);
+    const safeX = railSafeX(x);
+    this.setColoredMatrix(this.visitors, index, safeX, z, 0, colors[Math.abs(paletteIndex) % colors.length]);
+    this.setMatrix(this.heads, index, safeX, z, 0);
   }
 
   private setMatrix(mesh: THREE.InstancedMesh, index: number, x: number, z: number, angle: number) {

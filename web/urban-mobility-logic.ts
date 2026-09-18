@@ -1,4 +1,5 @@
-import { RAIL_BRIDGE, WAAL_EDGE, WAAL_WIDTH, crossingAt } from "./city-plan.ts";
+import { RAIL_BRIDGE, WAAL_EDGE, crossingAt } from "./city-plan.ts";
+import { parkBounds } from "./park-layout.ts";
 import { PLOT_SIZE } from "./plots.ts";
 import { roadGraph, type Lane, type Roads } from "./traffic-logic.ts";
 
@@ -9,7 +10,8 @@ export const MAX_TRAINS = 1;
 const ROAD_EDGE_LENGTH = PLOT_SIZE;
 const BIKE_LATERAL_OFFSET = 4.05;
 const BUS_LATERAL_OFFSET = 2.5;
-const TRAIN_HALF_TRAVEL = Math.max(5, WAAL_WIDTH / 2 - 1);
+const TRAIN_HALF_LENGTH = 10.5;
+const WAAL_Z = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 
 export type MobilityCity = {
   seed?: number;
@@ -58,12 +60,14 @@ function laneKey(lane: Lane): string {
  */
 export class UrbanMobilitySimulation {
   private city: Required<MobilityCity> = { seed: 1944, cyclists: 24, buses: 2, train: true };
-  private roads: Roads = roadGraph([]);
+  private roads: Roads = roadGraph([], true);
   private lanes: Lane[] = [];
   private nextLane = new Int32Array(0);
   private cyclists = makeFleet(MAX_CYCLISTS);
   private buses = makeFleet(MAX_BUSES);
-  private trainDistance = 0;
+  private trainZ = WAAL_Z;
+  private trainMinZ = WAAL_Z;
+  private trainMaxZ = WAAL_Z;
   private trainDirection = 1;
   private readonly countSnapshot: MobilityCounts = { cyclists: 0, buses: 0, trains: 0 };
 
@@ -78,7 +82,7 @@ export class UrbanMobilitySimulation {
   }
 
   setRoads(indexes: readonly number[]): void {
-    this.roads = roadGraph([...indexes]);
+    this.roads = roadGraph([...indexes], true);
     this.lanes = [...this.roads.lanes.values()].sort((a, b) => laneKey(a).localeCompare(laneKey(b)));
     const laneIndex = new Map<string, number>();
     this.lanes.forEach((lane, index) => {
@@ -95,6 +99,10 @@ export class UrbanMobilitySimulation {
         this.nextLane[i * 4 + variant] = laneIndex.get(choice) ?? i;
       }
     }
+    const bounds = parkBounds([...indexes], true);
+    this.trainMinZ = (bounds.minRow - 0.5) * PLOT_SIZE + TRAIN_HALF_LENGTH;
+    this.trainMaxZ = (bounds.maxRow + 0.5) * PLOT_SIZE - TRAIN_HALF_LENGTH;
+    if (this.trainMaxZ < this.trainMinZ) this.trainMaxZ = this.trainMinZ;
     this.resetFleets();
   }
 
@@ -103,12 +111,12 @@ export class UrbanMobilitySimulation {
     this.advanceFleet(this.cyclists, dt);
     this.advanceFleet(this.buses, dt);
     if (!this.city.train) return;
-    this.trainDistance += this.trainDirection * dt * 12;
-    if (this.trainDistance > TRAIN_HALF_TRAVEL) {
-      this.trainDistance = TRAIN_HALF_TRAVEL - (this.trainDistance - TRAIN_HALF_TRAVEL);
+    this.trainZ += this.trainDirection * dt * 12;
+    if (this.trainZ > this.trainMaxZ) {
+      this.trainZ = this.trainMaxZ - (this.trainZ - this.trainMaxZ);
       this.trainDirection = -1;
-    } else if (this.trainDistance < -TRAIN_HALF_TRAVEL) {
-      this.trainDistance = -TRAIN_HALF_TRAVEL + (-TRAIN_HALF_TRAVEL - this.trainDistance);
+    } else if (this.trainZ < this.trainMinZ) {
+      this.trainZ = this.trainMinZ + (this.trainMinZ - this.trainZ);
       this.trainDirection = 1;
     }
   }
@@ -128,7 +136,7 @@ export class UrbanMobilitySimulation {
   trainPose(out: MobilityPose): MobilityPose {
     out.x = (RAIL_BRIDGE.col - 0.5) * PLOT_SIZE;
     out.y = 0.78;
-    out.z = (WAAL_EDGE - 0.5) * PLOT_SIZE + this.trainDistance;
+    out.z = this.trainZ;
     out.heading = this.trainDirection > 0 ? -Math.PI / 2 : Math.PI / 2;
     return out;
   }
@@ -154,7 +162,7 @@ export class UrbanMobilitySimulation {
     this.countSnapshot.trains = this.city.train ? 1 : 0;
     this.seedFleet(this.cyclists, this.city.seed + 31, 3.7, 1.1);
     this.seedFleet(this.buses, this.city.seed + 73, 8.2, 0.7);
-    this.trainDistance = 0;
+    this.trainZ = this.trainMinZ;
     this.trainDirection = 1;
   }
 

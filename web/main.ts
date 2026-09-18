@@ -186,7 +186,7 @@ function refocus(fit = false) {
   mobility.setCity({
     seed: 1944,
     cyclists: Math.min(24, Math.max(0, Math.ceil(rankCount / 3))),
-    buses: rankCount >= 24 ? 2 : rankCount >= 8 ? 1 : 0,
+    buses: rankCount >= 50 ? 3 : rankCount >= 18 ? 2 : rankCount > 0 ? 1 : 0,
     train: river !== null,
   });
   mobility.setRoads(indexes);

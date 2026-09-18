@@ -4,7 +4,7 @@
 // has one lane per direction. Vehicles keep right, take a random turn at each
 // crossing (never a U-turn), and slow down behind the vehicle ahead.
 
-import { crossingAt, isWaterEdge } from "./city-plan.ts";
+import { crossingAt, isWaterEdge, RAIL_BRIDGE } from "./city-plan.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 
 const LANE = 2.5; // lane center, measured from the road center (roads are 10 wide)
@@ -50,10 +50,11 @@ function overWater([fc, fr]: [number, number], [, tr]: [number, number]): boolea
 }
 
 // Both lanes of the 4 roads around every used cell. Shared roads are added once.
-export function roadGraph(ranks: number[]): Roads {
+export function roadGraph(ranks: number[], exclusiveRailCorridor = false): Roads {
   const lanes = new Map<string, Lane>();
   const exits = new Map<string, string[]>();
   const add = ([fc, fr]: [number, number], [tc, tr]: [number, number]) => {
+    if (exclusiveRailCorridor && fr !== tr && fc === RAIL_BRIDGE.col) return;
     if (overWater([fc, fr], [tc, tr])) return;
     const from = crossing(fc, fr);
     const key = `${from}>${crossing(tc, tr)}`;

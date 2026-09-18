@@ -230,8 +230,12 @@ const houses: CellBuilder = (b, rand) => {
       const halfDepth = depth / 2 + 0.3;
       const slope = Math.sqrt(roofRise * roofRise + halfDepth * halfDepth);
       const angle = Math.atan2(roofRise, halfDepth);
-      b.box(roofColor, [x, height + roofRise / 2, z - halfDepth / 2 + 0.05], [houseWidth, 0.25, slope], [angle, 0, 0]);
-      b.box(roofColor, [x, height + roofRise / 2, z + halfDepth / 2 - 0.05], [houseWidth, 0.25, slope], [-angle, 0, 0]);
+      // Three.js' positive x rotation slopes local +z downward. The north
+      // panel therefore needs the positive angle and the south panel the
+      // negative one, so both rise toward the central ridge rather than
+      // opening outward like detached awnings.
+      b.box(roofColor, [x, height + roofRise / 2, z - halfDepth / 2 + 0.05], [houseWidth, 0.25, slope], [-angle, 0, 0]);
+      b.box(roofColor, [x, height + roofRise / 2, z + halfDepth / 2 - 0.05], [houseWidth, 0.25, slope], [angle, 0, 0]);
 
       // Front door.
       b.box(MATERIALS.wood, [x, 1.1, z + facing * (depth / 2 + 0.03)], [1, 2.2, 0.1]);

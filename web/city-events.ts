@@ -9,6 +9,7 @@ import * as THREE from "three";
 import type { Amenity, Cell } from "./city-plan.ts";
 import { standard } from "./palette.ts";
 import { hashString, PLOT_SIZE } from "./plots.ts";
+import { railSafeX } from "./rail-corridor.ts";
 
 export type CityEventMode = "ordinary" | "vierdaagse" | "nec-matchday" | "market-day";
 
@@ -253,8 +254,9 @@ export class CityEvents {
   }
 
   private setPerson(index: number, x: number, z: number, color: string) {
-    this.setColoredMatrix(this.people, index, x, z, 0, color);
-    this.setMatrix(this.heads, index, x, z, 0);
+    const safeX = railSafeX(x);
+    this.setColoredMatrix(this.people, index, safeX, z, 0, color);
+    this.setMatrix(this.heads, index, safeX, z, 0);
   }
 
   private setFlag(index: number, x: number, z: number, color: string, angle: number) {

@@ -54,11 +54,17 @@ describe("UrbanMobilitySimulation", () => {
     mobility.setRoads(RANKS);
     const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
     const railX = (RAIL_BRIDGE.col - 0.5) * PLOT_SIZE;
-    for (let i = 0; i < 2_000; i++) {
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < 4_000; i++) {
       mobility.tick(1 / 30);
       mobility.trainPose(pose);
       expect(pose.x).toBe(railX);
+      minZ = Math.min(minZ, pose.z);
+      maxZ = Math.max(maxZ, pose.z);
     }
+    expect(minZ).toBeLessThan((WAAL_EDGE - 0.5) * PLOT_SIZE - 20);
+    expect(maxZ).toBeGreaterThan((WAAL_EDGE - 0.5) * PLOT_SIZE + 20);
     expect(crossingAt(RAIL_BRIDGE.col)).toBeNull();
     expect(mobility.trainUsesRoadCrossing()).toBe(false);
   });

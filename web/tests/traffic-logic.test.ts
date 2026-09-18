@@ -89,6 +89,14 @@ describe("the Waal in the road graph", () => {
     expect(bankCrossings.some((lane) => colOf(lane.from) === RAIL_BRIDGE.col)).toBe(false);
   });
 
+  it("keeps the entire north-south rail corridor out of the road graph", () => {
+    const exclusiveRoads = roadGraph(ranks, true);
+    const railLanes = [...exclusiveRoads.lanes.values()].filter(
+      (lane) => colOf(lane.from) === RAIL_BRIDGE.col && colOf(lane.to) === RAIL_BRIDGE.col,
+    );
+    expect(railLanes).toEqual([]);
+  });
+
   it("never lets a car drive onto a lane that ends in the water", () => {
     const random = seeded(23);
     let v = car(EAST, 0, roads);

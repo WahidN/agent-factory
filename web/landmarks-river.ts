@@ -7,6 +7,7 @@
 // All river bridges work from midstream, along z; gladiolaArch spans along x.
 
 import * as THREE from "three";
+import { RAIL_BRIDGE_SPAN } from "./city-plan.ts";
 import { beam } from "./machines.ts";
 import { COLORS, MATERIALS, standard } from "./palette.ts";
 import type { StaticBuilder, Vec3 } from "./static-builder.ts";
@@ -338,7 +339,7 @@ export function bridgeArch(b: StaticBuilder, kind: "oversteek" | "waalbrug"): vo
 // bank piers and the Cuypers-inspired brick gate towers. Park places this as a
 // fixed landmark; it is intentionally never registered as a road crossing.
 export function railBridge(b: StaticBuilder): void {
-  const span = ARCH_SPAN;
+  const span = RAIL_BRIDGE_SPAN;
   const half = span / 2;
   const trussX = 3.4;
   const deckY = 0.45;

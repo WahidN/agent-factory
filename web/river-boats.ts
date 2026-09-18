@@ -3,11 +3,13 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { RiverBounds } from "./park.ts";
+import { type RiverBounds, WATER_Y } from "./park.ts";
 import { standard } from "./palette.ts";
 
 const MAX_BOATS = 6;
 const HULL_COLORS = ["#c94d3d", "#246d83", "#d39a35", "#55765a"];
+export const BOAT_VERTICAL_SCALE = 0.4;
+export const BOAT_MAX_Y = 1.9;
 
 const hullGeometry = mergeGeometries([
   new THREE.BoxGeometry(5.4, 0.7, 1.9).translate(0, 0.45, 0),
@@ -33,7 +35,7 @@ export class RiverBoats {
   private readonly matrix = new THREE.Matrix4();
   private readonly quaternion = new THREE.Quaternion();
   private readonly position = new THREE.Vector3();
-  private readonly scale = new THREE.Vector3(1, 1, 1);
+  private readonly scale = new THREE.Vector3(1, BOAT_VERTICAL_SCALE, 1);
   private readonly up = new THREE.Vector3(0, 1, 0);
   private readonly color = new THREE.Color();
 
@@ -89,7 +91,7 @@ export class RiverBoats {
       const boat = this.boats[i];
       this.quaternion.setFromAxisAngle(this.up, boat.direction === 1 ? 0 : Math.PI);
       this.matrix.compose(
-        this.position.set(river.west + boat.progress * span, 0.08, river.z + boat.lane * river.width),
+        this.position.set(river.west + boat.progress * span, WATER_Y + 0.02, river.z + boat.lane * river.width),
         this.quaternion,
         this.scale,
       );

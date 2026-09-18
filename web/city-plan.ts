@@ -56,6 +56,7 @@ export const BRIDGES: { col: number; kind: "oversteek" | "waalbrug" }[] = [
 // deliberately separate from BRIDGES and crossingAt: the traffic graph may
 // never mistake rails for another road across the Waal.
 export const RAIL_BRIDGE = { col: 2 } as const;
+export const RAIL_BRIDGE_SPAN = 36;
 
 // East of the two named bridges the city gets plain crossings too, so it does
 // not split in two once the park passes column 3: the first one at column 8,
@@ -77,9 +78,9 @@ export const GLADIOLA = { col: 2, row: 0, side: "south" as const };
 export const CLAIMED = new Map<string, Amenity>([
   ["0:0", "goffert"], // stadium and its green, at the south-west corner
   ["1:1", "stevenskerk"], // the heart, on the second cell the curve ever visits
-  ["2:0", "plein1944"],
+  ["2:0", "station"], // west platform edge meets the rail corridor at column 2
   ["5:0", "kronenburgerpark"],
-  ["7:0", "station"],
+  ["7:0", "plein1944"],
   ["3:1", "valkhof"], // on the south bank, where the real one looks over the Waal
   ["5:1", "waalkade"], // quay front, further east
   ["7:1", "field"],

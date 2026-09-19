@@ -8,6 +8,7 @@ describe("viewOptionsFrom", () => {
 
   it("enables a persistent whole-city view", () => {
     expect(viewOptionsFrom("?view=all").autoFit).toBe(true);
+    expect(viewOptionsFrom("?mode=showcase")).toEqual({ autoFit: true, fitScale: 1.35 });
   });
 
   it("accepts a bounded fit zoom multiplier", () => {

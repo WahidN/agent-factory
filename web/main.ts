@@ -16,6 +16,7 @@ import { movingCarCount, parkBounds, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
+import { showcaseRequested, showcaseSessions } from "./showcase.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
 import { StreetLife } from "./street-life.ts";
 import { createTooltip } from "./tooltip.ts";
@@ -29,6 +30,7 @@ const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;
 const hint = document.querySelector<HTMLElement>("#hint")!;
+const showcase = showcaseRequested(location.search);
 
 // Grab the renderer scene.ts is about to build, only when asked, so a normal
 // visit never touches this path.
@@ -374,6 +376,13 @@ view.onFrame((dt, now) => {
   tooltip.update();
 });
 
-refocus();
-setLive(false);
-connect();
+if (showcase) {
+  handle({ type: "snapshot", sessions: showcaseSessions() });
+  pill.classList.add("live");
+  pill.textContent = "showcase";
+  hint.hidden = true;
+} else {
+  refocus();
+  setLive(false);
+  connect();
+}

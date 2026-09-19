@@ -110,7 +110,7 @@ type Traveler = { key: string; truck: boolean; color: string; presence: number; 
 // all: car bodies, car details, and trucks.
 export class ParkTraffic {
   readonly group = new THREE.Group();
-  private roads: Roads = roadGraph([]);
+  private roads: Roads = roadGraph([], true);
   private travelers: Traveler[] = [];
   private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_VEHICLES);
   private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_VEHICLES);
@@ -135,7 +135,7 @@ export class ParkTraffic {
 
   // Call when the used cells change. Vehicles on roads that are gone disappear.
   setRoads(indexes: number[]) {
-    this.roads = roadGraph(indexes);
+    this.roads = roadGraph(indexes, true);
     this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
     for (const t of this.travelers) {
       if (!this.roads.lanes.has(t.vehicle.next))

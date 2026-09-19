@@ -53,14 +53,20 @@ export type FilterPanel = {
 // dropdowns and a jump box.
 export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (user: string) => void): FilterPanel {
   const root = document.createElement("div");
-  root.style.cssText =
-    "position:fixed;top:12px;left:12px;z-index:10;display:flex;gap:6px;align-items:center;" +
-    "background:rgba(20,24,31,0.85);color:#eee;padding:8px 10px;border-radius:6px;" +
-    "font:12px system-ui,sans-serif;";
+  root.className = "filter-panel";
+  root.setAttribute("role", "group");
+  root.setAttribute("aria-label", "Filter agents in de stad");
+
+  const title = document.createElement("div");
+  title.className = "filter-panel__title";
+  title.textContent = "Agent radar";
 
   const userSelect = document.createElement("select");
+  userSelect.setAttribute("aria-label", "Filter op gebruiker");
   const projectSelect = document.createElement("select");
+  projectSelect.setAttribute("aria-label", "Filter op project");
   const statusSelect = document.createElement("select");
+  statusSelect.setAttribute("aria-label", "Filter op status");
   statusSelect.append(new Option("alle statussen", ""), new Option("busy", "busy"), new Option("idle", "idle"));
 
   function fillSelect(select: HTMLSelectElement, values: string[], allLabel: string) {
@@ -84,7 +90,7 @@ export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (u
 
   const jumpInput = document.createElement("input");
   jumpInput.placeholder = "jouw username";
-  jumpInput.style.width = "110px";
+  jumpInput.setAttribute("aria-label", "Jouw gebruikersnaam");
   const jumpButton = document.createElement("button");
   jumpButton.textContent = "spring naar mij";
   jumpButton.addEventListener("click", () => {
@@ -92,7 +98,19 @@ export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (u
     if (user) onJump(user);
   });
 
-  root.append(userSelect, projectSelect, statusSelect, jumpInput, jumpButton);
+  const filters = document.createElement("div");
+  filters.className = "filter-panel__filters";
+  filters.append(
+    labelledControl("Gebruiker", userSelect),
+    labelledControl("Project", projectSelect),
+    labelledControl("Status", statusSelect),
+  );
+
+  const jump = document.createElement("div");
+  jump.className = "filter-panel__jump";
+  jump.append(labelledControl("Vind je district", jumpInput), jumpButton);
+
+  root.append(title, filters, jump);
   document.body.append(root);
 
   return {
@@ -101,4 +119,13 @@ export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (u
       fillSelect(projectSelect, projects, "alle projecten");
     },
   };
+}
+
+function labelledControl(label: string, control: HTMLElement) {
+  const field = document.createElement("label");
+  field.className = "filter-panel__field";
+  const text = document.createElement("span");
+  text.textContent = label;
+  field.append(text, control);
+  return field;
 }

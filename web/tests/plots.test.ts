@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { assignPlots, PlotAllocator, plotCell } from "../plots.ts";
+import { amenityAt } from "../city-plan.ts";
+import { assignPlots, curveCell, PlotAllocator, plotCell } from "../plots.ts";
 
 describe("PlotAllocator", () => {
   it("keeps a session's plot stable across repeat assigns", () => {
@@ -91,16 +92,16 @@ describe("assignPlots", () => {
   });
 });
 
-describe("plotCell", () => {
+describe("curveCell", () => {
   it("gives every index its own cell", () => {
-    const cells = Array.from({ length: 500 }, (_, i) => plotCell(i));
+    const cells = Array.from({ length: 500 }, (_, i) => curveCell(i));
     expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(500);
   });
 
   it("steps one cell at a time, so the curve never jumps", () => {
     for (let i = 1; i < 500; i++) {
-      const a = plotCell(i - 1);
-      const b = plotCell(i);
+      const a = curveCell(i - 1);
+      const b = curveCell(i);
       expect(Math.abs(a.col - b.col) + Math.abs(a.row - b.row)).toBe(1);
     }
   });
@@ -112,11 +113,51 @@ describe("plotCell", () => {
   // diagonal streak across the park instead of next to each other.
   it("keeps a contiguous run of indexes in a compact blob, wherever it starts", () => {
     for (const start of [0, 7, 20, 40, 97, 140, 260]) {
-      const cells = Array.from({ length: 5 }, (_, i) => plotCell(start + i));
+      const cells = Array.from({ length: 5 }, (_, i) => curveCell(start + i));
       const cols = cells.map((c) => c.col);
       const rows = cells.map((c) => c.row);
       const widest = Math.max(Math.max(...cols) - Math.min(...cols), Math.max(...rows) - Math.min(...rows)) + 1;
       expect(widest).toBeLessThanOrEqual(4);
     }
+  });
+});
+
+describe("plotCell", () => {
+  it("gives every rank its own cell", () => {
+    const cells = Array.from({ length: 500 }, (_, rank) => plotCell(rank));
+    expect(new Set(cells.map((c) => `${c.col},${c.row}`)).size).toBe(500);
+  });
+
+  it("never hands a session a cell the city plan claimed", () => {
+    for (let rank = 0; rank < 400; rank++) expect(amenityAt(plotCell(rank))).toBeNull();
+  });
+
+  // Sessions now step over the claimed cells, so a run of five is no longer
+  // guaranteed to be four cells wide; it still has to stay a blob rather than
+  // a streak across the park.
+  it("keeps a contiguous run of ranks in a compact blob, wherever it starts", () => {
+    for (const start of [0, 7, 20, 40, 97, 140, 260]) {
+      const cells = Array.from({ length: 5 }, (_, i) => plotCell(start + i));
+      const cols = cells.map((c) => c.col);
+      const rows = cells.map((c) => c.row);
+      const widest = Math.max(Math.max(...cols) - Math.min(...cols), Math.max(...rows) - Math.min(...rows)) + 1;
+      expect(widest).toBeLessThanOrEqual(5);
+    }
+  });
+
+  // The whole point of the city plan: the same set of sessions gives the same
+  // city twice over, whatever order the sessions came in.
+  it("maps the same set of sessions onto the same cells twice over", () => {
+    const sessions = [
+      { id: "s1", user: "dennis" },
+      { id: "s2", user: "wahid" },
+      { id: "s3", user: "dennis" },
+      { id: "s4", user: "sara" },
+    ];
+    const cellsFor = (list: typeof sessions) => {
+      const assignment = assignPlots(list);
+      return sessions.map(({ id }) => plotCell(assignment.get(id)!));
+    };
+    expect(cellsFor([...sessions].reverse())).toEqual(cellsFor(sessions));
   });
 });

@@ -2,10 +2,11 @@
 // drawn from a handful of shared instanced meshes instead of its own hundreds
 // of meshes.
 //
-// Six draw calls cover the whole park, however many lots there are: one yard
-// slab, one hall per model tier (four), and one roof beacon. The scene is
-// drawn several times per frame (main pass, shadow map, and GTAO's depth and
-// normal passes), so every draw call saved here is saved four or five times.
+// A fixed handful of draw calls covers the whole park, however many lots
+// there are: one yard slab, one hall per model tier (four), two silhouette
+// masses, and one roof beacon. The scene is drawn several times per frame
+// (main pass, shadow map, and GTAO's depth and normal passes), so every draw
+// call saved here is saved four or five times.
 //
 // Colors that differ per lot ride along as per-instance data: the wall tint
 // through setColorAt, and the 0..1 busy value through an own
@@ -16,7 +17,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Activity } from "./activity.ts";
-import { factoryStyleFor } from "./factory-style.ts";
+import { factoryStyleFor, resolveRoofMasses } from "./factory-style.ts";
 import { hallShape } from "./lot.ts";
 import type { ModelTier } from "./model-tier.ts";
 import { COLORS } from "./palette.ts";
@@ -108,17 +109,17 @@ function hallGeometry(tier: ModelTier): THREE.BufferGeometry {
   ]);
 }
 
-function rooflineMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
+function rooflineMatrix(lot: FarLot, massIndex: number, matrix: THREE.Matrix4): THREE.Matrix4 {
   const { x0, z0, x1, z1, top } = hallShape(lot.tier);
-  const style = factoryStyleFor(lot.id);
+  const mass = resolveRoofMasses(factoryStyleFor(lot.id), x1 - x0, z1 - z0)[massIndex];
   return matrix.compose(
-    new THREE.Vector3(lot.x + (x0 + x1) / 2, top + 0.8 + style.roofHeight / 2, lot.z + (z0 + z1) / 2),
-    new THREE.Quaternion(),
     new THREE.Vector3(
-      Math.max(3, (x1 - x0) * style.roofWidth),
-      style.roofHeight,
-      Math.max(3, (z1 - z0) * style.roofDepth),
+      lot.x + (x0 + x1) / 2 + mass.x,
+      top + 0.8 + mass.elevation + mass.height / 2,
+      lot.z + (z0 + z1) / 2 + mass.z,
     ),
+    new THREE.Quaternion(),
+    new THREE.Vector3(mass.width, mass.height, mass.depth),
   );
 }
 
@@ -126,9 +127,13 @@ function rooflineMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
 function beaconMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
   const { tier, x, z, id } = lot;
   const { x0, z0, x1, z1, top } = hallShape(tier);
+  const masses = resolveRoofMasses(factoryStyleFor(id), x1 - x0, z1 - z0);
+  const highest = masses.reduce((best, mass) =>
+    mass.elevation + mass.height > best.elevation + best.height ? mass : best,
+  );
   return matrix.makeTranslation(
     x + (x0 + x1) / 2,
-    top + 0.8 + factoryStyleFor(id).roofHeight + BEACON.height / 2,
+    top + 0.8 + highest.elevation + highest.height + BEACON.height / 2,
     z + (z0 + z1) / 2,
   );
 }
@@ -239,7 +244,7 @@ export class InstancedLots {
   private readonly halls = new Map<ModelTier, Slab>();
   private readonly beacons: Slab;
   private readonly yards: Slab;
-  private readonly rooflines: Slab;
+  private readonly rooflines: readonly [Slab, Slab];
 
   private slots = new Map<string, Slot>();
   private key = "";
@@ -255,7 +260,10 @@ export class InstancedLots {
       this.group,
       true,
     );
-    this.rooflines = new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false);
+    this.rooflines = [
+      new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false),
+      new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false),
+    ];
     this.yards = new Slab(
       box(YARD_HALF * 2, YARD_Y, YARD_HALF * 2, 0, YARD_Y / 2, 0),
       this.yardMaterial,
@@ -290,7 +298,7 @@ export class InstancedLots {
   dispose() {
     for (const hall of this.halls.values()) hall.dispose();
     this.beacons.dispose();
-    this.rooflines.dispose();
+    for (const roofline of this.rooflines) roofline.dispose();
     this.yards.dispose();
     this.hallMaterial.dispose();
     this.beaconMaterial.dispose();
@@ -306,7 +314,7 @@ export class InstancedLots {
     for (const lot of lots) perTier.get(lot.tier)?.push(lot);
 
     this.beacons.reset(lots.length);
-    this.rooflines.reset(lots.length);
+    for (const roofline of this.rooflines) roofline.reset(lots.length);
     this.yards.reset(lots.length);
 
     let shared = 0;
@@ -317,7 +325,9 @@ export class InstancedLots {
       group.forEach((lot, index) => {
         slab.place(index, this.matrix.makeTranslation(lot.x, 0, lot.z), lot.wall);
         this.yards.place(shared, this.matrix.makeTranslation(lot.x, 0, lot.z));
-        this.rooflines.place(shared, rooflineMatrix(lot, this.matrix));
+        this.rooflines.forEach((roofline, massIndex) => {
+          roofline.place(shared, rooflineMatrix(lot, massIndex, this.matrix));
+        });
         this.beacons.place(shared, beaconMatrix(lot, this.matrix), lot.accent);
         // A lot that was already far keeps its eased glow, so swapping the set
         // never flashes a hall on or off.
@@ -330,7 +340,7 @@ export class InstancedLots {
       slab.uploadPlacements();
     }
     this.beacons.uploadPlacements();
-    this.rooflines.uploadPlacements();
+    for (const roofline of this.rooflines) roofline.uploadPlacements();
     this.yards.uploadPlacements();
   }
 }

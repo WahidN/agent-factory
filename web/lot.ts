@@ -6,7 +6,7 @@ import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
 import { destinationFor } from "./leisure.ts";
-import { factoryStyleFor } from "./factory-style.ts";
+import { factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "./factory-style.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
@@ -523,25 +523,29 @@ export class Lot {
       b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), top + 0.4, cz], [0.4, 0.8, depth + 0.1]);
     }
 
-    // A stable hall profile: longitudinal clerestory, transverse lantern, or
-    // compact high monitor. The far instanced LOD mirrors these dimensions.
-    const monitorWidth = Math.max(3, width * style.roofWidth);
-    const monitorDepth = Math.max(3, depth * style.roofDepth);
-    b.box(MATERIALS.roof, [cx, top + 0.8 + style.roofHeight / 2, cz], [monitorWidth, style.roofHeight, monitorDepth]);
-    b.box(
-      this.accentMaterial,
-      [cx, top + 0.8 + style.roofHeight * 0.58, cz + monitorDepth / 2 + 0.04],
-      [Math.max(2.2, monitorWidth - 0.7), Math.min(0.42, style.roofHeight * 0.28), 0.08],
-    );
+    // Two masses form one of six stable industrial silhouettes. Their shared
+    // resolver is also used by the far LOD, preventing a skyline pop.
+    const roofMasses = resolveRoofMasses(style, width, depth);
+    for (const mass of roofMasses) {
+      const massY = top + 0.8 + mass.elevation + mass.height / 2;
+      b.box(MATERIALS.roof, [cx + mass.x, massY, cz + mass.z], [mass.width, mass.height, mass.depth]);
+      b.box(
+        this.accentMaterial,
+        [cx + mass.x, massY + mass.height * 0.08, cz + mass.z + mass.depth / 2 + 0.04],
+        [Math.max(1.4, mass.width - 0.7), Math.min(0.42, mass.height * 0.28), 0.08],
+      );
+    }
 
     // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
     // half size inside the parapet and clear of this hall's roof monitor.
     const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => {
       const inside = vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
-      const clearMonitor =
-        Math.abs(vx - width / 2) > monitorWidth / 2 + halfX + 0.3 ||
-        Math.abs(vz - depth / 2) > monitorDepth / 2 + halfZ + 0.3;
-      return inside && clearMonitor;
+      const clearMasses = roofMasses.every(
+        (mass) =>
+          Math.abs(vx - width / 2 - mass.x) > mass.width / 2 + halfX + 0.3 ||
+          Math.abs(vz - depth / 2 - mass.z) > mass.depth / 2 + halfZ + 0.3,
+      );
+      return inside && clearMasses;
     };
     for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
       const x = x0 + vent[0];
@@ -576,7 +580,7 @@ export class Lot {
 
     for (let slot = 0; slot < target; slot++) {
       if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
-      const warehouse = new Warehouse(this.accent, slot);
+      const warehouse = new Warehouse(this.accent, factoryStyleIndex(this.state.id) + slot);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
       for (const mesh of warehouse.pickables) mesh.userData.hover = this;

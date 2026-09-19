@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FACTORY_STYLE_COUNT, factoryStyleFor, factoryStyleIndex } from "../factory-style.ts";
+import { FACTORY_STYLE_COUNT, factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "../factory-style.ts";
 
 describe("factoryStyleFor", () => {
   it("is stable for a session id", () => {
@@ -14,7 +14,37 @@ describe("factoryStyleFor", () => {
   });
 
   it("produces visible diversity across representative ids", () => {
-    const variants = new Set(Array.from({ length: 30 }, (_, i) => factoryStyleIndex(`session-${i}`)));
+    const variants = new Set(Array.from({ length: 80 }, (_, i) => factoryStyleIndex(`session-${i}`)));
     expect(variants.size).toBe(FACTORY_STYLE_COUNT);
+  });
+
+  it("offers six named massing families", () => {
+    const styles = new Map<string, ReturnType<typeof factoryStyleFor>>();
+    for (let i = 0; i < 200 && styles.size < FACTORY_STYLE_COUNT; i++) {
+      const style = factoryStyleFor(`factory-${i}`);
+      styles.set(style.name, style);
+    }
+    expect(FACTORY_STYLE_COUNT).toBe(6);
+    expect(styles.size).toBe(6);
+    for (const style of styles.values()) expect(style.roofMasses).toHaveLength(2);
+  });
+
+  it("resolves every mass inside small and large hall roofs", () => {
+    const styles = new Map<number, ReturnType<typeof factoryStyleFor>>();
+    for (let i = 0; i < 200; i++) styles.set(factoryStyleIndex(`factory-${i}`), factoryStyleFor(`factory-${i}`));
+
+    for (const [hallWidth, hallDepth] of [
+      [14, 8],
+      [22, 14],
+    ]) {
+      for (const style of styles.values()) {
+        for (const mass of resolveRoofMasses(style, hallWidth, hallDepth)) {
+          expect(Math.abs(mass.x) + mass.width / 2).toBeLessThanOrEqual(hallWidth / 2);
+          expect(Math.abs(mass.z) + mass.depth / 2).toBeLessThanOrEqual(hallDepth / 2);
+          expect(mass.height).toBeGreaterThan(0);
+          expect(mass.elevation).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
   });
 });

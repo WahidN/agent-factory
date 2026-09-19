@@ -6,7 +6,25 @@ import { BRIDGES, claimedUpTo, RAIL_BRIDGE, WAAL_EDGE } from "./city-plan.ts";
 import type { RiverBounds } from "./park.ts";
 import { PLOT_SIZE } from "./plots.ts";
 
-type LabelSpec = { key: string; name: string; x: number; y: number; z: number; minZoom: number; kind: string };
+type LabelSpec = {
+  key: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  minZoom: number;
+  kind: string;
+  priority: number;
+};
+
+export type ScreenLabel = {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  priority: number;
+};
 
 const NAMES: Partial<Record<string, { name: string; y: number; minZoom?: number }>> = {
   goffert: { name: "Goffertstadion", y: 8 },
@@ -17,6 +35,47 @@ const NAMES: Partial<Record<string, { name: string; y: number; minZoom?: number 
   valkhof: { name: "Valkhof", y: 16 },
   waalkade: { name: "Waalkade", y: 13 },
 };
+
+const PRIORITY: Record<string, number> = {
+  stevenskerk: 100,
+  station: 95,
+  goffert: 90,
+  waalbrug: 85,
+  valkhof: 80,
+  plein1944: 75,
+  oversteek: 70,
+  spoorbrug: 65,
+  waalkade: 60,
+  kronenburgerpark: 55,
+};
+
+/**
+ * Keeps overview labels legible by accepting the most important anchors first.
+ * Coordinates describe the label's lower-left anchor: CSS translates the pill
+ * upward from there, so the rectangle extends toward negative y.
+ */
+export function selectNonOverlappingLabels(labels: readonly ScreenLabel[], gap = 6): Set<string> {
+  const accepted: ScreenLabel[] = [];
+  const visible = new Set<string>();
+  const overlaps = (a: ScreenLabel, b: ScreenLabel) => {
+    const aLeft = a.x - 8;
+    const aRight = aLeft + a.width;
+    const aTop = a.y - a.height;
+    const aBottom = a.y;
+    const bLeft = b.x - 8;
+    const bRight = bLeft + b.width;
+    const bTop = b.y - b.height;
+    const bBottom = b.y;
+    return aLeft < bRight + gap && aRight + gap > bLeft && aTop < bBottom + gap && aBottom + gap > bTop;
+  };
+
+  for (const candidate of [...labels].sort((a, b) => b.priority - a.priority || a.key.localeCompare(b.key))) {
+    if (accepted.some((label) => overlaps(candidate, label))) continue;
+    accepted.push(candidate);
+    visible.add(candidate.key);
+  }
+  return visible;
+}
 
 export function landmarkLabelSpecs(rankCount: number, river: RiverBounds | null): LabelSpec[] {
   const specs: LabelSpec[] = claimedUpTo(rankCount).flatMap(({ cell, amenity }): LabelSpec[] => {
@@ -31,6 +90,7 @@ export function landmarkLabelSpecs(rankCount: number, river: RiverBounds | null)
         z: cell.row * PLOT_SIZE,
         minZoom: label.minZoom ?? 0.17,
         kind: "place",
+        priority: PRIORITY[amenity] ?? 50,
       },
     ];
   });
@@ -48,11 +108,21 @@ export function landmarkLabelSpecs(rankCount: number, river: RiverBounds | null)
       z: riverZ,
       minZoom: 0.14,
       kind: "bridge",
+      priority: PRIORITY[bridge.kind] ?? 50,
     });
   }
   const railX = (RAIL_BRIDGE.col - 0.5) * PLOT_SIZE;
   if (railX >= river.west && railX <= river.east) {
-    specs.push({ key: "spoorbrug", name: "Spoorbrug", x: railX, y: 14, z: riverZ, minZoom: 0.14, kind: "bridge" });
+    specs.push({
+      key: "spoorbrug",
+      name: "Spoorbrug",
+      x: railX,
+      y: 14,
+      z: riverZ,
+      minZoom: 0.14,
+      kind: "bridge",
+      priority: PRIORITY.spoorbrug,
+    });
   }
   return specs;
 }
@@ -118,6 +188,7 @@ export class LandmarkLabels {
 
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
+    const candidates: ScreenLabel[] = [];
     for (const { spec, el } of this.labels.values()) {
       const opacity = labelOpacity(this.camera.zoom, spec.minZoom);
       this.point.set(spec.x, spec.y, spec.z).project(this.camera);
@@ -129,7 +200,20 @@ export class LandmarkLabels {
       }
       el.hidden = false;
       el.style.opacity = opacity.toFixed(3);
-      el.style.transform = `translate3d(${((this.point.x + 1) * width) / 2}px, ${((-this.point.y + 1) * height) / 2}px, 0)`;
+      const x = ((this.point.x + 1) * width) / 2;
+      const y = ((-this.point.y + 1) * height) / 2;
+      el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      candidates.push({
+        key: spec.key,
+        x,
+        y,
+        width: el.offsetWidth || spec.name.length * 7 + 28,
+        height: el.offsetHeight || 24,
+        priority: spec.priority,
+      });
     }
+
+    const visible = selectNonOverlappingLabels(candidates);
+    for (const [key, { el }] of this.labels) if (!el.hidden && !visible.has(key)) el.hidden = true;
   }
 }

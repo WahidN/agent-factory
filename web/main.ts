@@ -5,6 +5,7 @@ import { claimedUpTo } from "./city-plan.ts";
 import { CityEvents } from "./city-events.ts";
 import { createFilterPanel, EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom, type Filter } from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
+import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { LandmarkLabels } from "./landmark-labels.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
 import { Lot } from "./lot.ts";
@@ -26,6 +27,8 @@ import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
+
+if (INK_STYLE_ENABLED) document.body.dataset.style = "ink";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;

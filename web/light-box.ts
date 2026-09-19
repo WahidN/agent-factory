@@ -55,7 +55,7 @@ export class LightBox {
 
     // Glowing front: the same canvas texture drives both the visible color
     // and the emissive glow, so the face is legible dark and lit.
-    this.frontMaterial = new THREE.MeshStandardMaterial({
+    this.frontMaterial = standard("#ffffff", {
       map: this.texture,
       emissiveMap: this.texture,
       emissive: new THREE.Color(COLORS.windowLight),

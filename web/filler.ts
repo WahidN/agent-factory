@@ -41,8 +41,7 @@ const fenceGrey = standard("#5a5d61");
 // A window with `emissive` is textured/glow-only for StaticBuilder's merge
 // rules, so every glowing window in this module must share this one
 // material or each becomes its own draw call.
-const windowLight = new THREE.MeshStandardMaterial({
-  color: "#2a2620",
+const windowLight = standard("#2a2620", {
   emissive: COLORS.windowLight,
   emissiveIntensity: 0.9,
   roughness: 0.6,

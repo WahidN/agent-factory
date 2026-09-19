@@ -59,7 +59,7 @@ export class Sign {
     this.ctx = this.canvas.getContext("2d")!;
     this.texture = new THREE.CanvasTexture(this.canvas);
     this.texture.colorSpace = THREE.SRGBColorSpace;
-    this.textMaterial = new THREE.MeshStandardMaterial({ map: this.texture, roughness: 0.9, metalness: 0 });
+    this.textMaterial = standard("#ffffff", { map: this.texture, roughness: 0.9, metalness: 0 });
 
     // Posts, from the ground to the board top. MATERIALS.darkSteel is shared
     // across the scene, so it is never disposed by this class.

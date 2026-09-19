@@ -20,7 +20,7 @@ import { Activity } from "./activity.ts";
 import { factoryStyleFor, resolveRoofMasses } from "./factory-style.ts";
 import { hallShape } from "./lot.ts";
 import type { ModelTier } from "./model-tier.ts";
-import { COLORS } from "./palette.ts";
+import { COLORS, standard } from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
 
 export type FarLot = {
@@ -61,7 +61,10 @@ function glsl(value: number): string {
 // swizzle: three declares vColor as a vec4, so the bare name does not add to
 // the vec3 totalEmissiveRadiance.
 function addBusyGlow(material: THREE.MeshStandardMaterial, color: string, idle: number, lit: number) {
-  material.onBeforeCompile = (shader) => {
+  const previousCompile = material.onBeforeCompile.bind(material);
+  const previousCacheKey = material.customProgramCacheKey.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previousCompile(shader, renderer);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float aBusy;\nvarying float vBusy;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvBusy = aBusy;");
@@ -73,6 +76,8 @@ function addBusyGlow(material: THREE.MeshStandardMaterial, color: string, idle: 
 \ttotalEmissiveRadiance += ${color} * (${glsl(idle)} + ${glsl(lit - idle)} * vBusy);`,
       );
   };
+  material.customProgramCacheKey = () => `${previousCacheKey()}-busy-glow-${idle}-${lit}`;
+  material.needsUpdate = true;
   return material;
 }
 
@@ -223,23 +228,19 @@ export class InstancedLots {
   readonly group = new THREE.Group();
 
   private readonly hallMaterial = addBusyGlow(
-    new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85, metalness: 0, vertexColors: true }),
+    standard("#ffffff", { roughness: 0.85, metalness: 0, vertexColors: true }),
     literal(new THREE.Color(COLORS.windowLight)),
     0,
     HALL_BUSY_GLOW,
   );
   private readonly beaconMaterial = addBusyGlow(
-    new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.5, metalness: 0 }),
+    standard("#ffffff", { roughness: 0.5, metalness: 0 }),
     "vColor.rgb",
     BEACON_IDLE,
     BEACON_BUSY,
   );
-  private readonly yardMaterial = new THREE.MeshStandardMaterial({ color: COLORS.yard, roughness: 0.95 });
-  private readonly rooflineMaterial = new THREE.MeshStandardMaterial({
-    color: "#667078",
-    roughness: 0.82,
-    metalness: 0.08,
-  });
+  private readonly yardMaterial = standard(COLORS.yard, { roughness: 0.95 });
+  private readonly rooflineMaterial = standard("#667078", { roughness: 0.82, metalness: 0.08 });
 
   private readonly halls = new Map<ModelTier, Slab>();
   private readonly beacons: Slab;

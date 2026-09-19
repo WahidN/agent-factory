@@ -33,8 +33,7 @@ const basteiBrick = standard("#9a654c", { roughness: 0.9 });
 const glasDoos = standard(COLORS.glass, { roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.7 });
 const terrasVloer = standard("#bbb4a5", { roughness: 0.9 });
 const parasolColors = ["#8a3c3c", "#3c6b8a", "#c48a2a"].map((c) => standard(c));
-const raamLicht = new THREE.MeshStandardMaterial({
-  color: "#2a2620",
+const raamLicht = standard("#2a2620", {
   emissive: COLORS.windowLight,
   emissiveIntensity: 0.9,
   roughness: 0.6,
@@ -51,8 +50,7 @@ const cableSteel = standard("#7a8288", { roughness: 0.45, metalness: 0.55 });
 const railSteel = standard("#4b555c", { roughness: 0.55, metalness: 0.5 });
 const railRust = standard("#74584c", { roughness: 0.78, metalness: 0.2 });
 const railBrick = standard("#865044", { roughness: 0.92 });
-const brugLicht = new THREE.MeshStandardMaterial({
-  color: "#fff4d6",
+const brugLicht = standard("#fff4d6", {
   emissive: "#fff1c9",
   emissiveIntensity: 0.7,
   roughness: 0.5,

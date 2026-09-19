@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { INK_STYLE_ENABLED, inkStandardMaterial } from "./ink-style.ts";
 
 const box = new THREE.BoxGeometry(1, 1, 1);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
@@ -16,12 +17,14 @@ const quaternion = new THREE.Quaternion();
 
 export type Vec3 = [number, number, number];
 
-export const BAKED_MATERIAL = new THREE.MeshStandardMaterial({
-  vertexColors: true,
-  roughness: 0.82,
-  metalness: 0,
-  flatShading: true,
-});
+export const BAKED_MATERIAL = INK_STYLE_ENABLED
+  ? inkStandardMaterial("#ffffff", { vertexColors: true })
+  : new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.82,
+      metalness: 0,
+      flatShading: true,
+    });
 
 function isPlain(material: THREE.Material): material is THREE.MeshStandardMaterial {
   return (

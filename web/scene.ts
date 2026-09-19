@@ -4,6 +4,9 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { INK_OUTLINE_SHADER } from "./ink-outline.ts";
+import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { fitZoom, MAX_ZOOM, MIN_ZOOM } from "./park-layout.ts";
 import type { ViewOptions } from "./view-options.ts";
 
@@ -30,8 +33,9 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   const scene = new THREE.Scene();
   // Clear Dutch daylight keeps the diorama legible while the giant meadow
   // plane below guarantees that every visible piece of terrain is grass.
-  scene.background = new THREE.Color("#a9ced7");
-  scene.fog = new THREE.Fog("#a9ced7", 900, 1450);
+  const skyColor = INK_STYLE_ENABLED ? "#797fa3" : "#a9ced7";
+  scene.background = new THREE.Color(skyColor);
+  scene.fog = new THREE.Fog(skyColor, 900, 1450);
 
   // Orthographic: parallel edges stay parallel, like the reference render.
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 3);
@@ -65,8 +69,14 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   controls.minPolarAngle = 0.15;
   controls.maxPolarAngle = Math.PI * 0.42; // stays above the ground
 
-  scene.add(new THREE.HemisphereLight("#effaff", "#62794b", 1.55));
-  const sun = new THREE.DirectionalLight("#fff2d1", 2.75);
+  scene.add(
+    INK_STYLE_ENABLED
+      ? new THREE.HemisphereLight("#e7e7ff", "#35374f", 1.45)
+      : new THREE.HemisphereLight("#effaff", "#62794b", 1.55),
+  );
+  const sun = INK_STYLE_ENABLED
+    ? new THREE.DirectionalLight("#ffd9ad", 2.65)
+    : new THREE.DirectionalLight("#fff2d1", 2.75);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.radius = 3;
@@ -84,6 +94,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   ao.updateGtaoMaterial({ radius: 3, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: 16 });
   ao.blendIntensity = 0.85;
   composer.addPass(ao);
+  const inkOutline = INK_STYLE_ENABLED ? new ShaderPass(INK_OUTLINE_SHADER) : null;
+  if (inkOutline) composer.addPass(inkOutline);
   composer.addPass(new OutputPass());
 
   const focusTarget = new THREE.Vector3();
@@ -127,6 +139,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
     renderer.setSize(width, height, false);
     composer.setSize(width, height);
     ao.setSize(Math.max(1, width / 2), Math.max(1, height / 2)); // half res, still reads fine blended in
+    inkOutline?.uniforms.resolution.value.set(Math.max(1, width), Math.max(1, height));
     const aspect = width / height;
     Object.assign(camera, {
       left: (-VIEW_HEIGHT * aspect) / 2,

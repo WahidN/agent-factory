@@ -1,9 +1,10 @@
 // Colors, shared materials, and canvas textures for the industrial park look.
 
 import * as THREE from "three";
+import { INK_STYLE_ENABLED, inkStandardMaterial } from "./ink-style.ts";
 import { accentIndexFor } from "./park-layout.ts";
 
-export const COLORS = {
+const CLASSIC_COLORS = {
   grass: "#4f7b45",
   water: "#2793c2",
   road: "#555d61",
@@ -29,14 +30,45 @@ export const COLORS = {
   windowLight: "#ffe2a8",
 };
 
+const INK_COLORS = {
+  grass: "#3f6f62",
+  water: "#367fa0",
+  road: "#35384c",
+  yard: "#888397",
+  wall: "#c9bba6",
+  roof: "#41405b",
+  parapet: "#615d78",
+  frame: "#f2e9d8",
+  glass: "#65a7bc",
+  yellow: "#f5c34b",
+  pineDark: "#224e45",
+  pineLight: "#3e7560",
+  rim: "#f06b55",
+  band: "#c94562",
+  concrete: "#c9c0b1",
+  steel: "#aeb7c4",
+  darkSteel: "#34364b",
+  wood: "#9b654d",
+  cab: "#d94d4d",
+  trailer: "#e9e0d2",
+  tire: "#202033",
+  curb: "#e7ddcd",
+  windowLight: "#ffd37c",
+};
+
+export const COLORS = INK_STYLE_ENABLED ? INK_COLORS : CLASSIC_COLORS;
+
 // Fixed, readable accents: orange, red, teal, blue, yellow, green, purple, brown.
-export const ACCENTS = ["#e36f32", "#cf4141", "#168f83", "#3478ad", "#e6aa2d", "#568f45", "#7659a6", "#9a613e"];
+export const ACCENTS = INK_STYLE_ENABLED
+  ? ["#f06b55", "#d43f68", "#20a38f", "#448fd0", "#f5bd42", "#65a85e", "#8668bc", "#b06b55"]
+  : ["#e36f32", "#cf4141", "#168f83", "#3478ad", "#e6aa2d", "#568f45", "#7659a6", "#9a613e"];
 
 export function accentFor(folder: string) {
   return new THREE.Color(ACCENTS[accentIndexFor(folder)]);
 }
 
 export function standard(color: string | THREE.Color, extra: THREE.MeshStandardMaterialParameters = {}) {
+  if (INK_STYLE_ENABLED) return inkStandardMaterial(color, extra);
   return new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0, flatShading: true, ...extra });
 }
 
@@ -195,14 +227,9 @@ MATERIALS.roof.userData.separate = true;
 
 // Hall colors per machine. These are the brickwork itself, not a tint laid
 // over it, so the windows keep their own color whichever hall they sit in.
-export const WALL_TINTS = [
-  "#8fa7b7", // mist blue
-  "#b09284", // warm brick
-  "#b9a875", // ochre sand
-  "#8fa58b", // sage
-  "#a690a4", // dusty plum
-  "#89969f", // slate
-];
+export const WALL_TINTS = INK_STYLE_ENABLED
+  ? ["#829caf", "#ad7f78", "#bda66c", "#779783", "#9d7f9d", "#777b91"]
+  : ["#8fa7b7", "#b09284", "#b9a875", "#8fa58b", "#a690a4", "#89969f"];
 
 // One wallBay texture per tint, cached so the 14 lots of one machine (same
 // tint) share a single texture instead of drawing a copy each. Never

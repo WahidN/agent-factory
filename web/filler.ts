@@ -260,7 +260,9 @@ const houses: CellBuilder = (b, rand) => {
 // ---------- shops ----------
 
 const shops: CellBuilder = (b, rand) => {
-  b.box(pathMaterial, [0, -0.05, 0], [CELL_HALF * 2, 0.1, CELL_HALF * 2]);
+  // Keep the shopping square above the shared meadow instead of ending its
+  // top face exactly at y=0, which makes the two surfaces z-fight.
+  b.box(pathMaterial, [0, 0.025, 0], [CELL_HALF * 2, 0.05, CELL_HALF * 2]);
 
   const count = 6 + Math.floor(rand() * 3); // 6..8 narrow panels
   const width = (CELL_HALF * 2 - 4) / count;

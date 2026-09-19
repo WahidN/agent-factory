@@ -64,6 +64,12 @@ function bench(b: StaticBuilder, [x, z]: [number, number], rotationY: number) {
   b.box(MATERIALS.darkSteel, [x, 0.22, z], [1.5, 0.06, 0.45], [0, rotationY, 0]);
 }
 
+export function pitchedRoofRotationX(zSide: -1 | 1, angle: number): number {
+  // A panel south of the ridge tilts up toward +z; a panel north of it tilts
+  // up toward -z. Reversing these signs creates an upside-down valley roof.
+  return zSide * angle;
+}
+
 // ---------- Linku — St. Canisiussingel 19-G2 ----------
 
 function linku(b: StaticBuilder, rand: () => number) {
@@ -109,8 +115,8 @@ function linku(b: StaticBuilder, rand: () => number) {
   const rise = 2.4;
   const slope = Math.hypot(halfDepth, rise);
   const roofAngle = Math.atan2(rise, halfDepth);
-  b.box(roofDark, [0, 15.7, -halfDepth / 2], [33, 0.45, slope], [roofAngle, 0, 0]);
-  b.box(roofDark, [0, 15.7, halfDepth / 2], [33, 0.45, slope], [-roofAngle, 0, 0]);
+  b.box(roofDark, [0, 15.7, -halfDepth / 2], [33, 0.45, slope], [pitchedRoofRotationX(-1, roofAngle), 0, 0]);
+  b.box(roofDark, [0, 15.7, halfDepth / 2], [33, 0.45, slope], [pitchedRoofRotationX(1, roofAngle), 0, 0]);
   for (const x of [-10, 0, 10]) {
     b.box(linkuGlass, [x, 16, 7.9], [4.3, 3.1, 0.28]);
     b.box(linkuWhite, [x - 1.05, 16.1, 8.1], [2.7, 0.18, 0.18], [0, 0, 0.85]);

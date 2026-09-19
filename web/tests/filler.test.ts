@@ -68,6 +68,13 @@ describe("FILLER_BUILDERS", () => {
     expect(signatures.size).toBe(4);
   });
 
+  it("keeps the shops square above the shared meadow plane", () => {
+    const builder = new StaticBuilder();
+    FILLER_BUILDERS.shops(builder, random(3));
+    const box = new THREE.Box3().setFromObject(builder.build());
+    expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+  });
+
   it("bakes a detailed park into one static mesh", () => {
     for (const seed of [1, 2, 3, 4, 11, 29]) {
       const builder = new StaticBuilder();

@@ -63,6 +63,7 @@ describe("Nijmegen district grammar", () => {
         expect(bounds.max.x).toBeLessThanOrEqual(CELL_HALF + 1e-6);
         expect(bounds.min.z).toBeGreaterThanOrEqual(-CELL_HALF - 1e-6);
         expect(bounds.max.z).toBeLessThanOrEqual(CELL_HALF + 1e-6);
+        expect(bounds.min.y).toBeGreaterThanOrEqual(-1e-6);
       }
     }
   });

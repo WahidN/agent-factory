@@ -88,8 +88,8 @@ function pathBetween(b: StaticBuilder, from: [number, number], to: [number, numb
   const dz = to[1] - from[1];
   b.box(
     pathMaterial,
-    [(from[0] + to[0]) / 2, 0.02, (from[1] + to[1]) / 2],
-    [width, 0.04, Math.hypot(dx, dz)],
+    [(from[0] + to[0]) / 2, 0.075, (from[1] + to[1]) / 2],
+    [width, 0.05, Math.hypot(dx, dz)],
     [0, Math.atan2(dx, dz), 0],
   );
 }
@@ -118,7 +118,7 @@ function flowerBed(b: StaticBuilder, x: number, z: number, radius: number, flowe
 // ---------- park ----------
 
 const park: CellBuilder = (b, rand) => {
-  b.box(MATERIALS.grass, [0, -0.05, 0], [CELL_HALF * 2, 0.1, CELL_HALF * 2]);
+  b.box(MATERIALS.grass, [0, 0.025, 0], [CELL_HALF * 2, 0.05, CELL_HALF * 2]);
   const variant = Math.floor(rand() * 4);
   let reserved: (x: number, z: number) => boolean;
 
@@ -130,7 +130,7 @@ const park: CellBuilder = (b, rand) => {
     pathBetween(b, [3, 7], [18, 2]);
     pathBetween(b, [3, 7], [7, 18]);
     b.cylinder(MATERIALS.curb, [-8, 0.11, -9], [5.7, 0.22, 4.5]);
-    b.cylinder(waterMaterial, [-8, 0.02, -9], [5.3, 0.08, 4.1]);
+    b.cylinder(waterMaterial, [-8, 0.07, -9], [5.3, 0.04, 4.1]);
     bench(b, -1, 4.7, 0.2);
     bench(b, 8, 4.7, -0.25);
     flowerBed(b, 11.5, -10, 2.2, flowerMaterials[2]);
@@ -138,8 +138,8 @@ const park: CellBuilder = (b, rand) => {
   } else if (variant === 1) {
     // Stadstuin: clipped hedges and four planted rooms around a small
     // central plaza make this read as designed public space.
-    b.box(pathMaterial, [0, 0.02, 0], [CELL_HALF * 2 - 4, 0.04, 2.2]);
-    b.box(pathMaterial, [0, 0.02, 0], [2.2, 0.04, CELL_HALF * 2 - 4]);
+    b.box(pathMaterial, [0, 0.075, 0], [CELL_HALF * 2 - 4, 0.05, 2.2]);
+    b.box(pathMaterial, [0, 0.075, 0], [2.2, 0.05, CELL_HALF * 2 - 4]);
     b.cylinder(plazaMaterial, [0, 0.04, 0], [4.2, 0.08, 4.2]);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
@@ -153,7 +153,7 @@ const park: CellBuilder = (b, rand) => {
   } else if (variant === 2) {
     // Stadsweide: broad open grass, a faceted walking loop, picnic tables
     // and irregular wildflower islands.
-    b.box(meadowMaterial, [0, 0.01, 0], [24, 0.02, 22]);
+    b.box(meadowMaterial, [0, 0.065, 0], [24, 0.03, 22]);
     const loop: [number, number][] = [
       [-15, -11],
       [-10, 13],
@@ -199,7 +199,7 @@ const park: CellBuilder = (b, rand) => {
 // ---------- houses ----------
 
 const houses: CellBuilder = (b, rand) => {
-  b.box(MATERIALS.grass, [0, -0.05, 0], [CELL_HALF * 2, 0.1, CELL_HALF * 2]);
+  b.box(MATERIALS.grass, [0, 0.025, 0], [CELL_HALF * 2, 0.05, CELL_HALF * 2]);
 
   const rowCount = 2;
   const perRow = 4 + Math.floor(rand() * 3); // 4..6, two rows gives 8..12 total (six to ten typical after trims)
@@ -309,14 +309,14 @@ const shops: CellBuilder = (b, rand) => {
 // ---------- field ----------
 
 const field: CellBuilder = (b, _rand) => {
-  b.box(MATERIALS.grass, [0, -0.05, 0], [CELL_HALF * 2, 0.1, CELL_HALF * 2]);
+  b.box(MATERIALS.grass, [0, 0.025, 0], [CELL_HALF * 2, 0.05, CELL_HALF * 2]);
 
   const fieldW = 28;
   const fieldD = 32;
-  b.box(fieldGreen, [0, 0.01, 0], [fieldW, 0.02, fieldD]);
+  b.box(fieldGreen, [0, 0.065, 0], [fieldW, 0.03, fieldD]);
 
   const lineH = 0.02;
-  const lineY = 0.03;
+  const lineY = 0.09;
   // Outer touchlines and goal lines.
   b.box(lineWhite, [0, lineY, fieldD / 2], [fieldW, lineH, 0.15]);
   b.box(lineWhite, [0, lineY, -fieldD / 2], [fieldW, lineH, 0.15]);

@@ -68,7 +68,7 @@ function pick<T>(rand: () => number, options: T[]): T {
 
 const valkhof: CellBuilder = (b, rand) => {
   // Grass base, shifted toward the north edge (the water side).
-  b.box(hillGrass, [0, -0.05, 0], [40, 0.1, 40]);
+  b.box(hillGrass, [0, 0.025, 0], [40, 0.05, 40]);
 
   // The heuvel: a low, wide plateau centered toward the north (water) side.
   const hillX = 2;
@@ -129,7 +129,7 @@ const valkhof: CellBuilder = (b, rand) => {
 
   // Paths across the plateau and down to the yard.
   b.box(pathGravel, [0, 3.02, 8], [6, 0.05, 10]);
-  b.box(pathGravel, [0, 0.02, 15], [6, 0.05, 8]);
+  b.box(pathGravel, [0, 0.075, 15], [6, 0.05, 8]);
 
   // A low keermuur along the north edge of the hill, where it meets the water side.
   b.box(keerMuur, [0, 1.6, 16], [30, 3.2, 1]);

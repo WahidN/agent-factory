@@ -41,12 +41,14 @@ describe("RIVER_LANDMARKS", () => {
     });
   }
 
-  it("keeps the Waalkade paving above the meadow plane", () => {
-    const builder = new StaticBuilder();
-    RIVER_LANDMARKS.waalkade(builder, random(3));
-    const box = new THREE.Box3().setFromObject(builder.build());
-    expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
-  });
+  for (const name of ["valkhof", "waalkade"] as const) {
+    it(`keeps ${name} geometry at or above the shared meadow plane`, () => {
+      const builder = new StaticBuilder();
+      RIVER_LANDMARKS[name](builder, random(3));
+      const box = new THREE.Box3().setFromObject(builder.build());
+      expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+    });
+  }
 });
 
 describe("bridgeArch", () => {

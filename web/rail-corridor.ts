@@ -19,15 +19,31 @@ const fenceSteel = standard("#687177", { roughness: 0.72, metalness: 0.28 });
 export type RailSegment = { from: number; to: number };
 
 export function railSegmentsForCells(cells: readonly Cell[]): RailSegment[] {
-  if (cells.length === 0) return [];
-  const from = (Math.min(...cells.map(({ row }) => row)) - 0.5) * PLOT_SIZE;
-  const to = (Math.max(...cells.map(({ row }) => row)) + 0.5) * PLOT_SIZE;
+  // The rails sit on the boundary between these two cell columns. Only rows
+  // that actually touch that boundary should receive track; using the global
+  // city bounds drew rails, fencing and overhead wire through empty meadow.
+  const rows = [
+    ...new Set(cells.filter(({ col }) => col === RAIL_BRIDGE.col - 1 || col === RAIL_BRIDGE.col).map(({ row }) => row)),
+  ].sort((a, b) => a - b);
+  if (rows.length === 0) return [];
+
+  const runs: { first: number; last: number }[] = [];
+  for (const row of rows) {
+    const run = runs.at(-1);
+    if (run && row === run.last + 1) run.last = row;
+    else runs.push({ first: row, last: row });
+  }
+
   const bridgeFrom = waterZ - RAIL_BRIDGE_SPAN / 2;
   const bridgeTo = waterZ + RAIL_BRIDGE_SPAN / 2;
-  return [
-    { from, to: Math.min(to, bridgeFrom) },
-    { from: Math.max(from, bridgeTo), to },
-  ].filter((segment) => segment.to - segment.from > 0.1);
+  return runs.flatMap(({ first, last }) => {
+    const from = (first - 0.5) * PLOT_SIZE;
+    const to = (last + 0.5) * PLOT_SIZE;
+    return [
+      { from, to: Math.min(to, bridgeFrom) },
+      { from: Math.max(from, bridgeTo), to },
+    ].filter((segment) => segment.to - segment.from > 0.1);
+  });
 }
 
 /** Keeps static crowds and visitors outside the fenced rail right-of-way. */

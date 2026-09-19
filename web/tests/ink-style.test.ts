@@ -3,9 +3,10 @@ import { describe, expect, it } from "vitest";
 import { applyInkShading, INK_BANDS, INK_RAMP, inkStandardMaterial, inkStyleRequested } from "../ink-style.ts";
 
 describe("Nijmegen Inkshift materials", () => {
-  it("only opts in through the explicit URL style", () => {
+  it("uses Inkshift by default and allows an explicit classic fallback", () => {
     expect(inkStyleRequested("?mode=showcase&style=ink")).toBe(true);
-    expect(inkStyleRequested("?mode=showcase")).toBe(false);
+    expect(inkStyleRequested("?mode=showcase")).toBe(true);
+    expect(inkStyleRequested("")).toBe(true);
     expect(inkStyleRequested("?style=classic")).toBe(false);
   });
 

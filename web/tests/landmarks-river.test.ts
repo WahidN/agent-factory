@@ -40,6 +40,13 @@ describe("RIVER_LANDMARKS", () => {
       });
     });
   }
+
+  it("keeps the Waalkade paving above the meadow plane", () => {
+    const builder = new StaticBuilder();
+    RIVER_LANDMARKS.waalkade(builder, random(3));
+    const box = new THREE.Box3().setFromObject(builder.build());
+    expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
+  });
 });
 
 describe("bridgeArch", () => {

@@ -38,7 +38,7 @@ const WEST = "2:0>1:0";
 const FIRST = plotCell(0);
 
 // Two ranks that land side by side, away from the river.
-const NEIGHBOURS = [8, 9];
+const NEIGHBOURS = [2, 3];
 
 const rowOf = (crossing: string) => Number(crossing.split(":")[1]);
 const colOf = (crossing: string) => Number(crossing.split(":")[0]);

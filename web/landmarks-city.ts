@@ -39,6 +39,11 @@ const brengBlue = standard("#174d73", { roughness: 0.66 });
 const awningRed = standard("#9c3a34");
 const awningCream = standard("#cfc6a8");
 const water = standard("#4298bf", { roughness: 0.3, metalness: 0.05 });
+const linkuBrick = standard("#a95f42", { roughness: 0.92 });
+const linkuBrickShade = standard("#754235", { roughness: 0.96 });
+const linkuGlass = standard("#4e8195", { roughness: 0.24, metalness: 0.08 });
+const linkuBlue = standard("#1687c9", { roughness: 0.62 });
+const linkuWhite = standard("#e9f4f5", { roughness: 0.8 });
 
 // Glowing windows and floodlights share the scene's existing lamp glow
 // material instead of a bespoke emissive per landmark.
@@ -57,6 +62,68 @@ function tree(b: StaticBuilder, rand: () => number, [x, z]: [number, number]) {
 function bench(b: StaticBuilder, [x, z]: [number, number], rotationY: number) {
   b.box(MATERIALS.wood, [x, 0.45, z], [1.6, 0.1, 0.5], [0, rotationY, 0]);
   b.box(MATERIALS.darkSteel, [x, 0.22, z], [1.5, 0.06, 0.45], [0, rotationY, 0]);
+}
+
+// ---------- Linku — St. Canisiussingel 19-G2 ----------
+
+function linku(b: StaticBuilder, rand: () => number) {
+  // The real office is a late-20th-century, four-storey street building. Its
+  // long salmon-brick facade, glass entrance spine and rounded crossing corner
+  // make it instantly distinct from the historic villas along the singel.
+  b.box(plaza, [0, 0.03, 0], [38, 0.06, 34]);
+  b.box(linkuBrick, [0, 7.25, 0], [32, 14.5, 17]);
+  b.box(linkuBrickShade, [0, 0.6, 0], [33, 1.2, 18]);
+
+  const cornerX = -12.4;
+  const cornerZ = 4.3;
+  b.cylinder(linkuBrick, [cornerX, 7.25, cornerZ], [4.6, 14.5, 4.6]);
+  b.cylinder(linkuBrickShade, [cornerX, 0.6, cornerZ], [4.85, 1.2, 4.85]);
+
+  // Strong horizontal window rhythm across the street facade.
+  for (const y of [3, 6.4, 9.8]) {
+    for (const x of [-8.8, -5.3, 5.3, 8.8, 12.3]) {
+      b.box(linkuGlass, [x, y, 8.56], [2.5, 1.65, 0.12]);
+    }
+    // Faceted panes wrap around the characteristic curved corner.
+    for (const angle of [-0.8, -0.4, 0, 0.4, 0.8]) {
+      const radius = 4.63;
+      b.box(
+        linkuGlass,
+        [cornerX + Math.sin(angle) * radius, y, cornerZ + Math.cos(angle) * radius],
+        [1.55, 1.65, 0.12],
+        [0, angle, 0],
+      );
+    }
+  }
+
+  // Full-height central entrance glazing with a restrained blue identity
+  // marker, readable in the toon palette without tiny text geometry.
+  b.box(linkuGlass, [0, 7.7, 8.72], [4.2, 15.4, 0.42]);
+  for (const x of [-1.4, 0, 1.4]) b.box(MATERIALS.darkSteel, [x, 7.7, 8.96], [0.12, 15.1, 0.1]);
+  b.box(linkuBlue, [0, 11.9, 8.99], [3.1, 0.9, 0.12]);
+  for (const x of [-0.8, 0, 0.8]) b.box(linkuWhite, [x, 11.9, 9.06], [0.3, 0.3, 0.05]);
+
+  // Low slate roof and oversized glazed dormers are the skyline signature in
+  // Linku's own exterior photos. Their scale is pushed slightly for the map.
+  const halfDepth = 8.8;
+  const rise = 2.4;
+  const slope = Math.hypot(halfDepth, rise);
+  const roofAngle = Math.atan2(rise, halfDepth);
+  b.box(roofDark, [0, 15.7, -halfDepth / 2], [33, 0.45, slope], [roofAngle, 0, 0]);
+  b.box(roofDark, [0, 15.7, halfDepth / 2], [33, 0.45, slope], [-roofAngle, 0, 0]);
+  for (const x of [-10, 0, 10]) {
+    b.box(linkuGlass, [x, 16, 7.9], [4.3, 3.1, 0.28]);
+    b.box(linkuWhite, [x - 1.05, 16.1, 8.1], [2.7, 0.18, 0.18], [0, 0, 0.85]);
+    b.box(linkuWhite, [x + 1.05, 16.1, 8.1], [2.7, 0.18, 0.18], [0, 0, -0.85]);
+  }
+
+  // Linku's blue flag is the small high-contrast landmark visible from the
+  // singel; street trees frame rather than hide the rounded corner.
+  b.cylinder(MATERIALS.steel, [15.5, 4.5, 12.5], [0.09, 9, 0.09]);
+  b.box(linkuBlue, [14.1, 7.4, 12.5], [2.8, 1.7, 0.08]);
+  b.box(linkuWhite, [14.8, 7.4, 12.56], [0.42, 0.42, 0.05]);
+  tree(b, rand, [-16, 14]);
+  tree(b, rand, [16, -13]);
 }
 
 // A gabled roof panel pair over a hall running along z, ridge along z at x = centerX.
@@ -409,7 +476,7 @@ function station(b: StaticBuilder, _rand: () => number) {
 }
 
 export const CITY_LANDMARKS: Record<
-  "stevenskerk" | "goffert" | "plein1944" | "kronenburgerpark" | "station",
+  "stevenskerk" | "goffert" | "plein1944" | "kronenburgerpark" | "station" | "linku",
   CellBuilder
 > = {
   stevenskerk,
@@ -417,4 +484,5 @@ export const CITY_LANDMARKS: Record<
   plein1944,
   kronenburgerpark,
   station,
+  linku,
 };

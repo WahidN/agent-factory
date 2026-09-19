@@ -12,15 +12,30 @@ import {
 import { StaticBuilder } from "../static-builder.ts";
 
 describe("rail corridor", () => {
-  it("runs from scene edge to scene edge and leaves exactly the bridge span open", () => {
+  it("runs only beside adjacent city cells and leaves exactly the bridge span open", () => {
     const segments = railSegmentsForCells([
-      { col: 0, row: 0 },
-      { col: 5, row: 4 },
+      { col: 1, row: 0 },
+      { col: 2, row: 1 },
+      { col: 2, row: 2 },
+      { col: 1, row: 3 },
+      { col: 8, row: 8 },
     ]);
     const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
     expect(segments).toEqual([
       { from: -PLOT_SIZE / 2, to: waterZ - RAIL_BRIDGE_SPAN / 2 },
-      { from: waterZ + RAIL_BRIDGE_SPAN / 2, to: 4.5 * PLOT_SIZE },
+      { from: waterZ + RAIL_BRIDGE_SPAN / 2, to: 3.5 * PLOT_SIZE },
+    ]);
+  });
+
+  it("does not connect separated rail-side districts through empty meadow", () => {
+    expect(
+      railSegmentsForCells([
+        { col: 1, row: 0 },
+        { col: 2, row: 3 },
+      ]),
+    ).toEqual([
+      { from: -PLOT_SIZE / 2, to: PLOT_SIZE / 2 },
+      { from: 2.5 * PLOT_SIZE, to: 3.5 * PLOT_SIZE },
     ]);
   });
 
@@ -33,8 +48,10 @@ describe("rail corridor", () => {
   it("builds visible ballast, rails, fencing and catenary", () => {
     const builder = new StaticBuilder();
     appendRailCorridor(builder, [
-      { col: 0, row: 0 },
-      { col: 0, row: 3 },
+      { col: 1, row: 0 },
+      { col: 2, row: 1 },
+      { col: 2, row: 2 },
+      { col: 1, row: 3 },
     ]);
     const box = new THREE.Box3().setFromObject(builder.build());
     expect(box.min.z).toBeCloseTo(-PLOT_SIZE / 2);

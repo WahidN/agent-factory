@@ -23,6 +23,7 @@ describe("amenityAt", () => {
     expect(amenityAt({ col: 1, row: 1 })).toBe("stevenskerk");
     expect(amenityAt({ col: 0, row: 0 })).toBe("goffert");
     expect(amenityAt({ col: 2, row: 0 })).toBe("station");
+    expect(amenityAt({ col: 3, row: 0 })).toBe("linku");
   });
 
   it("gives null for a cell nobody claimed", () => {
@@ -129,10 +130,8 @@ describe("nearestClaim", () => {
   });
 
   it("picks the claimed cell with the smallest euclidean distance, on the same bank", () => {
-    // At 300 sessions kronenburgerpark (5:0) is the unique closest south-bank
-    // claim to 4:0: plein1944 (2:0) and valkhof/waalkade (3:1/5:1) are all
-    // further away.
-    expect(nearestClaim({ col: 4, row: 0 }, 300)).toEqual({ col: 5, row: 0 });
+    // Linku is the unique closest south-bank claim to the neighbouring 4:0.
+    expect(nearestClaim({ col: 4, row: 0 }, 300)).toEqual({ col: 3, row: 0 });
   });
 
   it("never picks a claim across the river", () => {

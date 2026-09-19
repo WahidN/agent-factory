@@ -10,7 +10,9 @@ import * as THREE from "three";
 const INK_STYLE_KEY = "nijmegen-inkshift-v1";
 
 export function inkStyleRequested(search = globalThis.location?.search ?? "") {
-  return new URLSearchParams(search).get("style") === "ink";
+  // Inkshift is the default visual language. Keep the original renderer
+  // available as an explicit comparison/debug escape hatch.
+  return new URLSearchParams(search).get("style") !== "classic";
 }
 
 export const INK_STYLE_ENABLED = inkStyleRequested();

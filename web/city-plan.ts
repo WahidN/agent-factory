@@ -33,7 +33,8 @@ export type Amenity =
   | "kronenburgerpark"
   | "waalkade"
   | "plein1944"
-  | "station";
+  | "station"
+  | "linku";
 
 // The river runs along the edge between this row and the one below it, so the
 // water is centered on z = (WAAL_EDGE - 0.5) * PLOT_SIZE.
@@ -82,6 +83,7 @@ export const CLAIMED = new Map<string, Amenity>([
   ["5:0", "kronenburgerpark"],
   ["7:0", "plein1944"],
   ["3:1", "valkhof"], // on the south bank, where the real one looks over the Waal
+  ["3:0", "linku"], // Linku's rounded brick office on the St. Canisiussingel
   ["5:1", "waalkade"], // quay front, further east
   ["7:1", "field"],
   ["0:2", "houses"], // Lent, across the water

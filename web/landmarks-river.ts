@@ -149,7 +149,9 @@ const valkhof: CellBuilder = (b, rand) => {
 // ---------- waalkade ----------
 
 const waalkade: CellBuilder = (b, rand) => {
-  b.box(pathGravel, [0, -0.05, 0], [40, 0.1, 40]);
+  // Keep the paving wholly above the meadow. Its old top face sat exactly at
+  // y=0 with the infinite ground plane, which caused depth-buffer flicker.
+  b.box(pathGravel, [0, 0.025, 0], [40, 0.05, 40]);
 
   // Two-level stone quay facing the Waal, with broad stairs and dark mooring
   // bollards. It anchors the facade row to the river rather than open paving.
@@ -217,7 +219,9 @@ const waalkade: CellBuilder = (b, rand) => {
 
     // Terras met parasol of stoelen.
     const terraceZ = frontZ - 2.2 - rand() * 1.2;
-    b.box(terrasVloer, [x, 0.02, terraceZ], [width - 0.3, 0.05, 3]);
+    // The terrace also needs its own height layer instead of intersecting the
+    // quay paving below it.
+    b.box(terrasVloer, [x, 0.075, terraceZ], [width - 0.3, 0.05, 3]);
     if (rand() < 0.6) {
       const parasol = pick(rand, parasolColors);
       b.cylinder(MATERIALS.darkSteel, [x, 1, terraceZ], [0.05, 2, 0.05]);

@@ -161,7 +161,7 @@ body {
   width: 110px;
 }
 
-/* Inkshift is opt-in so ?style=ink can be compared with the existing UI. */
+/* Inkshift is the default; ?style=classic keeps the original UI available. */
 body[data-style="ink"] {
   --ink: #12161c;
   --ink-soft: #252c34;

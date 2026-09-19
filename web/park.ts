@@ -104,8 +104,10 @@ const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
 const bridgeGapAt = (col: number) => crossingAt(col) !== null || col === RAIL_BRIDGE.col;
 
+const MEADOW_EDGE = 3000;
+
 function meadowGeometry() {
-  const edge = 3000;
+  const edge = MEADOW_EDGE;
   const southLength = bankZ(-1) + edge;
   const northLength = edge - bankZ(1);
   const pieces = [
@@ -309,6 +311,21 @@ export class Park {
   // the city reaches the water. The water is a cell edge, not a cell, so both
   // banks are riverfront and no ground is lost to it.
   private waal(builder: StaticBuilder, river: RiverSpan) {
+    // The sunken channel floor spans the full meadow, but the visible Waal is
+    // finite. Fill the unused parts back to ground level so the outline pass
+    // cannot expose two kilometre-long bank seams beside the actual water.
+    const drySpans: [number, number][] = river
+      ? [
+          [-MEADOW_EDGE, (river.minCol - 0.5) * PLOT_SIZE],
+          [(river.maxCol + 0.5) * PLOT_SIZE, MEADOW_EDGE],
+        ]
+      : [[-MEADOW_EDGE, MEADOW_EDGE]];
+    for (const [from, to] of drySpans) {
+      if (to <= from) continue;
+      const dryGround = new THREE.PlaneGeometry(to - from, WAAL_WIDTH);
+      builder.add(dryGround, terrainMaterial, [(from + to) / 2, 0, waterZ], [1, 1, 1], [-Math.PI / 2, 0, 0]);
+      dryGround.dispose();
+    }
     if (!river) return;
     const { minCol, maxCol } = river;
     const west = (minCol - 0.5) * PLOT_SIZE;

@@ -34,6 +34,7 @@ const NAMES: Partial<Record<string, { name: string; y: number; minZoom?: number 
   station: { name: "Station Nijmegen", y: 22 },
   valkhof: { name: "Valkhof", y: 16 },
   waalkade: { name: "Waalkade", y: 13 },
+  linku: { name: "Linku · St. Canisiussingel", y: 16 },
 };
 
 const PRIORITY: Record<string, number> = {
@@ -47,6 +48,7 @@ const PRIORITY: Record<string, number> = {
   spoorbrug: 65,
   waalkade: 60,
   kronenburgerpark: 55,
+  linku: 72,
 };
 
 /**

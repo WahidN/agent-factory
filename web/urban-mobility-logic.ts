@@ -1,6 +1,7 @@
-import { RAIL_BRIDGE, WAAL_EDGE, crossingAt } from "./city-plan.ts";
-import { parkBounds } from "./park-layout.ts";
+import { RAIL_BRIDGE, WAAL_EDGE, claimedUpTo, crossingAt } from "./city-plan.ts";
 import { PLOT_SIZE } from "./plots.ts";
+import { plotCell } from "./plots.ts";
+import { railSegmentsForCells } from "./rail-corridor.ts";
 import { roadGraph, type Lane, type Roads } from "./traffic-logic.ts";
 
 export const MAX_CYCLISTS = 40;
@@ -99,9 +100,10 @@ export class UrbanMobilitySimulation {
         this.nextLane[i * 4 + variant] = laneIndex.get(choice) ?? i;
       }
     }
-    const bounds = parkBounds([...indexes], true);
-    this.trainMinZ = (bounds.minRow - 0.5) * PLOT_SIZE + TRAIN_HALF_LENGTH;
-    this.trainMaxZ = (bounds.maxRow + 0.5) * PLOT_SIZE - TRAIN_HALF_LENGTH;
+    const railCells = [...indexes.map(plotCell), ...claimedUpTo(indexes.length).map(({ cell }) => cell)];
+    const railSegments = railSegmentsForCells(railCells);
+    this.trainMinZ = (railSegments[0]?.from ?? WAAL_Z) + TRAIN_HALF_LENGTH;
+    this.trainMaxZ = (railSegments.at(-1)?.to ?? WAAL_Z) - TRAIN_HALF_LENGTH;
     if (this.trainMaxZ < this.trainMinZ) this.trainMaxZ = this.trainMinZ;
     this.resetFleets();
   }

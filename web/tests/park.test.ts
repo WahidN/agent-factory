@@ -54,12 +54,17 @@ describe("Park and the Waal", () => {
   });
 
   it("draws no water for a city that does not reach the river", () => {
-    // One session sits on row 0 with the Goffert beside it; the nearest bank
-    // is two cell rows north, so nothing the park draws may get there.
+    // The dry channel cover may reach the future river strip, but the blue
+    // water material itself must not exist before the city reaches a bank.
     const { park, streets } = parkInScene();
     park.update([0]);
-    const box = new THREE.Box3().setFromObject(streets);
-    expect(box.max.z).toBeLessThan(southBank);
+    let hasWater = false;
+    streets.traverse((child) => {
+      if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+        if (child.material.map === TEXTURES.water) hasWater = true;
+      }
+    });
+    expect(hasWater).toBe(false);
   });
 
   it("puts no bridge arch over a city without a river", () => {

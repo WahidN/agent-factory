@@ -17,7 +17,7 @@ function vertexCount(group: THREE.Group) {
   return group.children.reduce((sum, child) => sum + (child as THREE.Mesh).geometry.attributes.position.count, 0);
 }
 
-const NAMES = ["stevenskerk", "goffert", "plein1944", "kronenburgerpark", "station"] as const;
+const NAMES = ["stevenskerk", "goffert", "plein1944", "kronenburgerpark", "station", "linku"] as const;
 
 describe("CITY_LANDMARKS", () => {
   for (const name of NAMES) {
@@ -64,7 +64,7 @@ describe("CITY_LANDMARKS", () => {
     expect(box.min.y).toBeGreaterThanOrEqual(-1e-6);
   });
 
-  it("makes the Stevenskerk the tallest of the five landmarks", () => {
+  it("makes the Stevenskerk the tallest city landmark", () => {
     const heights = Object.fromEntries(
       NAMES.map((name) => {
         const builder = new StaticBuilder();

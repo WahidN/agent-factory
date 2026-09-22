@@ -339,9 +339,15 @@ wss.on("listening", () => {
   if (HUB_URL) console.log(`relaying to ${HUB_URL} as ${MACHINE}`);
 });
 
-watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions)).on("error", (error) =>
-  console.error("[watch sessions]", error),
-);
+// A hub-only machine never runs Claude Code, so it has no sessions folder.
+// watch() throws ENOENT synchronously there, before the error handler exists.
+if (await exists(SESSIONS_DIR)) {
+  watch(SESSIONS_DIR, () => debounce("sessions", refreshSessions)).on("error", (error) =>
+    console.error("[watch sessions]", error),
+  );
+} else {
+  console.log(`no ${SESSIONS_DIR}, falling back to the ${CHECK_EVERY_MS / 1000} s poll`);
+}
 
 // Safety net for missed file events, dead pids, and subagent timing.
 // Uses its own key so frequent session file writes can't keep postponing it.

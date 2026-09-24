@@ -100,6 +100,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
 
   const focusTarget = new THREE.Vector3();
   let focusActive = false;
+  let userOwnsCamera = false;
   let focusedHalfExtent: number | null = null;
 
   // A deliberate drag/rotate/zoom owns the camera from that moment onward.
@@ -107,6 +108,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   // centre every frame, making the controls feel broken.
   controls.addEventListener("start", () => {
     focusActive = false;
+    userOwnsCamera = true;
     canvas.style.cursor = "grabbing";
   });
   controls.addEventListener("end", () => {
@@ -125,7 +127,9 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
 
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     focusTarget.set(x, 0, z);
-    focusActive = true;
+    // A layout change after a manual pan only resizes shadows and zoom; the
+    // first fit and ?view=all still glide the camera to the town.
+    if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
     focusedHalfExtent = halfExtent;
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });

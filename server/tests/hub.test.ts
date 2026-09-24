@@ -69,6 +69,15 @@ describe("Hub", () => {
     expect(hub.remote().map((s) => s.id)).toEqual(["mac-c/same"]);
   });
 
+  it("forwards exactly the seven wire fields, dropping anything extra a reporter sends", () => {
+    const hub = new Hub();
+    hub.join("mac-b");
+    const extra = { ...session("s1"), cwd: "/Users/dennis/secret", prompt: "hi" } as SessionState;
+    const out = hub.apply("mac-b", { type: "session-update", session: extra });
+    expect(out).toEqual([{ type: "session-update", session: { ...session("s1"), id: "mac-b/s1" } }]);
+    expect(hub.remote()).toEqual([{ ...session("s1"), id: "mac-b/s1" }]);
+  });
+
   it("ignores a machine that did not join", () => {
     const hub = new Hub();
     expect(hub.apply("ghost", { type: "session-update", session: session("a") })).toEqual([]);
@@ -88,6 +97,44 @@ describe("parseRelayMessage", () => {
     expect(parseRelayMessage('{"type":"other"}')).toBeNull();
     expect(parseRelayMessage("not json")).toBeNull();
     expect(parseRelayMessage("42")).toBeNull();
+  });
+
+  it("accepts a hello with an optional token and valid sessions in every session message", () => {
+    const hello = { type: "hello", protocol: 2, user: "", machine: "mac-b", token: "t" };
+    expect(parseRelayMessage(JSON.stringify(hello))).toEqual(hello);
+    const snapshot = { type: "snapshot", sessions: [session("a"), session("b", { status: "busy" })] };
+    expect(parseRelayMessage(JSON.stringify(snapshot))).toEqual(snapshot);
+    const update = { type: "session-update", session: session("a") };
+    expect(parseRelayMessage(JSON.stringify(update))).toEqual(update);
+  });
+
+  it("rejects a hello with the wrong field types", () => {
+    const bad = [
+      { type: "hello", user: "dennis", machine: "mac-b" },
+      { type: "hello", protocol: "2", user: "dennis", machine: "mac-b" },
+      { type: "hello", protocol: 2, user: "dennis", machine: "" },
+      { type: "hello", protocol: 2, user: "dennis", machine: 7 },
+      { type: "hello", protocol: 2, machine: "mac-b" },
+      { type: "hello", protocol: 2, user: "dennis", machine: "mac-b", token: 1 },
+    ];
+    for (const message of bad) expect(parseRelayMessage(JSON.stringify(message))).toBeNull();
+  });
+
+  it("rejects session messages without a valid session", () => {
+    const bad = [
+      { type: "snapshot" },
+      { type: "snapshot", sessions: {} },
+      { type: "snapshot", sessions: [session("a"), { id: "b" }] },
+      { type: "session-update" },
+      { type: "session-update", session: null },
+      { type: "session-update", session: session("a", { status: "running" as never }) },
+      { type: "session-update", session: session("a", { subagents: Number.NaN }) },
+      { type: "session-update", session: session("a", { startedAt: "1" as never }) },
+      { type: "session-update", session: session("a", { model: undefined as never }) },
+      { type: "session-removed" },
+      { type: "session-removed", id: 3 },
+    ];
+    for (const message of bad) expect(parseRelayMessage(JSON.stringify(message))).toBeNull();
   });
 });
 

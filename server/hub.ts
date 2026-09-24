@@ -17,26 +17,61 @@ export function protocolSupported(protocol: number): boolean {
   return protocol >= MIN_PROTOCOL && protocol <= PROTOCOL;
 }
 
-// `machine` stays in the hello even though it left the session state: the
-// hello is one message per connection, not per session, so it costs nothing
-// on the wire per session. The hub uses it to prefix session ids and to let a
-// reconnecting machine take over its own sessions. `user` rides along on
-// every session instead.
+// `machine` lives in the hello and not in the session state: the hello is one
+// message per connection, so it costs nothing on the wire per session. The hub
+// uses it to prefix session ids and to let a reconnecting machine take over
+// its own sessions. `user` rides along on every session instead.
 export type Hello = { type: "hello"; protocol: number; user: string; machine: string; token?: string };
 // A reporter never batches: batching only happens between the hub and the
 // browsers it feeds, one tick at a time.
 export type RelayMessage = Hello | PlainMessage;
 
-const RELAY_TYPES = new Set(["hello", "snapshot", "session-update", "session-removed"]);
-
-// Loose shape check only. The hub trusts machines on its own network.
+// Checks every field the hub reads or forwards, so one reporter with a bug
+// cannot crash the central or push a broken session to every browser. Extra
+// fields are dropped later, in `put`.
 export function parseRelayMessage(text: string): RelayMessage | null {
+  let data: unknown;
   try {
-    const data = JSON.parse(text);
-    return data && typeof data === "object" && RELAY_TYPES.has(data.type) ? (data as RelayMessage) : null;
+    data = JSON.parse(text);
   } catch {
     return null;
   }
+  if (!isRecord(data)) return null;
+  switch (data.type) {
+    case "hello":
+      return typeof data.protocol === "number" &&
+        typeof data.machine === "string" &&
+        data.machine !== "" &&
+        typeof data.user === "string" &&
+        (data.token === undefined || typeof data.token === "string")
+        ? (data as Hello)
+        : null;
+    case "snapshot":
+      return Array.isArray(data.sessions) && data.sessions.every(isSession) ? (data as RelayMessage) : null;
+    case "session-update":
+      return isSession(data.session) ? (data as RelayMessage) : null;
+    case "session-removed":
+      return typeof data.id === "string" ? (data as RelayMessage) : null;
+    default:
+      return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSession(value: unknown): value is SessionState {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.user === "string" &&
+    typeof value.project === "string" &&
+    typeof value.model === "string" &&
+    (value.status === "busy" || value.status === "idle") &&
+    Number.isFinite(value.subagents) &&
+    Number.isFinite(value.startedAt)
+  );
 }
 
 export class Hub {
@@ -82,7 +117,18 @@ export class Hub {
   }
 
   private put(ids: Set<string>, machine: string, session: SessionState): PlainMessage {
-    const stamped: SessionState = { ...session, id: prefixed(machine, session.id) };
+    // Copies the seven wire fields by name, so an extra field a reporter sends
+    // never reaches a browser.
+    const { user, project, model, status, subagents, startedAt } = session;
+    const stamped: SessionState = {
+      id: prefixed(machine, session.id),
+      user,
+      project,
+      model,
+      status,
+      subagents,
+      startedAt,
+    };
     ids.add(stamped.id);
     this.sessions.set(stamped.id, stamped);
     return { type: "session-update", session: stamped };

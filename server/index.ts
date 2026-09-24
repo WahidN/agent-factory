@@ -55,7 +55,13 @@ const CHECK_EVERY_MS = 5_000;
 
 // ---------- HTTP + WebSocket, one server, one port ----------
 
-const httpServer = createServer(handleRequest);
+const httpServer = createServer((request, response) =>
+  handleRequest(request, response).catch((error) => {
+    console.error("[http]", error);
+    if (!response.headersSent) response.writeHead(500);
+    response.end();
+  }),
+);
 const wss = new WebSocketServer({ noServer: true });
 
 // Every connected socket, browsers on /ws and reporters on /relay alike, is
@@ -117,7 +123,25 @@ const metrics = createMetrics();
 // reporter never joins the hub and its machine silently never shows up.
 const socketPath = (request: IncomingMessage) => request.url?.split("?")[0] ?? "";
 
+// A browser always sends Origin, Node's ws client (the reporter) never does.
+// A page on another site may open a WebSocket to this host too, so an Origin
+// that names a different host than the one it connected to is refused.
+function foreignOrigin(request: IncomingMessage): boolean {
+  const { origin, host } = request.headers;
+  if (!origin) return false;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
 httpServer.on("upgrade", (request, socket, head) => {
+  if (foreignOrigin(request)) {
+    socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   const path = socketPath(request);
   if (path === "/ws") {
     wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
@@ -139,6 +163,9 @@ wss.on("connection", (socket, request) => {
   heartbeat.onConnect(socket);
   socket.on("pong", () => heartbeat.onPong(socket));
   socket.on("close", () => heartbeat.forget(socket));
+  // `ws` emits 'error' on a bad frame or invalid UTF-8 and closes the socket
+  // itself. Without a listener that error would end the process.
+  socket.on("error", (error) => console.error("[ws]", error));
 
   if (socketPath(request) === "/relay") {
     acceptReporter(socket, request.socket.remoteAddress ?? "?");
@@ -157,7 +184,18 @@ wss.on("connection", (socket, request) => {
 function acceptReporter(socket: WebSocket, from: string) {
   let machine = "";
   socket.on("message", (data) => {
-    const message = parseRelayMessage(data.toString());
+    // A throw here would escape the event emitter and end the process, and
+    // with it the park for everyone. Only this reporter's socket goes.
+    try {
+      handleReporterMessage(data.toString());
+    } catch (error) {
+      console.error(`[relay ${machine || from}]`, error);
+      socket.close(1007, "invalid message");
+    }
+  });
+
+  function handleReporterMessage(text: string) {
+    const message = parseRelayMessage(text);
     if (!machine) {
       if (message?.type !== "hello") return socket.close(1002, "expected hello");
       if (!protocolSupported(message.protocol)) {
@@ -192,7 +230,8 @@ function acceptReporter(socket: WebSocket, from: string) {
       log(out);
       broadcast(out);
     }
-  });
+  }
+
   socket.on("close", () => {
     if (!machine || reporters.get(machine) !== socket) return; // replaced by a newer socket
     reporters.delete(machine);

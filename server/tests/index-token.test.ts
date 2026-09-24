@@ -58,6 +58,19 @@ function connect(port: number): Promise<WebSocket> {
   });
 }
 
+// Opens /ws like a browser and resolves with the first message the central
+// sends, or rejects when the upgrade is refused.
+function firstBrowserMessage(port: number, origin?: string): Promise<{ type: string }> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, origin ? { origin } : {});
+    ws.once("message", (data) => {
+      resolve(JSON.parse(data.toString()));
+      ws.close();
+    });
+    ws.on("error", reject);
+  });
+}
+
 describe("central token guard rail", () => {
   it("closes the connection on a token mismatch", async () => {
     const port = nextPort();
@@ -94,6 +107,46 @@ describe("central token guard rail", () => {
   }, 15_000);
 });
 
+describe("a reporter sending malformed messages", () => {
+  it("does not take the central down", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    const ws = await connect(port);
+    ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, user: "someone", machine: "broken" }));
+    ws.send(JSON.stringify({ type: "snapshot" }));
+    ws.send(JSON.stringify({ type: "session-update" }));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await firstBrowserMessage(port)).toMatchObject({ type: "snapshot" });
+    ws.close();
+  }, 15_000);
+});
+
+describe("a reporter sending an invalid frame", () => {
+  it("does not take the central down", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    const ws = await connect(port);
+    // An unmasked client frame breaks the protocol, so the server socket emits 'error'.
+    (ws as unknown as { _socket: import("node:net").Socket })._socket.write(Buffer.from([0x81, 0x01, 0x41]));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await firstBrowserMessage(port)).toMatchObject({ type: "snapshot" });
+  }, 15_000);
+});
+
+describe("the origin check on the upgrade", () => {
+  it("refuses a browser from a foreign origin", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    await expect(firstBrowserMessage(port, "http://evil.example")).rejects.toThrow(/403/);
+  }, 15_000);
+
+  it("accepts a browser whose origin matches the host", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    expect(await firstBrowserMessage(port, `http://127.0.0.1:${port}`)).toMatchObject({ type: "snapshot" });
+  }, 15_000);
+});
+
 // The Pi runs the central and nothing else, so it has no Claude Code and no
 // ~/.claude at all. fs.watch throws synchronously on a missing folder, which
 // took the whole process down before it ever listened.
@@ -103,7 +156,7 @@ describe("a machine with no ~/.claude", () => {
     const port = nextPort();
     await startCentral(port, "", home);
     const response = await fetch(`http://127.0.0.1:${port}/healthz`);
-    expect(response.status).toBe(503); // central, no reporters yet
+    expect(response.status).toBe(200);
     await rm(home, { recursive: true, force: true });
   }, 15_000);
 });

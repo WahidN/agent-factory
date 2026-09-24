@@ -2,15 +2,13 @@
 
 See proposal.md for why. Specs are in `specs/agent-tracking/spec.md` and `specs/factory-scene/spec.md`.
 
-The server already tails every running transcript and parses every complete line in `server/claude-reader.ts`, where all knowledge of Claude Code's file formats lives. It reads only the last 64 KB of a transcript on first sight. It never writes under `~/.claude/`. The tracker stamps `machine` on every state, and the hub spreads a relayed state through with the machine name and a prefixed id.
+The server already tails every running transcript and parses every complete line in `server/claude-reader.ts`, where all knowledge of Claude Code's file formats lives. It reads only the last 64 KB of a transcript on first sight. It never writes under `~/.claude/`. The tracker stamps `user` on every state, and the hub copies a relayed state field by field and prefixes its id with the machine name.
 
 Every assistant line in a transcript carries `message.usage` with `input_tokens`, `output_tokens`, `cache_creation_input_tokens` and `cache_read_input_tokens`, plus `message.id`, a top level `requestId` and a top level `uuid`. Streaming writes the same message id more than once while the output grows. A resumed session copies earlier lines into a new file. PokeTokenBar reads the same files and counts a message once by keeping the largest total per `message.id|requestId`; this design copies that rule so the number matches what people see there and in ccusage.
 
 Measured on this Mac: 516 transcripts, 423 MB, 47070 usage lines of which 23534 are unique messages, parsed in 2.2 s by a Node script that only JSON parses lines containing both `"usage"` and `"assistant"`. Lifetime total 4.43B, of which 4.34B are cache reads. Claude Code's own `~/.claude/stats-cache.json` has per model totals but was last computed months ago and names models no session runs today, so it is not a usable source.
 
 On the page, `Lot.buildStructure` bakes everything sized by the tier into one static mesh through `StaticBuilder` and rebuilds it in place when the model changes. `disposeStructure` disposes the geometry of every mesh in the structure, which is why the parked truck, a clone of a shared template, lives outside it today. The yard is 40 x 40 with the hall in the back left, the dock at x -7, the car bays at x -0.3..7.5 and z 3.9..8.1, the truck bay between the yellow lines at z 4.1 and 7.6, the walkway at z 9, the warehouse slots at z 11.5..16.5, the searchlight tower at (-17, 12) and the gate in the right fence at z 6..12.
-
-`add-network-hub` is merged but not archived. The `factory-scene` deltas here copy its version of "One factory per session" and "Hover details", so archive it before this change.
 
 ## Goals / Non-Goals
 
@@ -66,9 +64,12 @@ A transcript first seen by the tail from the middle (`fromMiddle` true) gets a f
 - Alternative: a cache file keyed on path, mtime and size like PokeTokenBar. Rejected: the server writes nothing under `~/.claude/`, a cache elsewhere adds invalidation logic, and the saving is a few seconds per start.
 - Alternative: re-run the scan on a timer. Rejected: finished transcripts do not change, running ones are tailed.
 
-### The total rides on every session state
-`SessionState` gains `machineTokens: number`. The tracker keeps one number and puts it on every session in `stateOf`. `setMachineTokens` stores it and emits every session; the emit dedup drops sessions whose serialized state did not change. The hub spreads the field through untouched, the relay sends states as they are, and the page reads `session.machineTokens`. `PROTOCOL` goes to 2, so a hub and a spoke on different versions fail loudly instead of drawing empty yards for one machine.
+### The total rides on every session state, as an optional field
+`SessionState` gains `machineTokens?: number`. The tracker keeps one number and puts it on every session in `stateOf`. `setMachineTokens` stores it and emits every session; the emit dedup drops sessions whose serialized state did not change. The hub copies the field through when a reporter sends it and leaves it off the state when it does not, the relay sends states as they are, and the page reads `session.machineTokens`.
 
+`PROTOCOL` goes to 3 and `MIN_PROTOCOL` stays 2, so a hub on 3 keeps accepting a reporter on 2. Thirty Macs do not update in the same hour, and an eighth field that is missing costs an empty yard, not a broken park. A machine that sends no total unlocks nothing and shows no token line.
+
+- Alternative: raise `MIN_PROTOCOL` to 3 as well. Rejected: the whole point of the range is that the fleet updates at its own pace, and one missing number is not worth refusing a machine.
 - Alternative: a new `machine-usage` message. Rejected: the hub, the relay's type list, the page handler and the connect snapshot all need code, for one number that already has a carrier.
 - Alternative: put it on `AgentState` so subagents carry it too. Rejected: the tooltip only shows it on halls, and warehouses never need it.
 
@@ -76,10 +77,17 @@ A transcript first seen by the tail from the middle (`fromMiddle` true) gets a f
 `web/milestones.ts` exports:
 
 ```ts
+// web/milestone-ladder.ts, pure, no Three.js
 export const MILESTONES: readonly number[] = [10e6, 25e6, 50e6, 100e6, 250e6, 500e6, 750e6, 1e9, 2.5e9, 5e9];
-export function milestoneIndex(tokens: number): number; // rows reached, 0..10
+export function milestoneIndex(tokens: number | undefined): number; // rows reached, 0..10
+export function parkedCarCount(index: number): number; // rows 2 to 4, 0..3
+export function ladderRows(tokens: number): LadderRow[]; // every row, unlocked and what is to go
+
+// web/milestones.ts, the builders
 export function buildMilestones(builder: StaticBuilder, count: number, ctx: MilestoneContext): Animated[];
 ```
+
+A machine that sends no total has `machineTokens` undefined, which `milestoneIndex` reads as 0, so nothing is unlocked.
 
 `MilestoneContext` carries the accent material, the hall footprint for the blimp, and the session id as a color seed. Each row is a function that adds boxes and cylinders to the builder, in the style of `addParkedCars` and `createTruck`. The turbine and the blimp return an `Animated` object with a `group` and `tick(dt)`, like `Searchlight`, and are added to the structure so `disposeStructure` cleans them up.
 
@@ -90,7 +98,7 @@ export function buildMilestones(builder: StaticBuilder, count: number, ctx: Mile
 ### Parked vehicles are baked, so the truck parts move out of the template
 `addParkedCars(builder, seed, count)` takes the number of cars, 0 to 3, and keeps the bay lines and the color hash as they are. The truck's part list moves out of `createTruck` into `addTruckParts(b)`, used by the template for the road trucks and by the 500M row to bake a parked truck into the structure. The parked truck clone in the `Lot` constructor goes away.
 
-`movingCarCount(lotBusy, busySubagents)` becomes `lotBusy ? Math.min(6, busySubagents) : 0`. The truck rule in `Lot.traffic()` stays.
+The traffic on the roads is untouched: `movingCarCount` keeps its baseline of 2 cars per lot, and the truck rule in `Lot.traffic()` stays.
 
 ### Placement
 Everything sits in yard space that is free on all four tiers. Coordinates are lot local, yard ground at `YARD_Y`.
@@ -110,23 +118,35 @@ Everything sits in yard space that is free on all four tiers. Coordinates are lo
 ### Tooltip and short format
 `shortTokens(n)` in `web/sign-text.ts`: units k, M, B; 1 decimal below 10 of a unit, none above; no trailing `.0`. So 950, 12k, 2.5M, 408M, 4.4B, 25B. The tooltip adds `line("tokens", shortTokens(n) + " tokens")` when the hovered state has `machineTokens`, which only a hall's `SessionState` has.
 
+### The overview dialog groups by user
+A button top right opens a `<dialog>` with one block per user: the total and every row of the ladder, unlocked or with what is to go. `web/ladder-dialog.ts` builds the DOM, `web/milestone-icons.ts` holds one inline SVG per row, both constants in this repo and never anything a machine sent.
+
+The total is a machine's, but the park names sessions by user everywhere else: the yard sign, the avatar, the tooltip and the filter. The dialog follows that, and `web/main.ts` keeps the highest total per user, so a user with two Macs is not reset to 0 by the one that has not updated yet. A park with one user shows no name above its block.
+
+The blocks are read from `sessions`, not from the built lots: past the detail cap a session has no `Lot`, and its user would drop out of the dialog.
+
+- Alternative: group by machine, read from the `machine/` prefix a hub puts on a relayed id. Rejected: a local session has no prefix, and the machine name is the one identity the park does not show anywhere else.
+
 ### Module layout
-- `server/types.ts`: `machineTokens` on `SessionState`
+- `server/types.ts`: `machineTokens` on `SessionState`, optional
 - `server/claude-reader.ts`: `usage` event, `parseUsageLine`
 - `server/usage-ledger.ts`: `UsageLedger`
 - `server/session-tracker.ts`: `setMachineTokens`, field in `stateOf`
 - `server/index.ts`: scan, split of events, full read on first sight from the middle
-- `server/hub.ts`: `PROTOCOL = 2`
-- `web/milestones.ts`: ladder, lookup, builders, animated turbine and blimp
+- `server/hub.ts`: `PROTOCOL = 3`, `MIN_PROTOCOL = 2`, the field copied through
+- `web/milestone-ladder.ts`: thresholds, labels, lookups
+- `web/milestones.ts`: builders, animated turbine and blimp
+- `web/milestone-icons.ts`, `web/ladder-dialog.ts`: the overview
 - `web/lot.ts`: no default vehicles, rebuild key, tick extras
 - `web/traffic.ts`, `web/machines.ts`: car count, shared truck parts
-- `web/park-layout.ts`: `movingCarCount`
+- `web/main.ts`: one total per user for the dialog
 - `web/sign-text.ts`, `web/tooltip.ts`: `shortTokens`, token line
-- `README.md`: state table, milestones section
+- `web/index.html`, `web/style.css`: button and dialog, classic and ink
+- `README.md`: milestones section
 
 ### Testing
 - Vitest, server: a fixture `usage.jsonl` with a message logged twice with growing output, a line without usage, a user line and a `<synthetic>` line; `parseUsageLine` and `parseTranscriptChunk` return the expected events; `UsageLedger` keeps the max per id and reports whether the total changed; the tracker puts the total on every session and emits once per session on change.
-- Vitest, web: `milestoneIndex` at 0, at each threshold, one below each threshold and far above the top; `shortTokens` for the values in the design; `movingCarCount` for idle, busy without subagents, busy with 3 and with 8.
+- Vitest, web: `milestoneIndex` at 0, at each threshold, one below each threshold and far above the top; `ladderRows` for what is unlocked and what is to go; `shortTokens` for the values in the design.
 - Browser with agent-browser: `HOME` pointed at a scratch folder with a copy of `server/tests/fixtures/session.json` holding a live pid and a transcript with one assistant line of 5B tokens. The lot shows every extra, the tooltip reads `5B tokens`, the turbine turns and the blimp bobs, measured with `getBoundingClientRect` samples over time. Then the same with 30M: bikes and 1 car only. Then an empty transcript: bay lines and nothing else, and no cars on the roads while idle.
 
 ## Risks / Trade-offs
@@ -142,4 +162,4 @@ Everything sits in yard space that is free on all four tiers. Coordinates are lo
 
 ## Migration Plan
 
-Everyone pulls the same commit. A hub on this version refuses a spoke on the old version through the protocol check, and the other way round. Rollback is the previous commit: the yards go back to 3 cars and a truck.
+The central updates first, then the Macs at their own pace. A central on protocol 3 keeps accepting a reporter on 2; that machine's lots stay empty and show no token line until it updates. A reporter on 3 against a central still on 2 is refused, which is the usual "update your checkout" message. Rollback is the previous commit: the yards go back to 3 cars and a truck.

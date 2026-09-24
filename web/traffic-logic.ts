@@ -4,6 +4,7 @@
 // has one lane per direction. Vehicles keep right, take a random turn at each
 // crossing (never a U-turn), and slow down behind the vehicle ahead.
 
+import { crossingAt, isWaterEdge, RAIL_BRIDGE } from "./city-plan.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 
 const LANE = 2.5; // lane center, measured from the road center (roads are 10 wide)
@@ -29,24 +30,48 @@ export type Vehicle = { lane: string; next: string; s: number; speed: number; le
 const crossing = (col: number, row: number) => `${col}:${row}`;
 
 // The cell's 4 corners, clockwise as seen from above.
-function corners(index: number): [number, number][] {
-  const { col, row } = plotCell(index);
-  return [[col, row], [col + 1, row], [col + 1, row + 1], [col, row + 1]];
+function corners(rank: number): [number, number][] {
+  const { col, row } = plotCell(rank);
+  return [
+    [col, row],
+    [col + 1, row],
+    [col + 1, row + 1],
+    [col, row + 1],
+  ];
 }
 
-// Both lanes of the 4 roads around every used cell. Shared roads are added once.
-export function roadGraph(indexes: number[]): Roads {
+// Whether the Waal is in the way of the road between two neighbouring
+// crossings. A road along the water edge is the river itself, so it is gone.
+// A road across that edge ends up on a bridge deck, which only exists on the
+// bridge columns; everywhere else it would run straight into the water.
+function overWater([fc, fr]: [number, number], [, tr]: [number, number]): boolean {
+  if (fr === tr) return isWaterEdge(fr);
+  return (isWaterEdge(fr) || isWaterEdge(tr)) && crossingAt(fc) === null;
+}
+
+// Both lanes of the 4 roads around every used cell. Shared roads are added
+// once. The rail corridor column carries only the train, never a road.
+export function roadGraph(ranks: number[]): Roads {
   const lanes = new Map<string, Lane>();
   const exits = new Map<string, string[]>();
   const add = ([fc, fr]: [number, number], [tc, tr]: [number, number]) => {
+    if (fr !== tr && fc === RAIL_BRIDGE.col) return;
+    if (overWater([fc, fr], [tc, tr])) return;
     const from = crossing(fc, fr);
     const key = `${from}>${crossing(tc, tr)}`;
     if (lanes.has(key)) return;
-    lanes.set(key, { from, to: crossing(tc, tr), x: (fc - 0.5) * PLOT_SIZE, z: (fr - 0.5) * PLOT_SIZE, dx: tc - fc, dz: tr - fr });
+    lanes.set(key, {
+      from,
+      to: crossing(tc, tr),
+      x: (fc - 0.5) * PLOT_SIZE,
+      z: (fr - 0.5) * PLOT_SIZE,
+      dx: tc - fc,
+      dz: tr - fr,
+    });
     exits.set(from, [...(exits.get(from) ?? []), key]);
   };
-  for (const index of indexes) {
-    const c = corners(index);
+  for (const rank of ranks) {
+    const c = corners(rank);
     c.forEach((corner, i) => {
       add(corner, c[(i + 1) % 4]);
       add(c[(i + 1) % 4], corner);
@@ -56,12 +81,18 @@ export function roadGraph(indexes: number[]): Roads {
 }
 
 // The lanes right next to a lot: driving clockwise keeps the lot on the right.
-export function lotLanes(index: number): string[] {
-  const c = corners(index);
+// A lot on the river bank has fewer than four, so callers filter on the lanes
+// that the graph actually holds.
+export function lotLanes(rank: number): string[] {
+  const c = corners(rank);
   return c.map((corner, i) => `${crossing(...corner)}>${crossing(...c[(i + 1) % 4])}`);
 }
 
-// A random lane out of the crossing at the end of `laneKey`, never straight back.
+// A random lane out of the crossing at the end of `laneKey`, never straight
+// back. A crossing on the river bank can have no way on at all: the road it
+// would continue into is water. The vehicle then turns around, which is what a
+// driver at a dead end does, and `back` is always a real lane because roads are
+// added in both directions at once.
 export function pickNext(roads: Roads, laneKey: string, random: () => number): string {
   const lane = roads.lanes.get(laneKey)!;
   const back = `${lane.to}>${lane.from}`;
@@ -70,26 +101,83 @@ export function pickNext(roads: Roads, laneKey: string, random: () => number): s
 }
 
 // The curve through the crossing, from the end of `lane` to the start of `next`.
-// Right is (-dz, dx) for a lane heading (dx, dz).
-function turnCurve(roads: Roads, v: Vehicle): [Point, Point, Point] {
+// Right is (-dz, dx) for a lane heading (dx, dz). Most turns are a quadratic
+// Bezier (3 points); a dead-end U-turn is a cubic (4 points), since no single
+// control point can match the lane heading at both ends when they run
+// anti-parallel, offset sideways by a lane.
+function turnCurve(roads: Roads, v: Vehicle): Point[] {
   const a = roads.lanes.get(v.lane)!;
   const b = roads.lanes.get(v.next)!; // starts at the crossing, so b.x, b.z is its center
   const start = { x: b.x - a.dx * TURN - a.dz * LANE, z: b.z - a.dz * TURN + a.dx * LANE };
   const end = { x: b.x + b.dx * TURN - b.dz * LANE, z: b.z + b.dz * TURN + b.dx * LANE };
   const straight = a.dx === b.dx && a.dz === b.dz;
+  if (straight) {
+    const control = { x: (start.x + end.x) / 2, z: (start.z + end.z) / 2 };
+    return [start, control, end];
+  }
+  const reversal = a.dx === -b.dx && a.dz === -b.dz;
+  if (reversal) {
+    // The lane back is parallel to `a`, not crossing it, so loop out along
+    // a's own heading and curve back in along b's: c1 sits ahead of start
+    // along a's direction, c2 sits back from end against b's direction (so
+    // moving from c2 to end still points along b), keeping the tangent
+    // continuous at both ends instead of overshooting the crossing.
+    const c1 = { x: start.x + a.dx * TURN, z: start.z + a.dz * TURN };
+    const c2 = { x: end.x - b.dx * TURN, z: end.z - b.dz * TURN };
+    return [start, c1, c2, end];
+  }
   // For a turn, the control point is where the two lane lines cross.
-  const control = straight
-    ? { x: (start.x + end.x) / 2, z: (start.z + end.z) / 2 }
-    : { x: b.x - (a.dz + b.dz) * LANE, z: b.z + (a.dx + b.dx) * LANE };
+  const control = { x: b.x - (a.dz + b.dz) * LANE, z: b.z + (a.dx + b.dx) * LANE };
   return [start, control, end];
 }
 
-function curvePoint([p0, p1, p2]: [Point, Point, Point], t: number): Point {
+// Closed-form Bernstein-basis evaluation for the quadratic (3-point) and
+// cubic (4-point, dead-end U-turn) curves turnCurve produces. gapAhead calls
+// this once per vehicle pair every frame (via laneLength), so it stays
+// allocation-free beyond the one Point it has to return.
+function curvePoint(curve: Point[], t: number): Point {
   const u = 1 - t;
-  return { x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x, z: u * u * p0.z + 2 * u * t * p1.z + t * t * p2.z };
+  if (curve.length === 3) {
+    const [p0, p1, p2] = curve;
+    const uu = u * u;
+    const tt = t * t;
+    const ut2 = 2 * u * t;
+    return { x: uu * p0.x + ut2 * p1.x + tt * p2.x, z: uu * p0.z + ut2 * p1.z + tt * p2.z };
+  }
+  const [p0, p1, p2, p3] = curve;
+  const uu = u * u;
+  const uuu = uu * u;
+  const tt = t * t;
+  const ttt = tt * t;
+  const uut3 = 3 * uu * t;
+  const utt3 = 3 * u * tt;
+  return {
+    x: uuu * p0.x + uut3 * p1.x + utt3 * p2.x + ttt * p3.x,
+    z: uuu * p0.z + uut3 * p1.z + utt3 * p2.z + ttt * p3.z,
+  };
 }
 
-function curveLength(curve: [Point, Point, Point]): number {
+// The tangent direction at `t`, in closed form (a Bezier's derivative is a
+// Bezier one degree lower over the differences between its control points);
+// only the direction matters here, so the usual scaling by the degree is
+// skipped.
+function curveTangent(curve: Point[], t: number): Point {
+  const u = 1 - t;
+  if (curve.length === 3) {
+    const [p0, p1, p2] = curve;
+    return { x: u * (p1.x - p0.x) + t * (p2.x - p1.x), z: u * (p1.z - p0.z) + t * (p2.z - p1.z) };
+  }
+  const [p0, p1, p2, p3] = curve;
+  const uu = u * u;
+  const tt = t * t;
+  const ut2 = 2 * u * t;
+  return {
+    x: uu * (p1.x - p0.x) + ut2 * (p2.x - p1.x) + tt * (p3.x - p2.x),
+    z: uu * (p1.z - p0.z) + ut2 * (p2.z - p1.z) + tt * (p3.z - p2.z),
+  };
+}
+
+function curveLength(curve: Point[]): number {
   let length = 0;
   let previous = curve[0];
   for (let i = 1; i <= CURVE_STEPS; i++) {
@@ -110,14 +198,16 @@ export function vehiclePose(roads: Roads, v: Vehicle): { x: number; z: number; h
   const lane = roads.lanes.get(v.lane)!;
   if (v.s < STRAIGHT) {
     const along = TURN + v.s;
-    return { x: lane.x + lane.dx * along - lane.dz * LANE, z: lane.z + lane.dz * along + lane.dx * LANE, heading: Math.atan2(-lane.dz, lane.dx) };
+    return {
+      x: lane.x + lane.dx * along - lane.dz * LANE,
+      z: lane.z + lane.dz * along + lane.dx * LANE,
+      heading: Math.atan2(-lane.dz, lane.dx),
+    };
   }
   const curve = turnCurve(roads, v);
   const t = Math.min(1, (v.s - STRAIGHT) / curveLength(curve));
-  const [p0, p1, p2] = curve;
-  const tx = (1 - t) * (p1.x - p0.x) + t * (p2.x - p1.x);
-  const tz = (1 - t) * (p1.z - p0.z) + t * (p2.z - p1.z);
-  return { ...curvePoint(curve, t), heading: Math.atan2(-tz, tx) };
+  const tangent = curveTangent(curve, t);
+  return { ...curvePoint(curve, t), heading: Math.atan2(-tangent.z, tangent.x) };
 }
 
 // Drives `distance` further, moving on to the next lane at the end of a turn.

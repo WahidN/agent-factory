@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template for a launchd agent that runs this Mac as a reporter. Do not load
+  this file as-is: scripts/install.sh fills in the placeholders below and
+  writes the result to ~/Library/LaunchAgents/.
+
+  Placeholders: __LABEL__ __NODE__ __WORKDIR__ __HUB__ __USER__ __MACHINE__
+  __FACTORY_TOKEN__ __LOG_OUT__ __LOG_ERR__
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>server/index.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__WORKDIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HUB</key>
+    <string>__HUB__</string>
+    <key>USER</key>
+    <string>__USER__</string>
+    <key>MACHINE</key>
+    <string>__MACHINE__</string>
+    <key>FACTORY_TOKEN</key>
+    <string>__FACTORY_TOKEN__</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__LOG_OUT__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_ERR__</string>
+</dict>
+</plist>

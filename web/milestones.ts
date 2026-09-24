@@ -17,8 +17,6 @@ export type MilestoneContext = {
   hall: { x0: number; z0: number; x1: number; z1: number; top: number };
 };
 
-type Row = (builder: StaticBuilder, ctx: MilestoneContext) => Animated | void;
-
 const BIKE_PAINTS = [MATERIALS.cab, MATERIALS.white, MATERIALS.darkSteel];
 
 // 10M: a rack with 3 bikes against the hall front, right of the people door.
@@ -80,7 +78,8 @@ function chargingBay(b: StaticBuilder) {
   b.box(MATERIALS.glass, [cx - 0.5, y + 0.93, cz], [1.96, 0.3, 1.54]);
   b.box(MATERIALS.darkSteel, [cx - 1.8, y + 0.95, cz], [0.2, 0.05, 1.6]); // spoiler
   for (const x of [cx + 1.25, cx - 1.25]) {
-    for (const z of [cz + 0.78, cz - 0.78]) b.cylinder(MATERIALS.tire, [x, y + 0.33, z], [0.33, 0.26, 0.33], [Math.PI / 2, 0, 0]);
+    for (const z of [cz + 0.78, cz - 0.78])
+      b.cylinder(MATERIALS.tire, [x, y + 0.33, z], [0.33, 0.26, 0.33], [Math.PI / 2, 0, 0]);
   }
   for (const x of [-12, -14.5]) {
     b.box(MATERIALS.darkSteel, [x, y + 0.05, 11], [0.6, 0.1, 0.5]);
@@ -137,7 +136,12 @@ function windTurbine(b: StaticBuilder): Animated {
     }
   });
   rotor.position.set(x, hubY, z + 1.05);
-  return { group: rotor, tick: (dt) => void (rotor.rotation.z -= dt * 0.9) };
+  return {
+    group: rotor,
+    tick: (dt) => {
+      rotor.rotation.z -= dt * 0.9;
+    },
+  };
 }
 
 // 5B: a blimp in the accent colour tethered to the roof, bobbing 0.6 over 6 seconds.
@@ -171,11 +175,13 @@ function blimp(_b: StaticBuilder, ctx: MilestoneContext): Animated {
   };
 }
 
+function noExtra() {}
+
 // One entry per row of MILESTONES. Rows 2 and 3 only add a parked car.
-const ROWS: Row[] = [
+const ROWS = [
   bikeRack,
-  () => undefined,
-  () => undefined,
+  noExtra,
+  noExtra,
   flagpole,
   coffeeCorner,
   parkedTruck,
@@ -191,7 +197,7 @@ export function buildMilestones(builder: StaticBuilder, count: number, ctx: Mile
   const animated: Animated[] = [];
   for (const row of ROWS.slice(0, count)) {
     const extra = row(builder, ctx);
-    if (extra) animated.push(extra);
+    if (extra !== undefined) animated.push(extra);
   }
   return animated;
 }

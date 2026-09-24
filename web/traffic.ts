@@ -6,7 +6,15 @@ import { createTruck, YARD_Y } from "./machines.ts";
 import { DECALS, standard } from "./palette.ts";
 import { MAX_MOVING_CARS } from "./park-layout.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
-import { pickNext, roadGraph, spawnVehicle, stepVehicles, vehiclePose, type Roads, type Vehicle } from "./traffic-logic.ts";
+import {
+  pickNext,
+  roadGraph,
+  spawnVehicle,
+  stepVehicles,
+  vehiclePose,
+  type Roads,
+  type Vehicle,
+} from "./traffic-logic.ts";
 
 export const CAR_COLORS = ["#c8372d", "#2f5d9e", "#f1f1ee", "#b9bdc1", "#e9b43a", "#2b2f36", "#3f8f6b"];
 
@@ -72,11 +80,21 @@ export function addParkedCars(builder: StaticBuilder, seed: string, count: numbe
     const car = at(x, YARD_Y, 6).multiply(facingHall);
     const paint = paints[(h >>> (i * 3)) % paints.length]; // unsigned shift, so the index is never negative
     for (const part of CAR_PARTS) {
-      builder.addWithMatrix(part.geometry, part.material === "paint" ? paint : part.material, car.clone().multiply(part.matrix));
+      builder.addWithMatrix(
+        part.geometry,
+        part.material === "paint" ? paint : part.material,
+        car.clone().multiply(part.matrix),
+      );
     }
   });
   for (const x of [-0.3, 2.3, 4.9, 7.5]) {
-    builder.add(new THREE.PlaneGeometry(0.12, 4.2), DECALS.white, [x, YARD_Y + 0.01, 6], [1, 1, 1], [-Math.PI / 2, 0, 0]);
+    builder.add(
+      new THREE.PlaneGeometry(0.12, 4.2),
+      DECALS.white,
+      [x, YARD_Y + 0.01, 6],
+      [1, 1, 1],
+      [-Math.PI / 2, 0, 0],
+    );
   }
 }
 
@@ -112,7 +130,8 @@ export class ParkTraffic {
     for (const mesh of [this.bodies, this.details, this.trucks]) {
       mesh.count = 0;
       mesh.frustumCulled = false; // vehicles drive far from the mesh origin
-      mesh.castShadow = true;
+      // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+      mesh.castShadow = false;
     }
     this.group.add(this.bodies, this.details, this.trucks);
   }
@@ -122,14 +141,22 @@ export class ParkTraffic {
     this.roads = roadGraph(indexes);
     this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
     for (const t of this.travelers) {
-      if (!this.roads.lanes.has(t.vehicle.next)) t.vehicle = { ...t.vehicle, next: pickNext(this.roads, t.vehicle.lane, Math.random) };
+      if (!this.roads.lanes.has(t.vehicle.next))
+        t.vehicle = { ...t.vehicle, next: pickNext(this.roads, t.vehicle.lane, Math.random) };
     }
   }
 
   tick(dt: number, sources: TrafficSource[]) {
     this.updateTravelers(dt, sources);
-    const moved = stepVehicles(this.roads, this.travelers.map((t) => t.vehicle), dt, Math.random);
-    this.travelers.forEach((t, i) => (t.vehicle = moved[i]));
+    const moved = stepVehicles(
+      this.roads,
+      this.travelers.map((t) => t.vehicle),
+      dt,
+      Math.random,
+    );
+    this.travelers.forEach((t, i) => {
+      t.vehicle = moved[i];
+    });
     this.draw();
   }
 
@@ -165,7 +192,11 @@ export class ParkTraffic {
     for (const t of this.travelers) {
       const pose = vehiclePose(this.roads, t.vehicle);
       this.quaternion.setFromAxisAngle(this.up, pose.heading);
-      this.matrix.compose(this.position.set(pose.x, 0.05, pose.z), this.quaternion, this.scale.setScalar(Math.max(0.001, t.presence)));
+      this.matrix.compose(
+        this.position.set(pose.x, 0.05, pose.z),
+        this.quaternion,
+        this.scale.setScalar(Math.max(0.001, t.presence)),
+      );
       if (t.truck) {
         this.trucks.setMatrixAt(trucks++, this.matrix);
       } else {

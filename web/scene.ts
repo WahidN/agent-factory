@@ -4,26 +4,47 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { INK_OUTLINE_SHADER } from "./ink-outline.ts";
+import { INK_STYLE_ENABLED } from "./ink-style.ts";
+import { clampToPark, fitZoom, fogRange, MAX_ZOOM, MIN_ZOOM, zoomFloor } from "./park-layout.ts";
+import type { ViewOptions } from "./view-options.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
-const VIEW_HEIGHT = 120; // world units visible top to bottom at zoom 1
-const CAMERA_DISTANCE = 600;
-const AZIMUTH = Math.PI / 4;
-const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
+export const VIEW_HEIGHT = 120; // world units visible top to bottom at zoom 1
+// How far the camera sits back from the point it looks at. An orthographic
+// view looks the same from any distance, but ground between the camera and
+// that point is cut off by the near plane. At MIN_ZOOM the bottom edge of the
+// screen shows ground about 4250 units closer than the look-at point, so the
+// camera sits behind that. Fog and the far plane count from the look-at point.
+export const CAMERA_DISTANCE = 5000;
+export const AZIMUTH = Math.PI / 4;
+export const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
 
-export function createScene(canvas: HTMLCanvasElement) {
+export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { autoFit: false, fitScale: 1 }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
+  // The sun is fixed and buildings do not move, so the shadow map only needs
+  // a redraw when the layout changes or the camera settles somewhere new
+  // (see the distance check in the render loop below), not every frame.
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
   renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1.08;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#14181f");
+  // Clear Dutch daylight keeps the diorama legible while the giant meadow
+  // plane below guarantees that every visible piece of terrain is grass.
+  const skyColor = INK_STYLE_ENABLED ? "#797fa3" : "#a9ced7";
+  scene.background = new THREE.Color(skyColor);
+  const fog = new THREE.Fog(skyColor);
+  scene.fog = fog;
 
   // Orthographic: parallel edges stay parallel, like the reference render.
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 3);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1);
   const viewDirection = new THREE.Vector3(
     Math.cos(ELEVATION) * Math.sin(AZIMUTH),
     Math.sin(ELEVATION),
@@ -31,16 +52,48 @@ export function createScene(canvas: HTMLCanvasElement) {
   );
   camera.position.copy(viewDirection).multiplyScalar(CAMERA_DISTANCE);
 
+  // Fog grows with the park so a big park's far corner is not fogged out. The
+  // far plane stays a little past the fog, where everything is sky colored.
+  function fitFog(halfExtent: number) {
+    const range = fogRange(halfExtent);
+    fog.near = CAMERA_DISTANCE + range.near;
+    fog.far = CAMERA_DISTANCE + range.far;
+    camera.far = fog.far + 350;
+    camera.updateProjectionMatrix();
+  }
+  fitFog(0);
+
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.minZoom = 0.3;
-  controls.maxZoom = 4;
+  // Panning is what makes the detail set worth redistributing: drag the view
+  // to a corner of the park and the nearest lots there get the full treatment.
+  // Without it, the detailed set stays fixed on the park's centre.
+  controls.enablePan = true;
+  controls.enableRotate = true;
+  controls.enableZoom = true;
+  controls.zoomToCursor = true;
+  controls.screenSpacePanning = false;
+  controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+  controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+  controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+  controls.touches.ONE = THREE.TOUCH.ROTATE;
+  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+  // Both live in park-layout.ts, next to the test that pins them against the
+  // zoom 150 and 300 lots need: a floor above MIN_ZOOM crops the park from
+  // about 37 lots onward.
+  controls.minZoom = MIN_ZOOM;
+  controls.maxZoom = MAX_ZOOM;
   controls.minPolarAngle = 0.15;
   controls.maxPolarAngle = Math.PI * 0.42; // stays above the ground
 
-  scene.add(new THREE.HemisphereLight("#e6f2ff", "#6d8f58", 1.3));
-  const sun = new THREE.DirectionalLight("#fff3e0", 2.6);
+  scene.add(
+    INK_STYLE_ENABLED
+      ? new THREE.HemisphereLight("#e7e7ff", "#35374f", 1.45)
+      : new THREE.HemisphereLight("#effaff", "#62794b", 1.55),
+  );
+  const sun = INK_STYLE_ENABLED
+    ? new THREE.DirectionalLight("#ffd9ad", 2.65)
+    : new THREE.DirectionalLight("#fff2d1", 2.75);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.radius = 3;
@@ -58,30 +111,87 @@ export function createScene(canvas: HTMLCanvasElement) {
   ao.updateGtaoMaterial({ radius: 3, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: 16 });
   ao.blendIntensity = 0.85;
   composer.addPass(ao);
+  const inkOutline = INK_STYLE_ENABLED ? new ShaderPass(INK_OUTLINE_SHADER) : null;
+  if (inkOutline) composer.addPass(inkOutline);
   composer.addPass(new OutputPass());
 
   const focusTarget = new THREE.Vector3();
+  let focusActive = false;
+  let userOwnsCamera = false;
+  let focusedHalfExtent: number | null = null;
+  // The park the orbit target is held over, set by focus().
+  let parkArea: { x: number; z: number; half: number } | null = null;
+
+  // A deliberate drag/rotate/zoom owns the camera from that moment onward.
+  // Without this, a manual pan gets pulled back to the park centre every
+  // frame, which reads as broken controls.
+  controls.addEventListener("start", () => {
+    focusActive = false;
+    userOwnsCamera = true;
+    canvas.style.cursor = "grabbing";
+  });
+  controls.addEventListener("end", () => {
+    canvas.style.cursor = "grab";
+  });
+  // Panning and zoom-to-cursor both move the target, without bound. Held over
+  // the park, the view cannot drift off the city into empty meadow and sky.
+  // The camera moves along so the viewing angle stays the same.
+  controls.addEventListener("change", () => {
+    if (!parkArea) return;
+    const clamped = clampToPark(controls.target.x, controls.target.z, parkArea);
+    const dx = clamped.x - controls.target.x;
+    const dz = clamped.z - controls.target.z;
+    if (dx === 0 && dz === 0) return;
+    controls.target.x += dx;
+    controls.target.z += dz;
+    camera.position.x += dx;
+    camera.position.z += dz;
+  });
+  canvas.style.cursor = "grab";
+  canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+  // Zooming out stops a little past the zoom that fits the whole park, for
+  // the park and window shape of the moment, so the city never shrinks to a
+  // speck. A ?zoom below 1 lowers the floor with it.
+  function limitZoom(halfExtent: number) {
+    const fit = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left);
+    controls.minZoom = zoomFloor(fit * Math.min(1, options.fitScale));
+    if (camera.zoom < controls.minZoom) {
+      camera.zoom = controls.minZoom;
+      camera.updateProjectionMatrix();
+    }
+  }
 
   // Moves the orbit center to the town and sizes the sun's shadow area to it.
   // With `fit`, also zooms so the whole town is in view.
+  function fitCamera(halfExtent: number) {
+    const wanted = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left) * options.fitScale;
+    camera.zoom = THREE.MathUtils.clamp(wanted, controls.minZoom, controls.maxZoom);
+    camera.updateProjectionMatrix();
+  }
+
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     focusTarget.set(x, 0, z);
+    // A layout change after a manual pan only resizes shadows and zoom; the
+    // first fit and ?view=all still glide the camera to the town.
+    if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
+    focusedHalfExtent = halfExtent;
+    parkArea = { x, z, half: halfExtent };
+    fitFog(halfExtent);
+    limitZoom(halfExtent);
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
-    if (fit) {
-      // A square town seen isometrically is about 1.9 half extents tall and 3 wide on screen.
-      const byHeight = VIEW_HEIGHT / (halfExtent * 1.9);
-      const byWidth = (camera.right - camera.left) / (halfExtent * 3);
-      camera.zoom = THREE.MathUtils.clamp(Math.min(byHeight, byWidth), controls.minZoom, controls.maxZoom);
-      camera.updateProjectionMatrix();
-    }
+    renderer.shadowMap.needsUpdate = true; // layout changed, the map is stale
+    if (fit || options.autoFit) fitCamera(halfExtent);
   }
 
   function resize() {
     const { clientWidth: width, clientHeight: height } = canvas;
     renderer.setSize(width, height, false);
     composer.setSize(width, height);
+    ao.setSize(Math.max(1, width / 2), Math.max(1, height / 2)); // half res, still reads fine blended in
+    inkOutline?.uniforms.resolution.value.set(Math.max(1, width), Math.max(1, height));
     const aspect = width / height;
     Object.assign(camera, {
       left: (-VIEW_HEIGHT * aspect) / 2,
@@ -90,6 +200,8 @@ export function createScene(canvas: HTMLCanvasElement) {
       bottom: -VIEW_HEIGHT / 2,
     });
     camera.updateProjectionMatrix();
+    if (focusedHalfExtent !== null) limitZoom(focusedHalfExtent);
+    if (options.autoFit && focusedHalfExtent !== null) fitCamera(focusedHalfExtent);
   }
   window.addEventListener("resize", resize);
   resize();
@@ -98,27 +210,54 @@ export function createScene(canvas: HTMLCanvasElement) {
   const timer = new THREE.Timer();
   timer.connect(document); // avoids a huge delta after the tab was hidden
   const move = new THREE.Vector3();
+  const lastShadowSunPos = sun.position.clone();
+  const SHADOW_UPDATE_DISTANCE = 0.5; // world units the sun must drift before a redraw is worth it
   renderer.setAnimationLoop((timestamp) => {
     timer.update(timestamp);
     const dt = Math.min(timer.getDelta(), 0.1);
     const now = performance.now();
 
-    move.copy(focusTarget).sub(controls.target).multiplyScalar(Math.min(1, dt * 3));
-    controls.target.add(move);
-    camera.position.add(move);
+    if (focusActive) {
+      move
+        .copy(focusTarget)
+        .sub(controls.target)
+        .multiplyScalar(Math.min(1, dt * 3));
+      controls.target.add(move);
+      camera.position.add(move);
+      if (controls.target.distanceToSquared(focusTarget) < 0.0001) focusActive = false;
+    }
     controls.update();
 
     sun.target.position.copy(controls.target);
     sun.position.copy(controls.target).add(sunOffset);
+    if (sun.position.distanceTo(lastShadowSunPos) > SHADOW_UPDATE_DISTANCE) {
+      renderer.shadowMap.needsUpdate = true;
+      lastShadowSunPos.copy(sun.position);
+    }
 
     for (const callback of callbacks) callback(dt, now);
     composer.render(dt);
   });
 
+  // Glides the orbit center to a point without touching the shadow area or
+  // the zoom, for a "jump to me" click rather than a layout change.
+  function panTo(x: number, z: number) {
+    focusTarget.set(x, 0, z);
+    focusActive = true;
+  }
+
   return {
     scene,
     camera,
     focus,
+    panTo,
     onFrame: (callback: FrameCallback) => callbacks.add(callback),
+    // The shadow map only redraws when this flag is set (autoUpdate is off
+    // above), so anything that moves or rebuilds a shadow caster outside the
+    // sun-drift and layout checks already in the frame loop has to flip it.
+    invalidateShadows: () => {
+      renderer.shadowMap.needsUpdate = true;
+    },
+    onCameraChange: (callback: () => void) => controls.addEventListener("change", callback),
   };
 }

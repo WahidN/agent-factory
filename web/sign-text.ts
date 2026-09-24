@@ -24,12 +24,12 @@ export function modelLabel(model: string): string {
   return version === "" ? label : `${label} ${version}`;
 }
 
-// File name part for a machine's avatar. Machine names arrive over the
-// network from the hub, so only [a-z0-9-] survives: lowercased, every other
-// run of characters becomes one "-", and leading/trailing "-" are trimmed.
-// "MacBook-Pro-van-Wahid" -> "macbook-pro-van-wahid", "" -> "".
-export function machineSlug(machine: string): string {
-  return machine
+// File name part for an avatar, keyed by the session's user. User names arrive
+// over the network from the hub, so only [a-z0-9-] survives: lowercased,
+// every other run of characters becomes one "-", and leading/trailing "-"
+// are trimmed. "MacBook-Pro-van-Wahid" -> "macbook-pro-van-wahid", "" -> "".
+export function avatarSlug(user: string): string {
+  return user
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -38,8 +38,8 @@ export function machineSlug(machine: string): string {
 // Up to two uppercase initials for the avatar fallback, one per word, words
 // split on "-", "_", "." and spaces. "dennispassway-macbook" -> "DM",
 // "wahid" -> "W", "" -> "?".
-export function initialsFor(machine: string): string {
-  const initials = machine
+export function initialsFor(user: string): string {
+  const initials = user
     .split(/[-_.\s]+/)
     .filter((word) => word.length > 0)
     .slice(0, 2)

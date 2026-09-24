@@ -4,9 +4,9 @@ import * as THREE from "three";
 import { YARD_Y } from "./machines.ts";
 import { standard } from "./palette.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
-import { createWorker, stepWorker, type Point, type Worker } from "./worker-logic.ts";
+import { createWorker, isOutside, stepWorker, type Point, type Worker } from "./worker-logic.ts";
 
-export type WorkerSlot = { door: Point; route: [Point, Point] };
+export type WorkerSlot = { door: Point; route: [Point, Point]; gate: Point; destination: Point | null };
 
 // About 1.9 tall, facing +z.
 const workerGeometry = (() => {
@@ -31,20 +31,53 @@ export class LotWorkers {
   private workers: Worker[];
   private matrix = new THREE.Matrix4();
   private quaternion = new THREE.Quaternion();
+  private position = new THREE.Vector3();
+  private scale = new THREE.Vector3(1, 1, 1);
   private up = new THREE.Vector3(0, 1, 0);
   private hidden = new THREE.Matrix4().makeScale(0, 0, 0);
 
   constructor(private slots: WorkerSlot[]) {
     this.mesh = new THREE.InstancedMesh(workerGeometry, BAKED_MATERIAL, slots.length);
-    this.mesh.castShadow = true;
+    // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+    this.mesh.castShadow = false;
     this.mesh.frustumCulled = false; // workers walk away from the mesh origin
     this.workers = slots.map((slot) => createWorker(slot.door));
     for (let i = 0; i < slots.length; i++) this.mesh.setMatrixAt(i, this.hidden);
   }
 
-  // `busy` holds one flag per slot, in the same order as the slots.
-  tick(dt: number, busy: boolean[]) {
-    this.workers = this.workers.map((worker, i) => stepWorker(worker, dt, busy[i], this.slots[i].door, this.slots[i].route));
+  // Swaps in new slots (new doors, routes, gate, destinations) without
+  // touching `this.workers`: each worker keeps its current position and mode,
+  // so one already walking toward the old destination steers toward the new
+  // one from where it stands instead of jumping there.
+  setSlots(slots: WorkerSlot[]) {
+    this.slots = slots;
+  }
+
+  // The lot moved by (-dx, -dz) in the world. Workers out beyond the gate are
+  // standing on world ground, so they shift the other way in lot coordinates
+  // and stay where they were on screen; workers on the yard ride along.
+  translate(dx: number, dz: number) {
+    this.workers = this.workers.map((worker) =>
+      isOutside(worker) ? { ...worker, x: worker.x + dx, z: worker.z + dz } : worker,
+    );
+  }
+
+  // `busy` holds one flag per slot, in the same order as the slots. `null`
+  // means there is no worker for that slot right now (a warehouse that is not
+  // there): it never leaves for the park and walks back in if it was out.
+  tick(dt: number, busy: (boolean | null)[]) {
+    this.workers = this.workers.map((worker, i) =>
+      stepWorker(
+        worker,
+        dt,
+        busy[i] ?? false,
+        this.slots[i].door,
+        this.slots[i].route,
+        this.slots[i].gate,
+        busy[i] === null ? null : this.slots[i].destination,
+        i,
+      ),
+    );
     this.workers.forEach((worker, i) => {
       if (worker.mode === "inside") {
         this.mesh.setMatrixAt(i, this.hidden);
@@ -52,7 +85,8 @@ export class LotWorkers {
       }
       const bob = Math.abs(Math.sin(worker.walked * 3.5)) * 0.07;
       this.quaternion.setFromAxisAngle(this.up, worker.heading);
-      this.matrix.compose(new THREE.Vector3(worker.x, YARD_Y + bob, worker.z), this.quaternion, new THREE.Vector3(1, 1, 1));
+      this.position.set(worker.x, YARD_Y + bob, worker.z);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
     });
     this.mesh.instanceMatrix.needsUpdate = true;

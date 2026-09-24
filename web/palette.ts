@@ -1,42 +1,75 @@
 // Colors, shared materials, and canvas textures for the industrial park look.
 
 import * as THREE from "three";
+import { INK_STYLE_ENABLED, inkStandardMaterial } from "./ink-style.ts";
 import { accentIndexFor } from "./park-layout.ts";
 
-export const COLORS = {
-  grass: "#1a1e25",
-  road: "#5d6064",
-  yard: "#7c7f83",
-  wall: "#a3a6aa",
-  roof: "#6f7276",
-  parapet: "#8d9094",
-  frame: "#e9edf0",
-  glass: "#9fb7c6",
-  yellow: "#f2c230",
-  pineDark: "#2f7d4a",
-  pineLight: "#3f9a57",
+const CLASSIC_COLORS = {
+  grass: "#4f7b45",
+  water: "#2793c2",
+  road: "#555d61",
+  yard: "#a6a39a",
+  wall: "#c8c5ba",
+  roof: "#58656b",
+  parapet: "#748086",
+  frame: "#eef1ed",
+  glass: "#79aebe",
+  yellow: "#f1bd35",
+  pineDark: "#2d6642",
+  pineLight: "#4f8b52",
   rim: "#e2702f",
   band: "#d23c35",
-  concrete: "#c9c7c0",
-  steel: "#b9bdc1",
-  darkSteel: "#4b4f55",
-  wood: "#b68a57",
+  concrete: "#d4d0c5",
+  steel: "#c7ced0",
+  darkSteel: "#3f4b50",
+  wood: "#a97445",
   cab: "#c8372d",
   trailer: "#e3e6e9",
   tire: "#2b2b2e",
-  curb: "#d9d9d4",
+  curb: "#e2dfd5",
   windowLight: "#ffe2a8",
 };
 
+const INK_COLORS = {
+  grass: "#3f6f62",
+  water: "#367fa0",
+  road: "#35384c",
+  yard: "#888397",
+  wall: "#c9bba6",
+  roof: "#41405b",
+  parapet: "#615d78",
+  frame: "#f2e9d8",
+  glass: "#65a7bc",
+  yellow: "#f5c34b",
+  pineDark: "#224e45",
+  pineLight: "#3e7560",
+  rim: "#f06b55",
+  band: "#c94562",
+  concrete: "#c9c0b1",
+  steel: "#aeb7c4",
+  darkSteel: "#34364b",
+  wood: "#9b654d",
+  cab: "#d94d4d",
+  trailer: "#e9e0d2",
+  tire: "#202033",
+  curb: "#e7ddcd",
+  windowLight: "#ffd37c",
+};
+
+export const COLORS = INK_STYLE_ENABLED ? INK_COLORS : CLASSIC_COLORS;
+
 // Fixed, readable accents: orange, red, teal, blue, yellow, green, purple, brown.
-export const ACCENTS = ["#e2702f", "#d23c35", "#2a9d8f", "#3a6ea5", "#e9b43a", "#4c9a4a", "#7d5ba6", "#8a5a3c"];
+export const ACCENTS = INK_STYLE_ENABLED
+  ? ["#f06b55", "#d43f68", "#20a38f", "#448fd0", "#f5bd42", "#65a85e", "#8668bc", "#b06b55"]
+  : ["#e36f32", "#cf4141", "#168f83", "#3478ad", "#e6aa2d", "#568f45", "#7659a6", "#9a613e"];
 
 export function accentFor(folder: string) {
   return new THREE.Color(ACCENTS[accentIndexFor(folder)]);
 }
 
 export function standard(color: string | THREE.Color, extra: THREE.MeshStandardMaterialParameters = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, ...extra });
+  if (INK_STYLE_ENABLED) return inkStandardMaterial(color, extra);
+  return new THREE.MeshStandardMaterial({ color, roughness: 0.82, metalness: 0, flatShading: true, ...extra });
 }
 
 export const MATERIALS = {
@@ -100,6 +133,43 @@ function drawPanes(ctx: CanvasRenderingContext2D, fill: string) {
 }
 
 export const TEXTURES = {
+  // A tiny, deterministic meadow tile gives the enormous ground plane scale
+  // without adding geometry, draw calls, or anything to the frame loop. The
+  // grass and water keep repeat 1: their geometry sets the tiling in its UVs
+  // (see park.ts), so every surface keeps the same world-size tile.
+  grass: canvasTexture(256, 256, (ctx) => {
+    ctx.fillStyle = COLORS.grass;
+    ctx.fillRect(0, 0, 256, 256);
+    const flecks = ["rgba(230,241,181,0.14)", "rgba(23,67,39,0.12)", "rgba(255,255,230,0.08)"];
+    for (let i = 0; i < 420; i++) {
+      const x = (i * 73 + ((i * i * 17) % 251)) % 256;
+      const y = (i * 151 + ((i * i * 29) % 241)) % 256;
+      ctx.fillStyle = flecks[i % flecks.length];
+      ctx.fillRect(x, y, i % 5 === 0 ? 2 : 1, 2 + (i % 3));
+    }
+  }),
+
+  // Broad horizontal bands read as a current from an isometric camera. This
+  // remains one static texture on one river mesh, so blue water is virtually
+  // free compared with a shader or animated normal map.
+  water: canvasTexture(256, 128, (ctx) => {
+    ctx.fillStyle = "#c0dfe7";
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    for (let y = 0; y < 128; y += 16) ctx.fillRect(0, y, 256, 8);
+    ctx.strokeStyle = "rgba(216,246,255,0.28)";
+    ctx.lineWidth = 2;
+    for (let y = 12; y < 128; y += 21) {
+      ctx.beginPath();
+      for (let x = -20; x <= 276; x += 16) {
+        const waveY = y + Math.sin((x + y * 3) * 0.08) * 2;
+        if (x === -20) ctx.moveTo(x, waveY);
+        else ctx.lineTo(x, waveY);
+      }
+      ctx.stroke();
+    }
+  }),
+
   // White where glass is, so only panes glow.
   wallBayGlow: canvasTexture(BAY_PX.w, BAY_PX.h, (ctx) => {
     ctx.fillStyle = "#000";
@@ -156,14 +226,9 @@ MATERIALS.roof.userData.separate = true;
 
 // Hall colors per machine. These are the brickwork itself, not a tint laid
 // over it, so the windows keep their own color whichever hall they sit in.
-export const WALL_TINTS = [
-  "#8a95a3", // slate blue
-  "#a08b83", // brick grey
-  "#ab9f7e", // sand
-  "#8b9c8a", // moss grey
-  "#9a8a97", // plum grey
-  "#7f8890", // slate
-];
+export const WALL_TINTS = INK_STYLE_ENABLED
+  ? ["#829caf", "#ad7f78", "#bda66c", "#779783", "#9d7f9d", "#777b91"]
+  : ["#8fa7b7", "#b09284", "#b9a875", "#8fa58b", "#a690a4", "#89969f"];
 
 // One wallBay texture per tint, cached so the 14 lots of one machine (same
 // tint) share a single texture instead of drawing a copy each. Never

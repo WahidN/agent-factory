@@ -12,13 +12,6 @@ export type SessionFile = {
   startedAt: number;
 };
 
-export type SubagentMeta = {
-  name: string;
-  agentType: string;
-  description: string;
-  model: string; // short alias like "sonnet", empty when the file has none
-};
-
 // `usage` carries one assistant message's token total. `id` is the same for
 // every copy of that message, so a ledger can count it once.
 export type TranscriptEvent =
@@ -54,17 +47,6 @@ export function parseSessionFile(json: string): SessionFile | null {
     status: data.status === "busy" ? "busy" : "idle",
     startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
   };
-}
-
-export function parseSubagentMeta(json: string): SubagentMeta | null {
-  const data = parseJson(json);
-  if (!data) return null;
-  const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const agentType = str(data.agentType);
-  const description = str(data.description);
-  const name = str(data.name) || description || agentType;
-  if (!name) return null;
-  return { name, agentType, description, model: str(data.model) };
 }
 
 // Parses complete lines. The unfinished last line comes back as `remainder`
@@ -123,7 +105,11 @@ function usageOf(data: any): { id: string; total: number } | null {
   const usage = data.message?.usage;
   if (!usage || typeof usage !== "object") return null;
   const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
-  const total = count(usage.input_tokens) + count(usage.output_tokens) + count(usage.cache_creation_input_tokens) + count(usage.cache_read_input_tokens);
+  const total =
+    count(usage.input_tokens) +
+    count(usage.output_tokens) +
+    count(usage.cache_creation_input_tokens) +
+    count(usage.cache_read_input_tokens);
   const str = (value: unknown) => (typeof value === "string" ? value : "");
   const messageId = str(data.message.id);
   const requestId = str(data.requestId);

@@ -1,108 +1,217 @@
 # Agent Factory
 
-Shows every running Claude Code session on your machine as a factory in a 3D industrial park. A busy agent lights up its lot, and each tool type drives a different machine.
+![Overzicht van de stad: fabrieken langs de Waal, met de Stevenskerk, het Goffertstadion, Station Nijmegen, het Valkhof en drie bruggen](docs/city-overview.png)
 
-![Four busy lots, one per model: a small Haiku plant, a medium Sonnet hall, a taller Opus hall and a three story Fable hall](docs/lots-by-model.png)
+Elke Claude Code-sessie op kantoor wordt een fabriek in een 3D-versie van Nijmegen, en wie druk bezig is, laat zijn schoorstenen roken.
 
-## Run it
+```mermaid
+flowchart LR
+  subgraph macs["Macs van het team"]
+    m1["Mac<br/>reporter via launchd"]
+    m2["Mac<br/>reporter via launchd"]
+  end
+  pi["Raspberry Pi: de centrale<br/>systemd, poort 4317<br/>pagina + websocket"]
+  subgraph kijkers["Kijkers"]
+    b1["browser"]
+    b2["scherm aan de muur"]
+  end
+  m1 -- "/relay, zeven velden per sessie" --> pi
+  m2 -- "/relay" --> pi
+  pi -- "/ws" --> b1
+  pi -- "/ws" --> b2
+```
+
+Elke Mac draait een kleine reporter die de eigen sessies leest en doorstuurt. De Pi voegt alles samen en serveert de pagina. Wie kijkt, heeft alleen een browser nodig.
+
+## Wat moet ik doen?
+
+| Je wilt | Wat je doet |
+| --- | --- |
+| **Meekijken** | Open http://agentfactory.local:4317 op het kantoornetwerk. Installeren hoeft niet. |
+| **Meedoen met je Mac** | Kloon de repo, `pnpm install`, `scripts/install.sh`. Zie [Meedoen met je Mac](#meedoen-met-je-mac). |
+| **De centrale beheren** | Volg [`deploy/pi.md`](deploy/pi.md): installatie, token, bijwerken, logs en storingen op de Pi. |
+
+## Meedoen met je Mac
+
+Je hebt Node 24 en pnpm nodig, en je Mac moet op hetzelfde netwerk zitten als de Pi (niet op het gastennetwerk).
+
+```
+git clone <repo-url> ~/agent-factory
+cd ~/agent-factory
+pnpm install
+scripts/install.sh
+```
+
+Het script stelt vier vragen:
+
+| Vraag | Wat je invult |
+| --- | --- |
+| `Machinenaam (leeg = hostname)` | De naam waaronder je Mac in `/metrics` staat. Leeg laten geeft de korte hostnaam. |
+| `Centrale, bijvoorbeeld ws://agentfactory.local:4317` | Het adres van de Pi. Het moet met `ws://` of `wss://` beginnen, anders stopt het script. |
+| `Token (leeg als de centrale er geen vraagt)` | Hetzelfde token dat op de Pi staat. Je typt het blind. |
+| `Nu laden en starten? [y/N]` | `y` start de agent meteen. |
+
+Daarna staat er een launchd-agent in `~/Library/LaunchAgents/com.agentfactory.reporter.plist` die bij het inloggen start en na een crash opnieuw opstart. Hij opent één verbinding naar de centrale en luistert zelf op geen enkele poort. Het script weigert te beginnen als `node_modules/tsx` ontbreekt, en het waarschuwt als `node` uit nvm, fnm of Volta komt, want dat pad verdwijnt bij de volgende versiewissel. Draai je het script nog een keer, dan vervangt het de bestaande agent.
+
+### Bijwerken
+
+```
+cd ~/agent-factory
+git pull
+pnpm install
+launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
+launchctl load -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
+```
+
+De agent draait de code rechtstreeks uit je checkout, dus zonder herladen blijft de oude versie in het geheugen. `scripts/install.sh` opnieuw draaien mag ook; het vraagt dan alles opnieuw en vervangt de agent. Een reporter serveert geen pagina, dus `pnpm build` is op een Mac niet nodig.
+
+### Logs en stoppen
+
+De logs staan in `~/Library/Logs/agent-factory/`: `reporter.out.log` voor de normale regels en `reporter.err.log` voor fouten. Een gezonde agent schrijft bij de start `relay: connected to ws://.../relay`.
+
+```
+tail -f ~/Library/Logs/agent-factory/reporter.out.log
+```
+
+Stoppen, ook na een herstart van je Mac:
+
+```
+launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
+```
+
+### Als het niet werkt
+
+| Wat je ziet | Waarschijnlijke oorzaak | Wat je doet |
+| --- | --- | --- |
+| Agent stopt meteen, `reporter.err.log` groeit elke paar seconden | `node_modules` ontbreekt na een pull, of het node-pad uit nvm/fnm bestaat niet meer | `pnpm install`, en draai `scripts/install.sh` opnieuw zodat de plist het huidige node-pad krijgt |
+| `HUB must start with ws:// or wss://` in `reporter.err.log` | Typefout in het adres | `scripts/install.sh` opnieuw draaien |
+| Je machine verschijnt nooit | Verkeerde centrale, of je zit op een ander netwerk (gastennetwerk, VPN) | Kijk in `reporter.out.log` of er `relay: hub gone (...)` staat, en controleer op de centrale met `curl http://agentfactory.local:4317/metrics` of je machinenaam in `machines` staat |
+| `relay: hub gone (1008 bad token)` bij jou, `refused <machine>: bad token` in het log van de centrale | Je token wijkt af van dat op de Pi | `scripts/install.sh` opnieuw draaien met het juiste token |
+| `relay: hub gone (1002 protocol 2-3 expected)` | Je Mac spreekt een andere protocolversie dan de centrale | Werk je checkout bij (zie hierboven); de centrale meldt `refused <machine>: protocol N` |
+
+## Wat je ziet
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/city-waal.png" alt="De Waal met De Oversteek, de Spoorbrug en de rode Waalbrug, het Valkhof op de zuidoever en het Linku-kantoor erachter"></td>
+    <td width="50%"><img src="docs/city-models.png" alt="Twee Fable-hallen van drie verdiepingen bij het Goffertstadion, Opus-hallen van twee verdiepingen langs de Waal"></td>
+  </tr>
+  <tr>
+    <td>De Waal met De Oversteek, de Spoorbrug en de Waalbrug. Op de zuidoever ligt het Valkhof.</td>
+    <td>Hoe groter het model, hoe hoger de hal: Fable bovenaan, Opus langs het water.</td>
+  </tr>
+</table>
+
+Elke sessie krijgt een eigen kavel met een hal, machines, een bord met de gebruiker en de modelnaam op het dak. Sessies in hetzelfde project delen een accentkleur. Subagents verschijnen als kleine loodsen op het erf, maximaal vier per kavel. Het erf begint leeg en vult zich met extra's naarmate het tokentotaal groeit. Beweeg over een hal voor gebruiker, status, project, model en dat totaal.
+
+Tussen de fabrieken ligt Nijmegen: de Stevenskerk, het Goffertstadion, Plein 1944, het Kronenburgerpark, Station Nijmegen, het Valkhof, de Waalkade met De Bastei en het Linku-kantoor aan de St. Canisiussingel. Over de Waal liggen de Waalbrug, de Spoorbrug en De Oversteek. Deze plekken staan vast; de fabrieken schuiven eromheen als er sessies bijkomen of verdwijnen. Elk uur wisselt de stad van thema: de Vierdaagse, een NEC-wedstrijddag of marktdag.
+
+### Model
+
+| Model | Kavel |
+| --- | --- |
+| Haiku | kleine hal, 1 stapel, kleine koeltoren, korte zoeklichttoren |
+| Sonnet, of nog geen bekend model | volledige hal met 1 rij ramen, 3 stapels, koeltoren, vakwerktoren |
+| Opus | 2 rijen ramen, 4 hogere stapels, grotere koeltoren, hogere vakwerktoren |
+| Fable of Mythos | 3 rijen ramen, 5 hoge stapels, grootste koeltoren, hoogste vakwerktoren |
+
+Het model komt uit het transcript. Een verse sessie begint daarom op Sonnet-formaat en wordt herbouwd zodra het eerste antwoord binnen is; wisselen met `/model` herbouwt het kavel op dezelfde manier.
+
+### Status
+
+<img src="docs/city-busy-idle.png" alt="Drukke Opus- en Sonnet-hallen met rook links, een stille Haiku-hal en een stille Sonnet-hal rechts">
+
+| Status | Wat het kavel doet |
+| --- | --- |
+| busy | ramen gloeien, rook en stoom komen op gang, werkers lopen, verkeer rijdt |
+| idle | donkere ramen, machines uit, geen rook |
+
+Links in het paneel filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
+
+### Token milestones
+
+Het erf begint leeg: alleen belijning, geen voertuigen. Het vult zich naarmate het tokentotaal van je Mac groeit, geteld vanaf het seizoensbegin op 16 september 2026. Elke rij tot en met je totaal staat op elk kavel van die machine. De gele knop rechtsboven opent de hele ladder, met per rij wat er nog te gaan is.
+
+![Een kavel op 5B tokens: fietsen, 3 auto's, vlaggenmast, koffiekar, vrachtwagen, sportauto met laadpalen, helikopter op een helipad, windmolen en een zeppelin boven de hal](docs/token-milestones.png)
+
+| Tokens | Extra op het erf |
+| --- | --- |
+| 10M | fietsenrek met 3 fietsen bij de personeelsdeur |
+| 25M | 1e geparkeerde auto |
+| 50M | 2e geparkeerde auto |
+| 100M | 3e geparkeerde auto, en een vlaggenmast met een vlag in de accentkleur bij de poort |
+| 250M | koffiekar en een picknicktafel langs het looppad |
+| 500M | de vrachtwagen bij het laaddok |
+| 750M | 2 laadpalen en een sportauto in de linkervoorhoek |
+| 1B | helipad met een helikopter op het hallendak |
+| 2.5B | windmolen aan het linkerhek, wieken draaien |
+| 5B | zeppelin in de accentkleur, getuid boven de hal |
+
+Wat telt: de reporter telt van elk assistant-bericht op of na 16 september 2026 00:00 UTC de input, output, cache write en cache read bij elkaar op, uit elk transcript onder `~/.claude/projects/`, subagents en afgeronde sessies inbegrepen, en telt elk bericht één keer. Oudere berichten tellen niet mee, dus elke machine begint op dezelfde dag op 0. Het tellen zelf is hetzelfde als PokeTokenBar en ccusage, alleen vanaf die datum. Cache reads zijn het grootste deel, en daarom loopt de ladder in de honderden miljoenen tot miljarden. Een nieuw seizoen is één datum in `server/usage-ledger.ts`.
+
+Het totaal staat op 0 tot de reporter elk transcript één keer gelezen heeft. Dat duurt een paar seconden per gigabyte, en het erf vult zich zodra dat klaar is. Een Mac op protocol 2 stuurt nog geen totaal; zijn kavels tonen dan geen tokenregel.
+
+## Hoe het werkt
+
+**Wat over de lijn gaat.** Een reporter leest `~/.claude/sessions/` en tailt de transcripts in `~/.claude/projects/`. Per sessie stuurt hij zeven velden: `id`, `user`, `project`, `model`, `status`, `subagents` (een aantal) en `startedAt`, samen 121 tot 180 bytes. Daar komt `machineTokens` bij, het seizoenstotaal van de machine. Toolnaam en tooldoel leest hij wel, want daaruit leidt hij `busy` af, maar die blijven op de Mac. Prompts, antwoorden en bestandsinhoud verlaten de machine nooit, en de server schrijft nergens onder `~/.claude/`. Zeven velden houdt het bericht klein genoeg voor een Pi met dertig Macs en maakt het simpel om na te gaan wat er gedeeld wordt.
+
+**Drie standen, één server.** `server/config.ts` kiest de stand bij het opstarten:
+
+| Stand | Hoe je hem start | Wat hij doet |
+| --- | --- | --- |
+| centrale | `--hub` (of `--central`) | luistert op `0.0.0.0:4317`, accepteert reporters op `/relay`, serveert de pagina en `/ws` |
+| reporter | `HUB=ws://...` gezet | geen poort, één uitgaande verbinding naar de centrale |
+| lokaal | geen van beide | alleen `127.0.0.1:4317`, alleen je eigen sessies |
+
+`PORT` (standaard 4317), `MACHINE` (standaard de hostnaam), `USER` en `FACTORY_TOKEN` zijn de overige instellingen. `--hub` en `HUB` samen weigert de server met een foutmelding.
+
+**Liveness aan twee kanten.** De centrale pingt elke socket elke 30 seconden en verbreekt een socket die twee pings mist. Een reporter pingt zelf niet maar let op die pings: hoort hij 90 seconden niets, dan verbreekt hij en verbindt hij opnieuw. Dat opnieuw verbinden wacht willekeurig tussen 0 en een plafond dat van 2 naar 30 seconden oploopt, zodat dertig Macs na een herstart van de Pi niet in dezelfde seconde terugkomen. Valt een reporter weg, dan haalt de centrale zijn sessies uit de stad.
+
+**Veiligheid op het netwerk.** De centrale weigert websocket-upgrades met een `Origin` van een andere host, zodat een willekeurige website geen verbinding met de Pi kan openen via jouw browser. Het token geldt alleen voor `/relay` en is een vangrail tegen een verkeerd ingestelde reporter, geen authenticatie. Het netwerk zelf is de toegangscontrole.
+
+**Tekenen op 60 fps.** De pagina in `web/` tekent de stad met Three.js. Alleen de 40 kavels het dichtst bij de camera krijgen volledig detail; de rest is een terrein met een hal en een gekleurd dakbaken. Statische delen van een kavel zijn samengevoegd tot één mesh, herhaalde delen als bomen en ramen zijn instanced. De standaardstijl heet Inkshift, met een eigen palet en een outline-pass over het hele beeld. `?style=classic` zet die uit.
+
+Claude Code bepaalt het formaat van de bestanden in `~/.claude/`, dus een update van Claude Code kan de reporter breken.
+
+## Reviewstanden
+
+| URL of commando | Wat je krijgt |
+| --- | --- |
+| `?mode=showcase&view=all` | Een vaste stad van 13 nepsessies over alle modellen en statussen, met de camera op het hele park. Zo zijn de screenshots hierboven gemaakt. |
+| `?view=all` | Camera op het hele park, met echte sessies |
+| `?stats` | Overlay met draw calls, driehoeken, frametijd (gemiddeld en p95) en kavels gedetailleerd tegenover totaal |
+| `?detail=N` | Ander plafond voor volledig getekende kavels dan 40 |
+| `?style=classic` | Zonder de Inkshift-stijl |
+
+Een stad op schaal zonder dertig echte Macs: start een centrale met `pnpm hub` en zet er nepmachines tegen.
+
+```
+SPOKES=30 SESSIONS_PER_SPOKE=5 pnpm fake-park
+```
+
+| Variabele | Standaard | Betekenis |
+| --- | --- | --- |
+| `SPOKES` | 10 | aantal nepmachines |
+| `SESSIONS_PER_SPOKE` | 5 | sessies per machine bij de start; een machine groeit door tot het dubbele |
+| `HUB` | `ws://127.0.0.1:4317` | adres van de centrale |
+| `SEED` | willekeurig | vaste waarde voor een reproduceerbare run |
+| `FREEZE` | uit | `FREEZE=1` bouwt het park op en houdt het daarna stil, handig om twee screenshots te vergelijken |
+
+## Ontwikkelen
 
 ```
 pnpm install
 pnpm dev
 ```
 
-Then open http://localhost:5173. This starts the Node server on `127.0.0.1:4317` and the Vite page together. Vite proxies `/ws` to the server, and the page reconnects every 2 seconds while the server is down.
+`pnpm dev` start de server op `127.0.0.1:4317` en Vite op http://localhost:5173. Vite proxyt `/ws` naar de server; met `HUB=ws://agentfactory.local:4317 pnpm dev:web` kijk je naar het park van de centrale in plaats van je eigen. `pnpm hub` doet hetzelfde als `pnpm dev` maar start de server als centrale.
 
-## Run it for a team
-
-One Mac runs the hub:
-
-```
-pnpm hub
-```
-
-Every other Mac points at it:
-
-```
-HUB=ws://<hub-host>:4317 pnpm dev
-```
-
-Everyone opens their own http://localhost:5173 and sees one park with every machine's sessions. The hub prints the address to use when it starts. On a Mac it is the computer name plus `.local`, for example `ws://wahids-macbook.local:4317`.
-
-Once the park has sessions from more than one machine, every sign and tooltip shows the machine name. The default is the host name up to the first dot. `MACHINE=wahid pnpm dev` picks a better one than `macbook-pro-3`.
-
-The first time the hub starts, macOS asks once whether `node` may accept incoming connections. Click Allow. While the hub is down, a spoke's page shows `reconnecting...` and no lots, its own included. Both sides retry every 2 seconds.
-
-## What you see
-
-- one lot per session, with the session name on the sign
-- the hall and machines are sized by the model the session runs (see below)
-- sessions in the same folder share an accent color
-- subagents show up as small warehouses inside the parent yard, up to 4 per lot
-- the yard starts empty and fills with extras as your token total since the season start grows, see "Token milestones"
-- hover a hall or warehouse for the name, status, current tool and model
-- drag to rotate, scroll to zoom
-
-| Model | Lot |
+| Script | Wat het doet |
 | --- | --- |
-| Haiku | small hall, 1 stack, small cooling tower, short searchlight tower |
-| Sonnet, or no model known yet | full hall with 1 row of windows, 3 stacks, cooling tower, lattice tower |
-| Opus | 2 rows of windows, 4 taller stacks, bigger cooling tower, taller lattice tower |
-| Fable or Mythos | 3 rows of windows, 5 tall stacks, biggest cooling tower, tallest lattice tower |
+| `pnpm test` | Vitest, server en web |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm lint` | Biome |
+| `pnpm knip` | ongebruikte bestanden, exports en dependencies |
+| `pnpm build` | bouwt de pagina naar `web/dist`, die de centrale serveert |
 
-The model comes from the transcript, so a fresh session starts as a Sonnet sized lot and is rebuilt in place once its first response arrives. Switching models with `/model` rebuilds the lot the same way. Subagent warehouses have one size.
-
-| Agent state | Animation |
-| --- | --- |
-| idle | dark windows, machines off, nothing from this lot on the roads |
-| busy, no tool running | windows glow, thin smoke, slow steam, its truck drives the park roads plus one car per busy subagent |
-| editing or writing files | forklift carries pallets between the dock and the truck bay |
-| running a shell command | chimney rims glow orange and smoke is fast and thick |
-| reading or searching files | searchlight sweeps the yard |
-| any other tool | cooling tower steam is fast and thick |
-
-## Token milestones
-
-The yard starts empty: bay lines and no vehicles. It fills up as the token total of your machine grows, counted from the season start on 16 September 2026. Every row at or below your total is shown, on every lot of that machine.
-
-![A lot at 5B tokens: bikes, 3 cars, flagpole, coffee cart, truck, sports car with chargers, helicopter on a helipad, wind turbine, and a blimp above the hall](docs/token-milestones.png)
-
-| Tokens | Extra in the yard |
-| --- | --- |
-| 10M | bike rack with 3 bikes at the people door |
-| 25M | 1st parked car |
-| 50M | 2nd parked car |
-| 100M | 3rd parked car, and a flagpole with a flag in the accent colour by the gate |
-| 250M | coffee cart and a picnic table along the walkway |
-| 500M | the truck at the dock bay |
-| 750M | 2 EV chargers and a sports car in the front left corner |
-| 1B | helipad with a helicopter on the hall roof |
-| 2.5B | wind turbine at the front left fence, blades turning |
-| 5B | blimp in the accent colour tethered above the hall |
-
-What counts: the server sums the input, output, cache write and cache read tokens of every assistant message written on or after 16 September 2026 00:00 UTC in every transcript under `~/.claude/projects/`, subagents and finished sessions included, and counts each message once. Older messages add nothing, so every machine starts at 0 on the same day. The counting itself is the same as PokeTokenBar and ccusage, only from that date. Cache reads are most of it, which is why the ladder runs in the hundreds of millions to billions. A new season is one date change in `server/usage-ledger.ts`.
-
-The total is 0 until the server has read every transcript once at start. That takes a few seconds per gigabyte of transcripts, and the yard fills as soon as it is done. Hover a hall to see the total. On a hub, every machine's total is visible to everyone on it.
-
-## How it works
-
-The server in `server/` watches `~/.claude/sessions/` and `~/.claude/projects/`. It reads each session file for the process id and status, and tails the transcript to find the running tool. On first sight it reads only the last 64 KB of a transcript, and only new bytes after that. Each change goes to the page over a WebSocket. At start it also reads every transcript once, in the background, to sum the season token total; from then on the same tail keeps that total live.
-
-With `HUB` set, the server also opens one outbound connection to the hub and sends the same messages there. A hub lists what it receives next to its own sessions, prefixes each relayed session id with the machine name, and drops a machine's sessions when its connection closes. A spoke's page is proxied to the hub, so the spoke's own server only relays.
-
-The page in `web/` draws the park with Three.js. Static parts of a lot are merged into one mesh, and repeated parts like trees and windows are instanced.
-
-Only the tool name, a short label, the model id, the folder name, the machine name and the machine's season token total leave the server. The label is a file name, or the first 40 characters of a command or search pattern. The folder name is the last part of the working folder, never the full path. Prompts, responses and file contents stay on disk. The server never writes under `~/.claude/`.
-
-Without `--hub` the server listens on localhost only. A hub listens on every network interface, so anyone on the same network can connect to it and read the same stream. Only run a hub on a network you trust.
-
-Claude Code owns the format of these files, so an update can break the reader.
-
-## Develop
-
-```
-pnpm test
-pnpm typecheck
-```
-
-Specs and change proposals live in `openspec/`.
+Specs en change proposals staan in `openspec/`. Het bouwplan voor de centrale staat in [`docs/opschaalplan.md`](docs/opschaalplan.md).

@@ -45,7 +45,9 @@ describe("ladderRows", () => {
 
   it("unlocks the rows at or below the total", () => {
     const rows = ladderRows(600e6);
-    expect(rows.filter((row) => row.unlocked).map((row) => row.tokens)).toEqual([10e6, 25e6, 50e6, 100e6, 250e6, 500e6]);
+    expect(rows.filter((row) => row.unlocked).map((row) => row.tokens)).toEqual([
+      10e6, 25e6, 50e6, 100e6, 250e6, 500e6,
+    ]);
     expect(rows.find((row) => row.tokens === 750e6)).toMatchObject({ unlocked: false, toGo: 150e6 });
   });
 

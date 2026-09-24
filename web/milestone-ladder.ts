@@ -17,9 +17,10 @@ export const MILESTONE_LABELS: readonly string[] = [
   "blimp above the hall",
 ];
 
-// How many rows of the ladder a total has reached, 0 to 10.
-export function milestoneIndex(tokens: number): number {
-  return MILESTONES.filter((threshold) => tokens >= threshold).length;
+// How many rows of the ladder a total has reached, 0 to 10. A machine still on
+// protocol 2 sends no total, and then nothing is unlocked.
+export function milestoneIndex(tokens: number | undefined): number {
+  return MILESTONES.filter((threshold) => (tokens ?? 0) >= threshold).length;
 }
 
 // Rows 2, 3 and 4 each add one parked car.

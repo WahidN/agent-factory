@@ -32,7 +32,17 @@ export function beam(builder: StaticBuilder, material: THREE.Material, a: Vec3, 
 
 const puffGeometry = new THREE.IcosahedronGeometry(0.5, 1);
 
-type Puff = { alive: boolean; age: number; life: number; x: number; y: number; z: number; rise: number; size: number; drift: number };
+type Puff = {
+  alive: boolean;
+  age: number;
+  life: number;
+  x: number;
+  y: number;
+  z: number;
+  rise: number;
+  size: number;
+  drift: number;
+};
 
 // A fixed pool of puffs drawn as one instanced mesh.
 export class Smoke {
@@ -42,7 +52,17 @@ export class Smoke {
   constructor(count: number, material: THREE.Material) {
     this.mesh = new THREE.InstancedMesh(puffGeometry, material, count);
     this.mesh.frustumCulled = false; // instances move far from the mesh origin
-    this.puffs = Array.from({ length: count }, () => ({ alive: false, age: 0, life: 1, x: 0, y: 0, z: 0, rise: 1, size: 1, drift: 0 }));
+    this.puffs = Array.from({ length: count }, () => ({
+      alive: false,
+      age: 0,
+      life: 1,
+      x: 0,
+      y: 0,
+      z: 0,
+      rise: 1,
+      size: 1,
+      drift: 0,
+    }));
     for (let i = 0; i < count; i++) this.mesh.setMatrixAt(i, tmpMatrix.makeScale(0, 0, 0));
   }
 
@@ -77,7 +97,10 @@ export class Smoke {
       const swell = k < 0.15 ? k / 0.15 : 1 - Math.pow((k - 0.15) / 0.85, 2);
       const scale = puff.size * (0.6 + k * 1.4) * swell;
       tmpQuaternion.setFromEuler(tmpEuler.set(i, i * 0.7, 0));
-      this.mesh.setMatrixAt(i, tmpMatrix.compose(tmpPosition.set(puff.x, puff.y, puff.z), tmpQuaternion, tmpScale.setScalar(scale)));
+      this.mesh.setMatrixAt(
+        i,
+        tmpMatrix.compose(tmpPosition.set(puff.x, puff.y, puff.z), tmpQuaternion, tmpScale.setScalar(scale)),
+      );
     });
     this.mesh.instanceMatrix.needsUpdate = true;
   }
@@ -96,7 +119,7 @@ class Emitter {
 
 // ---------- Chimney stacks ----------
 
-export type StacksOptions = { count: number; height: number; radius: number; frame: boolean };
+export type StacksOptions = { count: number; height: number; radius: number; frame: boolean; axis?: "x" | "z" };
 
 export class Stacks {
   readonly group = new THREE.Group();
@@ -105,8 +128,12 @@ export class Stacks {
   private emitters: Emitter[] = [];
   private tops: Vec3[] = [];
 
-  constructor(builder: StaticBuilder, [ox, oz]: [number, number], private options: StacksOptions) {
-    const { count, height, radius, frame } = options;
+  constructor(
+    builder: StaticBuilder,
+    [ox, oz]: [number, number],
+    private options: StacksOptions,
+  ) {
+    const { count, height, radius, frame, axis = "x" } = options;
     const spacing = radius * 2.5;
     this.smoke = new Smoke(count * 14, MATERIALS.smoke);
     this.group.add(this.smoke.mesh);
@@ -115,7 +142,8 @@ export class Stacks {
       const half = spacing * (count / 2) + radius * 0.5;
       const levels = [height * 0.3, height * 0.55];
       for (const sx of [-1, 1]) {
-        for (const sz of [-1, 1]) builder.box(MATERIALS.steel, [ox + sx * half, YARD_Y + levels[1] / 2, oz + sz * half], [0.3, levels[1], 0.3]);
+        for (const sz of [-1, 1])
+          builder.box(MATERIALS.steel, [ox + sx * half, YARD_Y + levels[1] / 2, oz + sz * half], [0.3, levels[1], 0.3]);
       }
       for (const y of levels) {
         for (const s of [-1, 1]) {
@@ -126,27 +154,55 @@ export class Stacks {
       }
       // X braces on the two visible faces
       for (const [a, b] of [
-        [[-half, 0, half], [half, levels[0], half]],
-        [[half, 0, half], [-half, levels[0], half]],
-        [[half, 0, -half], [half, levels[0], half]],
-        [[half, 0, half], [half, levels[0], -half]],
+        [
+          [-half, 0, half],
+          [half, levels[0], half],
+        ],
+        [
+          [half, 0, half],
+          [-half, levels[0], half],
+        ],
+        [
+          [half, 0, -half],
+          [half, levels[0], half],
+        ],
+        [
+          [half, 0, half],
+          [half, levels[0], -half],
+        ],
       ] as [Vec3, Vec3][]) {
-        beam(builder, MATERIALS.steel, [ox + a[0], YARD_Y + a[1], oz + a[2]], [ox + b[0], YARD_Y + b[1], oz + b[2]], 0.16);
+        beam(
+          builder,
+          MATERIALS.steel,
+          [ox + a[0], YARD_Y + a[1], oz + a[2]],
+          [ox + b[0], YARD_Y + b[1], oz + b[2]],
+          0.16,
+        );
       }
     }
 
     const rims: THREE.BufferGeometry[] = [];
     for (let i = 0; i < count; i++) {
-      const x = ox + (i - (count - 1) / 2) * spacing;
-      builder.cylinder(MATERIALS.concrete, [x, YARD_Y + height / 2, oz], [radius, height, radius]);
-      builder.cylinder(MATERIALS.darkSteel, [x, YARD_Y + height + 0.02, oz], [radius * 0.78, 0.1, radius * 0.78]);
-      rims.push(new THREE.CylinderGeometry(radius * 1.08, radius * 1.08, radius * 1.3, 20, 1, true).translate(x, YARD_Y + height - radius * 0.6, oz));
-      this.tops.push([x, YARD_Y + height + 0.3, oz]);
+      const offset = (i - (count - 1) / 2) * spacing;
+      const x = ox + (axis === "x" ? offset : 0);
+      const z = oz + (axis === "z" ? offset : 0);
+      builder.cylinder(MATERIALS.concrete, [x, YARD_Y + height / 2, z], [radius, height, radius]);
+      builder.cylinder(MATERIALS.darkSteel, [x, YARD_Y + height + 0.02, z], [radius * 0.78, 0.1, radius * 0.78]);
+      rims.push(
+        new THREE.CylinderGeometry(radius * 1.08, radius * 1.08, radius * 1.3, 20, 1, true).translate(
+          x,
+          YARD_Y + height - radius * 0.6,
+          z,
+        ),
+      );
+      this.tops.push([x, YARD_Y + height + 0.3, z]);
       this.emitters.push(new Emitter());
     }
     // All rims share one glowing material, so they can be one mesh.
     const rim = new THREE.Mesh(mergeGeometries(rims), this.rimMaterial);
-    rims.forEach((g) => g.dispose());
+    rims.forEach((g) => {
+      g.dispose();
+    });
     rim.castShadow = true;
     this.group.add(rim);
   }
@@ -156,11 +212,11 @@ export class Stacks {
     this.rimMaterial.emissiveIntensity = active * 1.6;
     const { radius } = this.options;
     if (busy > 0.05) {
-      this.emitters.forEach((emitter, i) =>
+      this.emitters.forEach((emitter, i) => {
         emitter.tick(dt, THREE.MathUtils.lerp(1.3, 0.14, active), () =>
           this.smoke.emit(this.tops[i], 3.4 - active, 1 + active * 2.2, radius * (1.3 + active * 1.6), radius),
-        ),
-      );
+        );
+      });
     }
     this.smoke.tick(dt);
   }
@@ -189,7 +245,12 @@ export class Forklift {
   private phase = 0;
 
   // Drives along z at x = ox, between `from` (dock) and `to` (truck). Forks point +z.
-  constructor(builder: StaticBuilder, ox: number, private from: number, private to: number) {
+  constructor(
+    builder: StaticBuilder,
+    ox: number,
+    private from: number,
+    private to: number,
+  ) {
     this.group.position.set(ox, YARD_Y, from);
 
     this.group.add(
@@ -197,7 +258,8 @@ export class Forklift {
         b.box(MATERIALS.yellow, [0, 0.55, 0], [1.2, 0.6, 1.9]);
         b.box(MATERIALS.darkSteel, [0, 0.75, -0.95], [1.25, 0.8, 0.35]); // counterweight
         for (const sx of [-1, 1]) {
-          for (const sz of [-1, 1]) b.cylinder(MATERIALS.tire, [sx * 0.62, 0.3, sz * 0.6], [0.3, 0.22, 0.3], [0, 0, Math.PI / 2]);
+          for (const sz of [-1, 1])
+            b.cylinder(MATERIALS.tire, [sx * 0.62, 0.3, sz * 0.6], [0.3, 0.22, 0.3], [0, 0, Math.PI / 2]);
           b.box(MATERIALS.darkSteel, [sx * 0.52, 1.5, -0.55], [0.07, 1.3, 0.07]); // cabin posts
           b.box(MATERIALS.darkSteel, [sx * 0.52, 1.5, 0.45], [0.07, 1.3, 0.07]);
           b.box(MATERIALS.darkSteel, [sx * 0.35, 1.4, 1.08], [0.12, 2.4, 0.12]); // mast rails
@@ -268,7 +330,11 @@ export class Searchlight {
   private baseYaw: number;
   private time = 0;
 
-  constructor(builder: StaticBuilder, [ox, oz]: [number, number], private options: SearchlightOptions) {
+  constructor(
+    builder: StaticBuilder,
+    [ox, oz]: [number, number],
+    private options: SearchlightOptions,
+  ) {
     const { tower, height, reach, aimAt } = options;
     this.baseYaw = Math.atan2(-(aimAt[0] - ox), -(aimAt[1] - oz));
 
@@ -311,7 +377,10 @@ export class Searchlight {
     this.yaw.add(pitch);
 
     const scale = tower ? 1 : 0.45;
-    const housing = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * scale, 0.6 * scale, 0.9 * scale, 14), MATERIALS.darkSteel);
+    const housing = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45 * scale, 0.6 * scale, 0.9 * scale, 14),
+      MATERIALS.darkSteel,
+    );
     const lens = new THREE.Mesh(new THREE.CircleGeometry(0.55 * scale, 14), this.lensMaterial);
     lens.rotation.x = Math.PI / 2;
     lens.position.y = -0.46 * scale;
@@ -370,7 +439,12 @@ export class CoolingTower {
   private steam = new Smoke(30, MATERIALS.steam);
   private emitter = new Emitter();
 
-  constructor(builder: StaticBuilder, [ox, oz]: [number, number], private radius: number, height: number) {
+  constructor(
+    builder: StaticBuilder,
+    [ox, oz]: [number, number],
+    private radius: number,
+    height: number,
+  ) {
     const r = radius;
     builder.add(hyperboloid(r, r * 0.66, r * 0.78, height), towerMaterial, [ox, YARD_Y + 0.6, oz]);
     builder.add(hyperboloid(r * 0.97, r * 0.64, r * 0.76, height), towerInsideMaterial, [ox, YARD_Y + 0.6, oz]);
@@ -379,7 +453,12 @@ export class CoolingTower {
     // Short legs under the shell
     for (let i = 0; i < 16; i++) {
       const a = (i / 16) * Math.PI * 2;
-      builder.box(MATERIALS.concrete, [ox + Math.cos(a) * r * 0.97, YARD_Y + 0.3, oz + Math.sin(a) * r * 0.97], [0.22, 0.6, 0.22], [0, -a, 0]);
+      builder.box(
+        MATERIALS.concrete,
+        [ox + Math.cos(a) * r * 0.97, YARD_Y + 0.3, oz + Math.sin(a) * r * 0.97],
+        [0.22, 0.6, 0.22],
+        [0, -a, 0],
+      );
     }
     this.group.add(this.steam.mesh);
     this.origin = [ox, YARD_Y + 0.6 + height, oz];
@@ -407,14 +486,16 @@ export class CoolingTower {
 // Truck parts facing +x, about 12 long, with the ground at `at`. Used for the
 // road truck template and to bake a parked truck into a lot's static mesh.
 export function addTruckParts(b: StaticBuilder, [ox, oy, oz]: Vec3 = [0, 0, 0]) {
-  const box = (material: THREE.Material, [x, y, z]: Vec3, size: Vec3) => b.box(material, [ox + x, oy + y, oz + z], size);
+  const box = (material: THREE.Material, [x, y, z]: Vec3, size: Vec3) =>
+    b.box(material, [ox + x, oy + y, oz + z], size);
   box(MATERIALS.trailer, [-1.6, 2.35, 0], [8.8, 2.9, 2.6]);
   box(MATERIALS.darkSteel, [-0.6, 0.8, 0], [11, 0.35, 1.8]); // chassis
   box(MATERIALS.cab, [4.55, 1.95, 0], [2.3, 2.3, 2.5]);
   box(MATERIALS.glass, [5.72, 2.4, 0], [0.06, 1.0, 2.2]);
   box(MATERIALS.darkSteel, [5.75, 1.1, 0], [0.1, 0.5, 2.3]); // bumper
   for (const x of [-4.6, -3.4, 2.6, 4.7]) {
-    for (const z of [-1.1, 1.1]) b.cylinder(MATERIALS.tire, [ox + x, oy + 0.5, oz + z], [0.5, 0.4, 0.5], [Math.PI / 2, 0, 0]);
+    for (const z of [-1.1, 1.1])
+      b.cylinder(MATERIALS.tire, [ox + x, oy + 0.5, oz + z], [0.5, 0.4, 0.5], [Math.PI / 2, 0, 0]);
   }
 }
 

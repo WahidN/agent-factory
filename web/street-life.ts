@@ -3,8 +3,9 @@
 
 import * as THREE from "three";
 import type { CityActivity, CityClaim } from "./city-events.ts";
+import { clampHourAndBusy, InstanceWriter, instancedMesh, seededRandom, sortClaims } from "./instancing.ts";
 import { standard } from "./palette.ts";
-import { hashString, PLOT_SIZE } from "./plots.ts";
+import { PLOT_SIZE } from "./plots.ts";
 import { railSafeX } from "./rail-corridor.ts";
 
 const MAX_TABLES = 30;
@@ -22,22 +23,9 @@ const steelMaterial = standard("#485156", { roughness: 0.75 });
 const coloredMaterial = standard("#ffffff", { roughness: 0.85 });
 const skinMaterial = standard("#d5a478", { roughness: 0.9 });
 
-function mesh(name: string, geometry: THREE.BufferGeometry, material: THREE.Material, maximum: number) {
-  const result = new THREE.InstancedMesh(geometry, material, maximum);
-  result.name = name;
-  result.count = 0;
-  result.frustumCulled = false;
-  result.castShadow = true;
-  result.receiveShadow = true;
-  return result;
-}
-
 function randomFor(claim: CityClaim, salt: string) {
-  let state = hashString(`${salt}:${claim.cell.col}:${claim.cell.row}:${claim.amenity}`) || 1;
-  return () => {
-    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
-    return state / 4294967296;
-  };
+  // Its own LCG constants, kept distinct from city-events' seededRandom calls.
+  return seededRandom(`${salt}:${claim.cell.col}:${claim.cell.row}:${claim.amenity}`, 1103515245, 12345);
 }
 
 const TERRACE_AMENITIES = new Set<CityClaim["amenity"]>(["shops", "plein1944", "waalkade"]);
@@ -54,18 +42,28 @@ export type StreetLifeSnapshot = {
 export class StreetLife {
   readonly group = new THREE.Group();
 
-  private readonly tables = mesh("streetlife-tables", tableGeometry, woodMaterial, MAX_TABLES);
-  private readonly tableLegs = mesh("streetlife-table-legs", tableLegGeometry, steelMaterial, MAX_TABLES);
-  private readonly parasols = mesh("streetlife-parasols", parasolGeometry, coloredMaterial, MAX_PARASOLS);
-  private readonly visitors = mesh("streetlife-visitors", visitorBodyGeometry, coloredMaterial, MAX_VISITORS);
-  private readonly heads = mesh("streetlife-heads", visitorHeadGeometry, skinMaterial, MAX_VISITORS);
+  private readonly tables = instancedMesh("streetlife-tables", tableGeometry, woodMaterial, MAX_TABLES);
+  private readonly tableLegs = instancedMesh("streetlife-table-legs", tableLegGeometry, steelMaterial, MAX_TABLES);
+  private readonly parasols = instancedMesh("streetlife-parasols", parasolGeometry, coloredMaterial, MAX_PARASOLS);
+  private readonly visitors = instancedMesh(
+    "streetlife-visitors",
+    visitorBodyGeometry,
+    coloredMaterial,
+    MAX_VISITORS,
+    false,
+    true,
+  );
+  private readonly heads = instancedMesh(
+    "streetlife-heads",
+    visitorHeadGeometry,
+    skinMaterial,
+    MAX_VISITORS,
+    false,
+    true,
+  );
   private claims: CityClaim[] = [];
   private activity: CityActivity = { hour: 12, busyRatio: 0, event: "ordinary" };
-  private readonly matrix = new THREE.Matrix4();
-  private readonly rotation = new THREE.Quaternion();
-  private readonly position = new THREE.Vector3();
-  private readonly scale = new THREE.Vector3(1, 1, 1);
-  private readonly color = new THREE.Color();
+  private readonly writer = new InstanceWriter();
 
   constructor() {
     this.group.name = "street-life";
@@ -73,9 +71,7 @@ export class StreetLife {
   }
 
   setCity(claims: readonly CityClaim[], activity: CityActivity) {
-    this.claims = [...claims].sort(
-      (a, b) => a.cell.row - b.cell.row || a.cell.col - b.cell.col || a.amenity.localeCompare(b.amenity),
-    );
+    this.claims = sortClaims(claims);
     this.activity = this.normalise(activity);
     this.redraw();
   }
@@ -97,11 +93,7 @@ export class StreetLife {
   }
 
   private normalise(activity: CityActivity): CityActivity {
-    return {
-      ...activity,
-      hour: (((Number.isFinite(activity.hour) ? activity.hour : 12) % 24) + 24) % 24,
-      busyRatio: THREE.MathUtils.clamp(activity.busyRatio || 0, 0, 1),
-    };
+    return { ...activity, ...clampHourAndBusy(activity) };
   }
 
   private redraw() {
@@ -116,14 +108,15 @@ export class StreetLife {
     for (const claim of this.claims) {
       if (terraceOpen && TERRACE_AMENITIES.has(claim.amenity) && tableIndex < MAX_TABLES) {
         const random = randomFor(claim, "terrace");
-        const count = Math.min(6, 1 + Math.round(this.activity.busyRatio * 4));
+        // busyRatio is already clamped to 0..1, so this never exceeds 5.
+        const count = 1 + Math.round(this.activity.busyRatio * 4);
         for (let i = 0; i < count && tableIndex < MAX_TABLES; i++) {
           const x = claim.cell.col * PLOT_SIZE - 12 + (i % 3) * 6 + (random() - 0.5);
           const z = claim.cell.row * PLOT_SIZE + 15 + Math.floor(i / 3) * 4.5;
-          this.setMatrix(this.tables, tableIndex, x, z, 0);
-          this.setMatrix(this.tableLegs, tableIndex, x, z, 0);
+          this.writer.setMatrix(this.tables, tableIndex, x, z, 0);
+          this.writer.setMatrix(this.tableLegs, tableIndex, x, z, 0);
           if (i % 2 === 0 && parasolIndex < MAX_PARASOLS) {
-            this.setColoredMatrix(
+            this.writer.setColoredMatrix(
               this.parasols,
               parasolIndex++,
               x,
@@ -141,7 +134,8 @@ export class StreetLife {
 
       if (parksOpen && PARK_AMENITIES.has(claim.amenity) && visitorIndex < MAX_VISITORS) {
         const random = randomFor(claim, "park-visitors");
-        const count = Math.min(10, 1 + Math.round(this.activity.busyRatio * 7));
+        // busyRatio is already clamped to 0..1, so this never exceeds 8.
+        const count = 1 + Math.round(this.activity.busyRatio * 7);
         for (let i = 0; i < count && visitorIndex < MAX_VISITORS; i++) {
           const x = claim.cell.col * PLOT_SIZE + (random() - 0.5) * 30;
           const z = claim.cell.row * PLOT_SIZE + (random() - 0.5) * 30;
@@ -163,25 +157,7 @@ export class StreetLife {
   private setVisitor(index: number, x: number, z: number, paletteIndex: number) {
     const colors = ["#3d7182", "#d37b38", "#7a5d8c", "#547849", "#b84949"];
     const safeX = railSafeX(x);
-    this.setColoredMatrix(this.visitors, index, safeX, z, 0, colors[Math.abs(paletteIndex) % colors.length]);
-    this.setMatrix(this.heads, index, safeX, z, 0);
-  }
-
-  private setMatrix(mesh: THREE.InstancedMesh, index: number, x: number, z: number, angle: number) {
-    this.rotation.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, angle);
-    this.matrix.compose(this.position.set(x, 0, z), this.rotation, this.scale);
-    mesh.setMatrixAt(index, this.matrix);
-  }
-
-  private setColoredMatrix(
-    mesh: THREE.InstancedMesh,
-    index: number,
-    x: number,
-    z: number,
-    angle: number,
-    color: string,
-  ) {
-    this.setMatrix(mesh, index, x, z, angle);
-    mesh.setColorAt(index, this.color.set(color));
+    this.writer.setColoredMatrix(this.visitors, index, safeX, z, 0, colors[Math.abs(paletteIndex) % colors.length]);
+    this.writer.setMatrix(this.heads, index, safeX, z, 0);
   }
 }

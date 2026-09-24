@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createWorker,
+  isOutside,
   LEAVE_DELAY_STEP,
   PAUSE_S,
   SAUNTER_SPEED,
@@ -179,20 +180,43 @@ describe("stepWorker", () => {
       expect(distanceToNew).toBeLessThan(2);
     });
 
-    it("walks the gate leg faster on the way back than on the way out", () => {
-      expect(WALK_SPEED).toBeGreaterThan(SAUNTER_SPEED);
+    it("walks the gate leg at WALK_SPEED, faster than the SAUNTER_SPEED leaving leg", () => {
+      const worker: Worker = {
+        ...createWorker(door),
+        mode: "returning",
+        viaGate: true,
+        x: gate.x - 5,
+        z: gate.z,
+        pause: 0,
+      };
+      const stepped = stepWorker(worker, DT, true, door, route, gate, destination, 0);
+      const distance = Math.hypot(stepped.x - worker.x, stepped.z - worker.z);
+      expect(distance).toBeCloseTo(WALK_SPEED * DT);
     });
 
-    it("falls back to walking in, not a crash, if the destination disappears past the gate", () => {
+    it("routes back through the gate, not straight through fences, if the destination disappears past the gate", () => {
       // The city plan recomputes destinations whenever ranks shift; a lot
       // already through the gate could in theory lose its target on the same
-      // tick another session starts or stops.
+      // tick another session starts or stops. It must walk back to the gate
+      // before heading in, not cut straight across whatever lies between.
       const worker: Worker = { ...createWorker(door), mode: "leaving", viaGate: false, pause: 0 };
+      let stepped = stepWorker(worker, DT, false, door, route, gate, null, 0);
+      expect(stepped.mode).toBe("returning");
+      expect(isOutside(stepped)).toBe(true);
+      stepped = run(stepped, 120, false, null);
+      expect(stepped.mode).toBe("inside");
+      expect([stepped.x, stepped.z]).toEqual([door.x, door.z]);
+    });
+
+    it("goes straight in, not out to a gate it hasn't reached, if the destination disappears still on the yard", () => {
+      // Still walking toward the gate (viaGate true): it's on the yard side
+      // already, so there is no gate leg left worth taking before going in.
+      const worker: Worker = { ...createWorker(door), mode: "leaving", viaGate: true, pause: 0 };
       const stepped = stepWorker(worker, DT, false, door, route, gate, null, 0);
       expect(stepped.mode).toBe("in");
     });
 
-    it("falls back to walking in, not a crash, if the destination disappears while lingering", () => {
+    it("routes back through the gate, not straight through fences, if the destination disappears while lingering", () => {
       const worker: Worker = {
         ...createWorker(door),
         mode: "leisure",
@@ -201,8 +225,41 @@ describe("stepWorker", () => {
         target: 1,
         pause: 0,
       };
-      const stepped = stepWorker(worker, DT, false, door, route, gate, null, 0);
-      expect(stepped.mode).toBe("in");
+      let stepped = stepWorker(worker, DT, false, door, route, gate, null, 0);
+      expect(stepped.mode).toBe("returning");
+      expect(isOutside(stepped)).toBe(true);
+      stepped = run(stepped, 120, false, null);
+      expect(stepped.mode).toBe("inside");
+      expect([stepped.x, stepped.z]).toEqual([door.x, door.z]);
+    });
+
+    it("keeps viaGate matching the worker's actual side of the gate across busy/idle flips, still on the yard", () => {
+      let worker: Worker = { ...createWorker(door), mode: "leaving", viaGate: true, pause: 0 };
+      worker = stepWorker(worker, DT, true, door, route, gate, destination, 0);
+      expect(worker.mode).toBe("returning");
+      expect(isOutside(worker)).toBe(false);
+
+      worker = stepWorker(worker, DT, false, door, route, gate, destination, 0);
+      expect(worker.mode).toBe("leaving");
+      expect(isOutside(worker)).toBe(false);
+    });
+
+    it("keeps viaGate matching the worker's actual side of the gate across busy/idle flips, still outside", () => {
+      let worker: Worker = {
+        ...createWorker(door),
+        mode: "leaving",
+        viaGate: false,
+        x: gate.x + 5,
+        z: gate.z,
+        pause: 0,
+      };
+      worker = stepWorker(worker, DT, true, door, route, gate, destination, 0);
+      expect(worker.mode).toBe("returning");
+      expect(isOutside(worker)).toBe(true);
+
+      worker = stepWorker(worker, DT, false, door, route, gate, destination, 0);
+      expect(worker.mode).toBe("leaving");
+      expect(isOutside(worker)).toBe(true);
     });
 
     // A fresh lot starts every worker inside. If the session is already idle
@@ -219,7 +276,7 @@ describe("stepWorker", () => {
       expect(worker.mode).toBe("inside");
     });
 
-    it("keeps the old behavior exactly when there is no destination", () => {
+    it("behaves exactly like the no-destination fallback when there is no destination", () => {
       let worker = run(createWorker(door), 5 / WALK_SPEED + 0.2, true, null);
       worker = run(worker, 1, false, null);
       expect(worker.mode).toBe("in");

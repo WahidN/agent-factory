@@ -10,7 +10,7 @@
 // A worker that is inside while idle also leaves, as long as it has a
 // destination; otherwise a lot that starts idle (a snapshot, an LOD rebuild)
 // never sends anyone to the park.
-// Without a destination the old, simpler loop still applies: idle sends a
+// Without a destination the simpler loop still applies: idle sends a
 // working/out worker straight to "in", back to the door, then inside.
 
 export type Point = { x: number; z: number };
@@ -69,7 +69,7 @@ function leisureRoute(destination: Point): [Point, Point] {
 }
 
 // A working/out worker going idle: to its leisure destination if it has one
-// (staggered by `index`), otherwise the old fallback, straight back to the door.
+// (staggered by `index`), otherwise the fallback, straight back to the door.
 function startLeaving(worker: Worker, destination: Point | null, index: number): Worker {
   if (!destination) return { ...worker, mode: "in" };
   return { ...worker, mode: "leaving", viaGate: true, pause: index * LEAVE_DELAY_STEP };
@@ -116,8 +116,14 @@ export function stepWorker(
 
     // Walks out through the gate, then on to the destination.
     case "leaving": {
-      if (busy) return { ...worker, mode: "returning", viaGate: true };
-      if (!worker.viaGate && !destination) return { ...worker, mode: "in" };
+      if (busy) return { ...worker, mode: "returning", viaGate: !worker.viaGate };
+      if (!destination) {
+        // Still on the yard side: no gate leg left worth taking, go straight in.
+        if (worker.viaGate) return { ...worker, mode: "in" };
+        // Past the gate: head back the way it came instead of cutting
+        // straight to the door through whatever stands between.
+        return { ...worker, mode: "returning", viaGate: true };
+      }
       if (worker.pause > 0) return { ...worker, pause: Math.max(0, worker.pause - dt) };
       const to = worker.viaGate ? gate : destination!;
       const { worker: moved, arrived } = walk(worker, to, dt, SAUNTER_SPEED);
@@ -127,22 +133,33 @@ export function stepWorker(
     }
 
     case "leisure": {
-      if (busy) return { ...worker, mode: "returning", viaGate: true };
-      if (!destination) return { ...worker, mode: "in" };
+      // Also routes back through the gate rather than jumping straight in,
+      // whether it is busy again or simply has nowhere left to linger.
+      if (busy || !destination) return { ...worker, mode: "returning", viaGate: true };
       if (worker.pause > 0) return { ...worker, pause: Math.max(0, worker.pause - dt) };
       const to = leisureRoute(destination)[worker.target];
       const { worker: moved, arrived } = walk(worker, to, dt, SAUNTER_SPEED);
       return arrived ? { ...moved, target: worker.target === 0 ? 1 : 0, pause: PAUSE_S } : moved;
     }
 
-    // Walks back through the gate, then on to its job route.
+    // Walks back through the gate, then on to its job route, or (without a
+    // destination any more) on through to the door.
     case "returning": {
-      if (!busy) return { ...worker, mode: "leaving", viaGate: true };
-      const to = worker.viaGate ? gate : route[0];
-      const { worker: moved, arrived } = walk(worker, to, dt);
-      if (!arrived) return moved;
-      if (worker.viaGate) return { ...moved, viaGate: false };
-      return { ...moved, mode: "working", target: 1, pause: PAUSE_S };
+      if (busy) {
+        const to = worker.viaGate ? gate : route[0];
+        const { worker: moved, arrived } = walk(worker, to, dt);
+        if (!arrived) return moved;
+        if (worker.viaGate) return { ...moved, viaGate: false };
+        return { ...moved, mode: "working", target: 1, pause: PAUSE_S };
+      }
+      if (!destination) {
+        const to = worker.viaGate ? gate : door;
+        const { worker: moved, arrived } = walk(worker, to, dt, SAUNTER_SPEED);
+        if (!arrived) return moved;
+        if (worker.viaGate) return { ...moved, viaGate: false };
+        return { ...moved, mode: "in" };
+      }
+      return { ...worker, mode: "leaving", viaGate: !worker.viaGate };
     }
 
     case "in": {

@@ -22,7 +22,7 @@ import { CITY_LANDMARKS } from "./landmarks-city.ts";
 import { bridgeArch, gladiolaArch, railBridge, RIVER_LANDMARKS } from "./landmarks-river.ts";
 import { COLORS, MATERIALS, TEXTURES, repeatUv, standard } from "./palette.ts";
 import { parkBounds, parkHalfExtent } from "./park-layout.ts";
-import { plotCell, PLOT_SIZE } from "./plots.ts";
+import { plotCell, PLOT_SIZE, ROAD_WIDTH } from "./plots.ts";
 import { appendRailCorridor } from "./rail-corridor.ts";
 import { BAKED_MATERIAL, StaticBuilder, type Vec3 } from "./static-builder.ts";
 import { appendTerrainRelief } from "./terrain.ts";
@@ -71,7 +71,6 @@ class OffsetBuilder extends StaticBuilder {
   }
 }
 
-export const ROAD_WIDTH = 10;
 export const YARD_HALF = 20; // the fenced yard is 40 x 40
 const SIDEWALK = 2;
 const ROAD_DASH_REPEAT = 7.5; // divides a 60 unit cell edge evenly

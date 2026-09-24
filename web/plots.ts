@@ -13,6 +13,7 @@
 import { indexForRank } from "./city-plan.ts";
 
 export const PLOT_SIZE = 60;
+export const ROAD_WIDTH = 10;
 
 export type PlotSession = { id: string; user: string };
 

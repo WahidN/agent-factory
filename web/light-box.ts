@@ -70,7 +70,8 @@ export class LightBox {
 
     this.pickables = [front, housing];
 
-    // Draw the fallback immediately, so the box is never blank.
+    // Draws once with no project yet, so the box shows its background
+    // instead of nothing until update() runs.
     this.draw();
   }
 

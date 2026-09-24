@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ACCENT_COUNT,
   accentIndexFor,
-  districtBounds,
   fitZoom,
   forkliftPose,
   MIN_ZOOM,
@@ -13,7 +12,7 @@ import {
   wallTintIndexFor,
 } from "../park-layout.ts";
 import { claimedUpTo } from "../city-plan.ts";
-import { assignPlots, PLOT_SIZE, plotCell } from "../plots.ts";
+import { PLOT_SIZE, plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
   it("gives the same accent for the same project", () => {
@@ -86,43 +85,6 @@ describe("parkBounds", () => {
       expect(cell.row).toBeGreaterThanOrEqual(bounds.minRow);
       expect(cell.row).toBeLessThanOrEqual(bounds.maxRow);
     }
-  });
-});
-
-describe("districtBounds", () => {
-  // The compact layout no longer reserves a private area per user (that is
-  // what made the park too big to fit), so two users' boxes may overlap.
-  // What districtBounds still owes fase 4b is one tight box per user, built
-  // from exactly that user's own cells.
-  it("gives each user a tight box around their own cells", () => {
-    const sessions = [
-      { id: "s1", user: "dennis" },
-      { id: "s2", user: "dennis" },
-      { id: "s3", user: "wahid" },
-    ];
-    const assignment = assignPlots(sessions);
-    const byUser = new Map<string, number[]>();
-    for (const { id, user } of sessions) {
-      const indexes = byUser.get(user) ?? [];
-      indexes.push(assignment.get(id)!);
-      byUser.set(user, indexes);
-    }
-
-    const bounds = districtBounds(byUser);
-    expect(bounds).toHaveLength(2);
-    for (const { user, ...box } of bounds) {
-      expect(box).toEqual(parkBounds(byUser.get(user)!));
-    }
-  });
-
-  it("does not fold in the claimed cells the whole park has passed", () => {
-    // A user with a single, early rank sits right next to the Goffert; a box
-    // that folded in claims (parkBounds's includeClaims) would grow to cover
-    // it too, even though it is not this user's cell.
-    const { user, ...bounds } = districtBounds(new Map([["dennis", [1]]]))[0];
-    const cell = plotCell(1);
-    expect(user).toBe("dennis");
-    expect(bounds).toEqual({ minCol: cell.col, maxCol: cell.col, minRow: cell.row, maxRow: cell.row });
   });
 });
 

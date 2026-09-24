@@ -4,7 +4,7 @@
 import type { PlainMessage, ServerMessage } from "../server/types.ts";
 
 // Unwraps a batch into the plain messages it carries. A lone message becomes
-// a list of one, so it is handled exactly as it always was.
+// a list of one, so callers handle every message the same way.
 export function flattenBatch(message: ServerMessage): PlainMessage[] {
   return message.type === "batch" ? message.messages : [message];
 }

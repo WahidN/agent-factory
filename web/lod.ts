@@ -16,7 +16,7 @@ export const DEFAULT_DETAIL_CAP = 40;
 // A lot that already has detail is ranked as if it were 15% closer. Without
 // this, two lots within a pixel of each other swap places on every camera
 // nudge, and a lot is torn down and rebuilt for nothing.
-export const DETAIL_STICKINESS = 0.85;
+const DETAIL_STICKINESS = 0.85;
 
 // How far the camera has to move over the ground before the set is worth
 // recomputing. Well under half a plot (60 units), so detail follows the view

@@ -15,7 +15,7 @@ import { indexForRank } from "./city-plan.ts";
 export const PLOT_SIZE = 60;
 export const ROAD_WIDTH = 10;
 
-export type PlotSession = { id: string; user: string };
+type PlotSession = { id: string; user: string };
 
 // FNV-ish string hash: cheap, and different enough that two unrelated ids or
 // usernames very rarely land in the same bucket.
@@ -101,9 +101,9 @@ export class PlotAllocator {
 
 // Indexes walk a Hilbert curve, so a run of consecutive indexes lands in a
 // compact blob rather than a line. That is what puts one user's sessions next
-// to each other: assignPlots hands each user a contiguous run, and on the
-// square-shell order this used to follow, a run near the edge of the park
-// stretched into a diagonal streak thirteen cells wide.
+// to each other: assignPlots hands each user a contiguous run, and the curve
+// keeps that run compact near the edge of the park instead of stretching it
+// into a diagonal streak.
 //
 // The curve is a fixed order 6 (64 by 64, 4096 cells) so that the cell for an
 // index never depends on how many sessions are on the park. Beyond 4096 lots

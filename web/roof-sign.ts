@@ -16,22 +16,17 @@ const FONT = new FontLoader().parse(fontData as unknown as Parameters<FontLoader
 // The alphabet is small and shared by every lot, so a letter's geometry is
 // built once and reused, never disposed by an individual sign.
 const letterGeometryCache = new Map<string, THREE.BufferGeometry>();
-function letterGeometry(char: string): THREE.BufferGeometry | undefined {
+function letterGeometry(char: string): THREE.BufferGeometry {
   let geometry = letterGeometryCache.get(char);
   if (geometry) return geometry;
-  const built = new TextGeometry(char, {
+  geometry = new TextGeometry(char, {
     font: FONT,
     size: NOMINAL,
     depth: DEPTH,
     bevelEnabled: false,
     curveSegments: 4,
   });
-  built.computeBoundingBox();
-  if (!built.boundingBox) {
-    built.dispose(); // a glyph the font does not carry
-    return undefined;
-  }
-  geometry = built;
+  geometry.computeBoundingBox();
   letterGeometryCache.set(char, geometry);
   return geometry;
 }
@@ -94,8 +89,9 @@ export class RoofSign {
         continue;
       }
       const geometry = letterGeometry(char);
-      const box = geometry?.boundingBox;
-      if (!geometry || !box) continue; // a glyph the font does not carry
+      // computeBoundingBox() above always sets one; this is TS narrowing
+      // Box3 | null, not a real empty case.
+      const box = geometry.boundingBox!;
       placed.push({ geometry, left: cursor - box.min.x }); // drop the side bearing
       cursor += box.max.x - box.min.x + TRACKING;
       width = cursor - TRACKING; // right edge of the last letter placed

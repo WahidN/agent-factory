@@ -26,9 +26,7 @@ export type Bounds = { minCol: number; maxCol: number; minRow: number; maxRow: n
 // Tight bounds of the cells in use, plus, when `includeClaims` is set, the
 // claimed cells the curve passes on its way to the highest rank. Those cells
 // are built too, so a landmark on the edge would otherwise fall outside the
-// camera and the shadow map. Only `Park.extent()` wants that: a per-user
-// district box (see `districtBounds`) must stay a tight box around that
-// user's own cells. Falls back to the first rank.
+// camera and the shadow map. Falls back to the first rank.
 export function parkBounds(ranks: number[], includeClaims = false): Bounds {
   const used = ranks.length ? ranks : [0];
   const cells = [
@@ -45,7 +43,7 @@ export function parkBounds(ranks: number[], includeClaims = false): Bounds {
 
 // Half the size of the park, with a margin of one and a half plots so the
 // outer roads and verges are not cut off.
-export const PARK_MARGIN_PLOTS = 1.5;
+const PARK_MARGIN_PLOTS = 1.5;
 
 export function parkHalfExtent(bounds: Bounds, plotSize: number): number {
   const span = Math.max(bounds.maxCol - bounds.minCol, bounds.maxRow - bounds.minRow);
@@ -62,21 +60,11 @@ export function fitZoom(halfExtent: number, viewHeight: number, viewWidth: numbe
 // project is designed for still fits: see the test next to this file, which
 // pins 150 and 300 lots against this number.
 //
-// It was 0.08 while sessions owned every cell. The city plan claims about one
-// cell in seven, so 300 sessions now span 360 curve indexes, which is where the
-// Hilbert curve steps into a wider quadrant: 32 columns across instead of 24.
-// The park got genuinely bigger, so the floor follows it down.
+// The city plan claims about one cell in seven, so 300 sessions span 360
+// curve indexes, past where the Hilbert curve steps into a wider quadrant (32
+// columns across instead of 24). The floor has to fit that wider park.
 export const MIN_ZOOM = 0.06;
 export const MAX_ZOOM = 4;
-
-// One tight box per user district, plus the whole park's own box (parkBounds
-// above already gives that, fed the union of every user's indexes). Meant
-// for fase 4b: per-district LOD or culling instead of per-lot.
-export type DistrictBounds = Bounds & { user: string };
-
-export function districtBounds(indexesByUser: Map<string, number[]>): DistrictBounds[] {
-  return [...indexesByUser].map(([user, indexes]) => ({ user, ...parkBounds(indexes) }));
-}
 
 export const MAX_MOVING_CARS = 6;
 

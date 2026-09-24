@@ -116,17 +116,13 @@ export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () 
     ].join("\n");
   }
 
-  const interval = setInterval(render, REFRESH_MS);
+  setInterval(render, REFRESH_MS);
   render();
 
   return {
     recordFrame(ms: number) {
       frameTimes.push(ms);
       renderer.info.reset();
-    },
-    dispose() {
-      clearInterval(interval);
-      el.remove();
     },
   };
 }

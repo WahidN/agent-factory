@@ -112,7 +112,8 @@ export function decorateDistrictCell(builder: StaticBuilder, amenity: FillerAmen
   // silhouettes than another building facade. The three canopies remain low
   // enough to keep a sports field or meadow visually open.
   builder.box(hedge, [-17.1, 0.55, 0], [0.7, 1.1, 34]);
-  builder.box(gravel, [14.8, 0.04, 0], [2.4, 0.08, 31]);
+  // Just below a sports field's 0.08 surface, which it overlaps at x 13.6-14.
+  builder.box(gravel, [14.8, 0.035, 0], [2.4, 0.07, 31]);
   for (const z of [-10 + variant, 0 + variant, 10 + variant]) {
     builder.cylinder(MATERIALS.trunk, [10.5, 0.85, z], [0.18, 1.7, 0.18]);
     builder.cylinder(orchard, [10.5, 2.35, z], [1.45, 1.5, 1.45]);

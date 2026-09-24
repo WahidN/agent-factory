@@ -139,8 +139,13 @@ describe("parseRelayMessage", () => {
 });
 
 describe("PROTOCOL", () => {
-  it("is bumped to 2 for the flat wire format", () => {
-    expect(PROTOCOL).toBe(2);
+  it("is bumped to 3 for the token total", () => {
+    expect(PROTOCOL).toBe(3);
+  });
+
+  it("still accepts a reporter on 2, which sends no token total", () => {
+    expect(MIN_PROTOCOL).toBe(2);
+    expect(protocolSupported(2)).toBe(true);
   });
 });
 

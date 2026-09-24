@@ -32,10 +32,10 @@ function setup() {
 }
 
 describe("session state shape", () => {
-  it("has exactly the seven wire fields", () => {
+  it("has exactly the seven wire fields plus the machine's token total", () => {
     const { latest } = setup();
     expect(Object.keys(latest()).sort()).toEqual(
-      ["id", "model", "project", "startedAt", "status", "subagents", "user"].sort(),
+      ["id", "machineTokens", "model", "project", "startedAt", "status", "subagents", "user"].sort(),
     );
   });
 
@@ -230,5 +230,34 @@ describe("change notices", () => {
     tracker.tick(now.value);
     tracker.tick(now.value);
     expect(messages.length).toBe(before + 1);
+  });
+});
+
+describe("machine tokens", () => {
+  it("starts at 0 on a new session", () => {
+    const { latest } = setup();
+    expect(latest().machineTokens).toBe(0);
+  });
+
+  it("puts the total on every session", () => {
+    const { tracker, now } = setup();
+    tracker.upsertSession({ ...file, sessionId: "s2" }, now.value);
+    tracker.setMachineTokens(600, now.value);
+    expect(tracker.snapshot(now.value).map((s) => s.machineTokens)).toEqual([600, 600]);
+  });
+
+  it("sends every session once on a change, and nothing for the same number", () => {
+    const { tracker, messages, now } = setup();
+    tracker.upsertSession({ ...file, sessionId: "s2" }, now.value);
+    messages.length = 0;
+
+    tracker.setMachineTokens(600, now.value);
+    const updates = messages.filter((m) => m.type === "session-update");
+    expect(updates.map((m) => m.type === "session-update" && m.session.id).sort()).toEqual(["s1", "s2"]);
+    expect(updates.every((m) => m.type === "session-update" && m.session.machineTokens === 600)).toBe(true);
+
+    messages.length = 0;
+    tracker.setMachineTokens(600, now.value);
+    expect(messages).toEqual([]);
   });
 });

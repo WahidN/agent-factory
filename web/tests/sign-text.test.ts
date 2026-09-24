@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avatarSlug, initialsFor, modelLabel, truncate } from "../sign-text.ts";
+import { avatarSlug, initialsFor, modelLabel, shortTokens, truncate } from "../sign-text.ts";
 
 describe("modelLabel", () => {
   it("labels dated ids by dropping the date suffix", () => {
@@ -85,5 +85,25 @@ describe("truncate", () => {
 
   it("returns empty input unchanged", () => {
     expect(truncate("", 5, measure)).toBe("");
+  });
+});
+
+describe("shortTokens", () => {
+  it("keeps small counts as plain digits", () => {
+    expect(shortTokens(0)).toBe("0");
+    expect(shortTokens(950)).toBe("950");
+  });
+
+  it("uses k, M and B with one decimal below 10 of a unit", () => {
+    expect(shortTokens(12_345)).toBe("12k");
+    expect(shortTokens(2_500_000)).toBe("2.5M");
+    expect(shortTokens(408_400_000)).toBe("408M");
+    expect(shortTokens(4_430_000_000)).toBe("4.4B");
+    expect(shortTokens(25e9)).toBe("25B");
+  });
+
+  it("drops a trailing .0 and rounds up into the next unit", () => {
+    expect(shortTokens(5e9)).toBe("5B");
+    expect(shortTokens(999_950)).toBe("1M");
   });
 });

@@ -87,7 +87,7 @@ launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
 | `HUB must start with ws:// or wss://` in `reporter.err.log` | Typefout in het adres | `scripts/install.sh` opnieuw draaien |
 | Je machine verschijnt nooit | Verkeerde centrale, of je zit op een ander netwerk (gastennetwerk, VPN) | Kijk in `reporter.out.log` of er `relay: hub gone (...)` staat, en controleer op de centrale met `curl http://agentfactory.local:4317/metrics` of je machinenaam in `machines` staat |
 | `relay: hub gone (1008 bad token)` bij jou, `refused <machine>: bad token` in het log van de centrale | Je token wijkt af van dat op de Pi | `scripts/install.sh` opnieuw draaien met het juiste token |
-| `relay: hub gone (1002 protocol 2-2 expected)` | Je Mac spreekt een andere protocolversie dan de centrale | Werk je checkout bij (zie hierboven); de centrale meldt `refused <machine>: protocol N` |
+| `relay: hub gone (1002 protocol 2-3 expected)` | Je Mac spreekt een andere protocolversie dan de centrale | Werk je checkout bij (zie hierboven); de centrale meldt `refused <machine>: protocol N` |
 
 ## Wat je ziet
 
@@ -102,7 +102,7 @@ launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
   </tr>
 </table>
 
-Elke sessie krijgt een eigen kavel met een hal, machines, een bord met de gebruiker en de modelnaam op het dak. Sessies in hetzelfde project delen een accentkleur. Subagents verschijnen als kleine loodsen op het erf, maximaal vier per kavel. Beweeg over een hal voor gebruiker, status, project en model.
+Elke sessie krijgt een eigen kavel met een hal, machines, een bord met de gebruiker en de modelnaam op het dak. Sessies in hetzelfde project delen een accentkleur. Subagents verschijnen als kleine loodsen op het erf, maximaal vier per kavel. Het erf begint leeg en vult zich met extra's naarmate het tokentotaal groeit. Beweeg over een hal voor gebruiker, status, project, model en dat totaal.
 
 Tussen de fabrieken ligt Nijmegen: de Stevenskerk, het Goffertstadion, Plein 1944, het Kronenburgerpark, Station Nijmegen, het Valkhof, de Waalkade met De Bastei en het Linku-kantoor aan de St. Canisiussingel. Over de Waal liggen de Waalbrug, de Spoorbrug en De Oversteek. Deze plekken staan vast; de fabrieken schuiven eromheen als er sessies bijkomen of verdwijnen. Elk uur wisselt de stad van thema: de Vierdaagse, een NEC-wedstrijddag of marktdag.
 
@@ -128,9 +128,32 @@ Het model komt uit het transcript. Een verse sessie begint daarom op Sonnet-form
 
 Links in het paneel filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
 
+### Token milestones
+
+Het erf begint leeg: alleen belijning, geen voertuigen. Het vult zich naarmate het tokentotaal van je Mac groeit, geteld vanaf het seizoensbegin op 16 september 2026. Elke rij tot en met je totaal staat op elk kavel van die machine. De gele knop rechtsboven opent de hele ladder, met per rij wat er nog te gaan is.
+
+![Een kavel op 5B tokens: fietsen, 3 auto's, vlaggenmast, koffiekar, vrachtwagen, sportauto met laadpalen, helikopter op een helipad, windmolen en een zeppelin boven de hal](docs/token-milestones.png)
+
+| Tokens | Extra op het erf |
+| --- | --- |
+| 10M | fietsenrek met 3 fietsen bij de personeelsdeur |
+| 25M | 1e geparkeerde auto |
+| 50M | 2e geparkeerde auto |
+| 100M | 3e geparkeerde auto, en een vlaggenmast met een vlag in de accentkleur bij de poort |
+| 250M | koffiekar en een picknicktafel langs het looppad |
+| 500M | de vrachtwagen bij het laaddok |
+| 750M | 2 laadpalen en een sportauto in de linkervoorhoek |
+| 1B | helipad met een helikopter op het hallendak |
+| 2.5B | windmolen aan het linkerhek, wieken draaien |
+| 5B | zeppelin in de accentkleur, getuid boven de hal |
+
+Wat telt: de reporter telt van elk assistant-bericht op of na 16 september 2026 00:00 UTC de input, output, cache write en cache read bij elkaar op, uit elk transcript onder `~/.claude/projects/`, subagents en afgeronde sessies inbegrepen, en telt elk bericht één keer. Oudere berichten tellen niet mee, dus elke machine begint op dezelfde dag op 0. Het tellen zelf is hetzelfde als PokeTokenBar en ccusage, alleen vanaf die datum. Cache reads zijn het grootste deel, en daarom loopt de ladder in de honderden miljoenen tot miljarden. Een nieuw seizoen is één datum in `server/usage-ledger.ts`.
+
+Het totaal staat op 0 tot de reporter elk transcript één keer gelezen heeft. Dat duurt een paar seconden per gigabyte, en het erf vult zich zodra dat klaar is. Een Mac op protocol 2 stuurt nog geen totaal; zijn kavels tonen dan geen tokenregel.
+
 ## Hoe het werkt
 
-**Wat over de lijn gaat.** Een reporter leest `~/.claude/sessions/` en tailt de transcripts in `~/.claude/projects/`. Per sessie stuurt hij precies zeven velden: `id`, `user`, `project`, `model`, `status`, `subagents` (een aantal) en `startedAt`, samen 121 tot 180 bytes. Toolnaam en tooldoel leest hij wel, want daaruit leidt hij `busy` af, maar die blijven op de Mac. Prompts, antwoorden en bestandsinhoud verlaten de machine nooit, en de server schrijft nergens onder `~/.claude/`. Zeven velden houdt het bericht klein genoeg voor een Pi met dertig Macs en maakt het simpel om na te gaan wat er gedeeld wordt.
+**Wat over de lijn gaat.** Een reporter leest `~/.claude/sessions/` en tailt de transcripts in `~/.claude/projects/`. Per sessie stuurt hij zeven velden: `id`, `user`, `project`, `model`, `status`, `subagents` (een aantal) en `startedAt`, samen 121 tot 180 bytes. Daar komt `machineTokens` bij, het seizoenstotaal van de machine. Toolnaam en tooldoel leest hij wel, want daaruit leidt hij `busy` af, maar die blijven op de Mac. Prompts, antwoorden en bestandsinhoud verlaten de machine nooit, en de server schrijft nergens onder `~/.claude/`. Zeven velden houdt het bericht klein genoeg voor een Pi met dertig Macs en maakt het simpel om na te gaan wat er gedeeld wordt.
 
 **Drie standen, één server.** `server/config.ts` kiest de stand bij het opstarten:
 

@@ -75,7 +75,7 @@ let nextSessionSeq = 0;
 
 // Builds one fake session. This is the only place the session shape is
 // assembled, so a wire change only needs to touch this function.
-function makeSession(rng: () => number, now: number, user: string): SessionState {
+function makeSession(rng: () => number, now: number, user: string, machineTokens: number): SessionState {
   const id = `s${nextSessionSeq++}`;
   const project = pick(rng, PROJECTS);
   const startedAt = now - Math.floor(randomBetween(rng, 0, 30 * 60_000));
@@ -88,12 +88,14 @@ function makeSession(rng: () => number, now: number, user: string): SessionState
     status: rng() < 0.6 ? "busy" : "idle",
     subagents: Math.floor(randomBetween(rng, 0, 4)),
     startedAt,
+    machineTokens,
   };
 }
 
 type Spoke = {
   machine: string;
   user: string;
+  machineTokens: number;
   rng: () => number;
   relay: Relay | null;
   sessions: Map<string, SessionState>;
@@ -121,7 +123,7 @@ function tick(spoke: Spoke, now: number) {
   const roll = spoke.rng();
 
   if (roll < 0.1 && spoke.sessions.size < SESSIONS_PER_SPOKE * 2) {
-    const session = makeSession(spoke.rng, now, spoke.user);
+    const session = makeSession(spoke.rng, now, spoke.user, spoke.machineTokens);
     spoke.sessions.set(session.id, session);
     spoke.relay?.send({ type: "session-update", session } satisfies ServerMessage);
     return;
@@ -157,13 +159,16 @@ function makeSpoke(index: number): Spoke {
   const machine = `fake-${String(index + 1).padStart(2, "0")}`;
   const rng = makeRng(SEED ? `${SEED}:${machine}` : undefined);
   const user = pick(rng, USERS);
+  // Somewhere on the ladder, fixed per machine, so yards differ but do not
+  // rebuild on every tick.
+  const machineTokens = Math.floor(randomBetween(rng, 0, 6e9));
   const now = Date.now();
   const sessions = new Map<string, SessionState>();
   for (let i = 0; i < SESSIONS_PER_SPOKE; i++) {
-    const session = makeSession(rng, now, user);
+    const session = makeSession(rng, now, user, machineTokens);
     sessions.set(session.id, session);
   }
-  return { machine, user, rng, relay: null, sessions, connected: false };
+  return { machine, user, machineTokens, rng, relay: null, sessions, connected: false };
 }
 
 console.log(

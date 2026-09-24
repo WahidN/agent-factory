@@ -13,6 +13,7 @@ import {
   type Filter,
 } from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
+import { createLadderDialog, type UserTotal } from "./ladder-dialog.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { LandmarkLabels } from "./landmark-labels.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
@@ -53,6 +54,11 @@ const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
 const pill = document.querySelector<HTMLElement>("#pill")!;
 const hint = document.querySelector<HTMLElement>("#hint")!;
 const showcase = showcaseRequested(location.search);
+const ladder = createLadderDialog(
+  document.querySelector<HTMLElement>("#ladder-button")!,
+  document.querySelector<HTMLDialogElement>("#ladder")!,
+  document.querySelector<HTMLElement>("#ladder-body")!,
+);
 
 // Grab the renderer scene.ts is about to build, only when asked, so a normal
 // visit never touches this path.
@@ -170,6 +176,9 @@ function handle(message: ServerMessage) {
       fitNow = true;
     }
   }
+  // The ladder reads from `sessions`, not from `lots`: past the detail cap a
+  // session has no Lot, and its user would drop out of the dialog.
+  ladder.setTotals(userTotals(sessions.values()));
 
   if (fitNow)
     refocus(true); // zoom to fit once, after the first snapshot's lots all exist
@@ -381,6 +390,20 @@ function syncTraffic() {
       cars: movingCarCount(session.status === "busy", session.subagents),
       truck: session.status === "busy",
     }));
+}
+
+// ---------- Token milestones ----------
+
+// One entry per user: the total is the machine's, and every session that user
+// runs on it carries the same number. Two machines under one name keep the
+// higher total, so a machine still on protocol 2, which sends nothing, does
+// not reset the row to 0 on every update it sends.
+function userTotals(sessions: Iterable<SessionState>): UserTotal[] {
+  const totals = new Map<string, number>();
+  for (const session of sessions) {
+    totals.set(session.user, Math.max(totals.get(session.user) ?? 0, session.machineTokens ?? 0));
+  }
+  return [...totals].map(([user, tokens]) => ({ user, tokens })).sort((a, b) => a.user.localeCompare(b.user));
 }
 
 // ---------- Filter panel ----------

@@ -1,8 +1,9 @@
 import * as THREE from "three";
-import type { AgentState } from "../server/types.ts";
+import type { SessionState } from "../server/types.ts";
+import { shortTokens } from "./sign-text.ts";
 
 // Anything hoverable puts itself in `mesh.userData.hover`.
-type Hoverable = { state: AgentState; gone: boolean };
+type Hoverable = { state: SessionState; gone: boolean };
 
 // Shows details for the hall or warehouse under the pointer.
 export function createTooltip(
@@ -67,8 +68,10 @@ export function createTooltip(
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
-    const { user, project, status, model } = hovered.state;
-    const key = [user, project, status, model].join("\n");
+    const { user, project, status, model, machineTokens } = hovered.state;
+    // A machine still on protocol 2 sends no total, and then shows no token line.
+    const tokens = machineTokens === undefined ? "" : `${shortTokens(machineTokens)} tokens`;
+    const key = [user, project, status, model, tokens].join("\n");
     if (key !== rendered) {
       rendered = key;
       element.replaceChildren(
@@ -76,6 +79,7 @@ export function createTooltip(
         line(status, status),
         line("project", project),
         ...(model ? [line("model", model)] : []), // no line until the transcript names a model
+        ...(tokens ? [line("tokens", tokens)] : []),
       );
     }
 

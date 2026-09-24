@@ -8,7 +8,9 @@ import { Activity } from "./activity.ts";
 import { destinationFor } from "./leisure.ts";
 import { factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "./factory-style.ts";
 import { LightBox } from "./light-box.ts";
-import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
+import { CoolingTower, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
+import { milestoneIndex, parkedCarCount } from "./milestone-ladder.ts";
+import { type Animated, buildMilestones } from "./milestones.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
 import {
   accentFor,
@@ -207,6 +209,10 @@ export class Lot {
   private roofSign!: RoofSign;
   private builtModel!: string;
   private hallPickables: THREE.Mesh[] = [];
+  // Extras for the machine's token total. Rebuilt with the structure when the
+  // total crosses a ladder row; the moving ones are ticked.
+  private builtMilestone = 0;
+  private extras: Animated[] = [];
   private busy = new Activity();
 
   private accent: THREE.Color;
@@ -272,13 +278,7 @@ export class Lot {
 
     this.buildStructure();
 
-    // The parked truck is the same on every tier. It shares the truck
-    // template's geometry, so it stays out of the rebuilt structure.
-    const parked = createTruck();
-    parked.position.set(-9, YARD_Y, 5.8);
-    parked.traverse((child) => (child.castShadow = child.receiveShadow = true));
-
-    this.body.add(parked, this.workers.mesh);
+    this.body.add(this.workers.mesh);
     this.body.position.y = settled ? 0 : -SINK_DEPTH;
     this.group.add(this.body);
     this.update(state, performance.now());
@@ -289,7 +289,11 @@ export class Lot {
     const tier = tierFor(state.model);
     // The roof letters show the model name, so a same-tier model swap
     // ("claude-opus-5" to "claude-opus-4-5") also needs a rebuild.
-    if (tier !== this.tier || state.model !== this.builtModel) {
+    if (
+      tier !== this.tier ||
+      state.model !== this.builtModel ||
+      milestoneIndex(state.machineTokens) !== this.builtMilestone
+    ) {
       this.tier = tier;
       this.disposeStructure();
       this.buildStructure();
@@ -368,6 +372,7 @@ export class Lot {
     this.machines.searchlight.tick(dt, busy);
     this.machines.cooling.tick(dt, busy, busy);
     this.workers.tick(dt, this.workerBusyFlags());
+    for (const extra of this.extras) extra.tick(dt);
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) {
       slot.warehouse.tick(dt, nowMs);
@@ -405,7 +410,13 @@ export class Lot {
     const forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
     const searchlight = new Searchlight(builder, [-17, 12], { tower: true, ...size.searchlight, aimAt: [-4, 2] });
     const cooling = new CoolingTower(builder, size.cooling.at, size.cooling.radius, size.cooling.height);
-    addParkedCars(builder, this.state.id);
+
+    this.builtMilestone = milestoneIndex(this.state.machineTokens);
+    addParkedCars(builder, this.state.id, parkedCarCount(this.builtMilestone));
+    this.extras = buildMilestones(builder, this.builtMilestone, {
+      accent: this.accentMaterial,
+      hall: hallShape(this.tier),
+    });
 
     const statics = builder.build();
     const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
@@ -416,7 +427,14 @@ export class Lot {
 
     this.machines = { stacks, forklift, searchlight, cooling };
     this.structure = new THREE.Group();
-    this.structure.add(statics, stacks.group, forklift.group, searchlight.group, cooling.group);
+    this.structure.add(
+      statics,
+      stacks.group,
+      forklift.group,
+      searchlight.group,
+      cooling.group,
+      ...this.extras.map((e) => e.group),
+    );
 
     // Yard sign, standing along the front fence facing +z. It spans x 3 to 19
     // on z 18.8 (depth 0.12): the wall sits at z 20 (0.3 thick, inner face

@@ -12,10 +12,15 @@ export type SessionFile = {
   startedAt: number;
 };
 
+// `usage` carries one assistant message's token total. `id` is the same for
+// every copy of that message, so a ledger can count it once.
 export type TranscriptEvent =
   | { kind: "tool_start"; id: string; name: string; target: string; at: number }
   | { kind: "tool_end"; id: string; at: number }
-  | { kind: "model"; model: string; at: number };
+  | { kind: "model"; model: string; at: number }
+  | { kind: "usage"; id: string; total: number; at: number };
+
+export type UsageLine = { id: string; total: number; at: number };
 
 // Placeholder Claude Code writes on messages it made up itself.
 const SYNTHETIC_MODEL = "<synthetic>";
@@ -63,6 +68,10 @@ export function parseTranscriptChunk(text: string): { entries: TranscriptEvent[]
     if (data.type === "assistant" && typeof model === "string" && model && model !== SYNTHETIC_MODEL) {
       entries.push({ kind: "model", model, at });
     }
+    if (data.type === "assistant") {
+      const usage = usageOf(data);
+      if (usage) entries.push({ kind: "usage", ...usage, at });
+    }
 
     for (const block of content) {
       if (data.type === "assistant" && block?.type === "tool_use" && typeof block.id === "string") {
@@ -75,6 +84,37 @@ export function parseTranscriptChunk(text: string): { entries: TranscriptEvent[]
   }
 
   return { entries, remainder };
+}
+
+// One line's token usage, for scanning whole transcripts. The substring check
+// skips user lines and tool results before any JSON parse.
+export function parseUsageLine(line: string): UsageLine | null {
+  if (!line.includes('"usage"') || !line.includes('"assistant"')) return null;
+  const data = parseJson(line);
+  if (data?.type !== "assistant") return null;
+  const usage = usageOf(data);
+  if (!usage) return null;
+  const parsed = Date.parse(data.timestamp);
+  return { ...usage, at: Number.isFinite(parsed) ? parsed : 0 };
+}
+
+// Sum of the four usage fields, like PokeTokenBar and ccusage count them.
+// Streaming logs one message several times under the same message id and
+// request id; a line without either is keyed by its own uuid instead.
+function usageOf(data: any): { id: string; total: number } | null {
+  const usage = data.message?.usage;
+  if (!usage || typeof usage !== "object") return null;
+  const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
+  const total =
+    count(usage.input_tokens) +
+    count(usage.output_tokens) +
+    count(usage.cache_creation_input_tokens) +
+    count(usage.cache_read_input_tokens);
+  const str = (value: unknown) => (typeof value === "string" ? value : "");
+  const messageId = str(data.message.id);
+  const requestId = str(data.requestId);
+  const id = messageId || requestId ? `${messageId}|${requestId}` : str(data.uuid);
+  return id ? { id, total } : null;
 }
 
 // When reading from the middle of a file, the first line is usually cut off.

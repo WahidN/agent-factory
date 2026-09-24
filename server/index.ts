@@ -3,10 +3,11 @@
 // process, one port.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { watch, type FSWatcher } from "node:fs";
+import { createReadStream, watch, type Dirent, type FSWatcher } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { basename, extname, join, normalize, resolve, sep } from "node:path";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { WebSocket, WebSocketServer } from "ws";
 import { createBatcher } from "./batcher.ts";
@@ -14,6 +15,7 @@ import {
   dropPartialFirstLine,
   parseSessionFile,
   parseTranscriptChunk,
+  parseUsageLine,
   projectDirFor,
   type SessionFile,
   type TranscriptEvent,
@@ -26,6 +28,7 @@ import { createMetrics } from "./metrics.ts";
 import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
 import type { PlainMessage, ServerMessage } from "./types.ts";
+import { SEASON_START, UsageLedger } from "./usage-ledger.ts";
 
 const rootDir = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
@@ -108,6 +111,27 @@ const tracker = new SessionTracker((message) => {
 const relay = HUB_URL
   ? startRelay(HUB_URL, MACHINE, config.user, config.token, () => tracker.snapshot(Date.now()))
   : null;
+
+// Season tokens of this machine. Sessions report 0 until the scan at start
+// is done, then the total follows every new transcript line.
+const ledger = new UsageLedger(SEASON_START);
+let scanned = false;
+
+function publishTokens(now: number) {
+  if (scanned) tracker.setMachineTokens(ledger.total(), now);
+}
+
+// Usage events feed the ledger; everything else goes on to the tracker.
+function takeUsage(events: TranscriptEvent[], now: number): TranscriptEvent[] {
+  let changed = false;
+  const rest = events.filter((event) => {
+    if (event.kind !== "usage") return true;
+    if (ledger.add(event.id, event.total, event.at)) changed = true;
+    return false;
+  });
+  if (changed) publishTokens(now);
+  return rest;
+}
 
 // Browsers connect on /ws and get our sessions plus everything relayed to us.
 // Other machines connect on /relay, central mode only.
@@ -273,6 +297,7 @@ async function readNewEventsNow(path: string): Promise<ReadResult> {
     tail = { offset: start, remainder: Buffer.alloc(0) };
     tails.set(path, tail);
     fromMiddle = start > 0;
+    if (fromMiddle) void scanFile(path); // the skipped part still counts toward the token total
   }
   if (info.size === tail.offset) return { events: [], mtimeMs: info.mtimeMs };
 
@@ -376,7 +401,9 @@ async function syncTranscript(sessionId: string) {
   const watched = watchedSessions.get(sessionId);
   if (!watched?.projectDir) return;
   const result = await readNewEvents(join(watched.projectDir, `${sessionId}.jsonl`));
-  if (result) tracker.applySessionEvents(sessionId, result.events, result.mtimeMs, Date.now());
+  if (!result) return;
+  const now = Date.now();
+  tracker.applySessionEvents(sessionId, takeUsage(result.events, now), result.mtimeMs, now);
 }
 
 async function syncSubagent(sessionId: string, fileName: string) {
@@ -393,7 +420,52 @@ async function syncSubagent(sessionId: string, fileName: string) {
 
   const result = await readNewEvents(path);
   if (!result) return;
-  tracker.applySubagentEvents(sessionId, agentId, result.events, result.mtimeMs, now);
+  tracker.applySubagentEvents(sessionId, agentId, takeUsage(result.events, now), result.mtimeMs, now);
+}
+
+// ---------- Token usage ----------
+
+// One pass over every transcript on disk, streamed so sockets and file events
+// keep flowing. The total goes out once at the end, so every lot rebuilds once.
+async function scanUsage() {
+  const started = Date.now();
+  let files = 0;
+  for await (const path of jsonlFiles(PROJECTS_DIR)) {
+    await scanFile(path);
+    files++;
+  }
+  scanned = true;
+  publishTokens(Date.now());
+  console.log(
+    `${new Date().toLocaleTimeString()}  tokens   ${ledger.total()} in ${files} transcripts, ${Date.now() - started} ms`,
+  );
+}
+
+async function* jsonlFiles(dir: string): AsyncGenerator<string> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [] as Dirent[]);
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) yield* jsonlFiles(path);
+    else if (entry.name.endsWith(".jsonl")) yield path;
+  }
+}
+
+// Reads a whole transcript for its usage lines. Copies of a message the tail
+// also reads are harmless: the ledger keeps the largest total per message.
+async function scanFile(path: string) {
+  let changed = false;
+  try {
+    for await (const line of createInterface({
+      input: createReadStream(path, { encoding: "utf8" }),
+      crlfDelay: Infinity,
+    })) {
+      const usage = parseUsageLine(line);
+      if (usage && ledger.add(usage.id, usage.total, usage.at)) changed = true;
+    }
+  } catch (error) {
+    console.error(`[scan ${basename(path)}]`, error);
+  }
+  if (changed) publishTokens(Date.now());
 }
 
 // ---------- Watching ----------
@@ -626,3 +698,4 @@ setInterval(() => {
 }, CHECK_EVERY_MS);
 
 await refreshSessions();
+void scanUsage();

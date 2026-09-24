@@ -15,9 +15,7 @@ body {
   display: none !important;
 }
 .pill {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  position: relative;
   padding: 6px 12px 6px 26px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.9);
@@ -39,6 +37,122 @@ body {
 }
 .pill.live::before {
   background: #2fb351;
+}
+
+#hud {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#ladder-button {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2c230;
+  color: #3a2f12;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+#ladder-button:hover {
+  background: #f7d155;
+}
+
+#ladder {
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  padding: 18px 20px 20px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #333;
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+#ladder::backdrop {
+  background: rgba(15, 18, 24, 0.55);
+}
+
+#ladder h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+#ladder .close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: #8f98a3;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#ladder .block + .block {
+  margin-top: 18px;
+}
+
+#ladder .head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  font-weight: 700;
+}
+
+#ladder .head .total {
+  margin-left: auto;
+}
+
+#ladder .row {
+  display: grid;
+  grid-template-columns: 28px 46px 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+#ladder .icon {
+  display: flex;
+  align-items: center;
+}
+
+#ladder .icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* A locked row keeps its icon, dimmed, so you see what is coming. */
+#ladder .locked .icon {
+  opacity: 0.45;
+}
+
+#ladder .threshold {
+  font-weight: 600;
+}
+
+#ladder .locked {
+  color: #8f98a3;
+}
+
+#ladder .unlocked .state {
+  color: #2f9e4f;
+  font-weight: 600;
 }
 #hint {
   position: fixed;
@@ -74,7 +188,8 @@ body {
   color: #a9b1bb;
 }
 #tooltip .model,
-#tooltip .project {
+#tooltip .project,
+#tooltip .tokens {
   color: #8f98a3;
   font-size: 12px;
 }
@@ -174,10 +289,12 @@ body[data-style="ink"] {
   color: var(--paper);
   font-family: "Avenir Next Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
 }
-body[data-style="ink"] .pill {
-  z-index: 12;
+body[data-style="ink"] #hud {
   top: 18px;
   right: 18px;
+}
+body[data-style="ink"] .pill {
+  z-index: 12;
   min-width: 82px;
   box-sizing: border-box;
   padding: 7px 12px 6px 30px;
@@ -205,6 +322,20 @@ body[data-style="ink"] .pill::before {
 }
 body[data-style="ink"] .pill.live::before {
   background: var(--live);
+}
+body[data-style="ink"] #ladder-button {
+  z-index: 12;
+  padding: 7px 12px 6px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--signal);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0 var(--ink);
 }
 body[data-style="ink"] #hint {
   z-index: 11;
@@ -281,7 +412,7 @@ body[data-style="ink"] #tooltip :is(.busy, .idle)::before {
   background: currentColor;
   transform: rotate(45deg);
 }
-body[data-style="ink"] #tooltip :is(.model, .project) {
+body[data-style="ink"] #tooltip :is(.model, .project, .tokens) {
   overflow: hidden;
   color: var(--paper-muted);
   text-overflow: ellipsis;

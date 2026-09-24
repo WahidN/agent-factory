@@ -69,12 +69,14 @@ function hash(text: string) {
   return h;
 }
 
-// 3 cars parked nose to the hall, with white bay lines, merged into the lot's
-// static mesh. Colors come from the session id, so they stay after a reload.
-export function addParkedCars(builder: StaticBuilder, seed: string) {
+// Up to 3 cars parked nose to the hall, with white bay lines, merged into the
+// lot's static mesh. The lines are drawn even for 0 cars, so an empty yard
+// still reads as a parking lot. Colors come from the session id, so they
+// stay after a reload.
+export function addParkedCars(builder: StaticBuilder, seed: string, count: number) {
   const h = hash(seed);
   const facingHall = new THREE.Matrix4().makeRotationY(Math.PI / 2); // +x becomes -z
-  [1, 3.6, 6.2].forEach((x, i) => {
+  [1, 3.6, 6.2].slice(0, count).forEach((x, i) => {
     const car = at(x, YARD_Y, 6).multiply(facingHall);
     const paint = paints[(h >>> (i * 3)) % paints.length]; // unsigned shift, so the index is never negative
     for (const part of CAR_PARTS) {

@@ -37,6 +37,7 @@ function applyEvent(target: { openTools: Set<string>; model: string }, event: Tr
 export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
+  private machineTokens = 0;
 
   // `user` is stamped on every state: who runs the session, read once from
   // this machine's environment.
@@ -94,6 +95,14 @@ export class SessionTracker {
     this.emit(sessionId, now);
   }
 
+  // The machine's season token total rides on every session, so a change
+  // sends every session again.
+  setMachineTokens(total: number, now: number) {
+    if (total === this.machineTokens) return;
+    this.machineTokens = total;
+    for (const sessionId of this.sessions.keys()) this.emit(sessionId, now);
+  }
+
   // Call regularly so subagents turn idle and get removed as time passes.
   tick(now: number) {
     for (const [sessionId, session] of this.sessions) {
@@ -123,6 +132,7 @@ export class SessionTracker {
       status,
       subagents: session.subagents.size,
       startedAt: file.startedAt,
+      machineTokens: this.machineTokens,
     };
   }
 

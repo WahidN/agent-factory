@@ -4,6 +4,7 @@ import {
   dropPartialFirstLine,
   parseSessionFile,
   parseTranscriptChunk,
+  parseUsageLine,
   projectDirFor,
   toolTarget,
 } from "../claude-reader.ts";
@@ -153,5 +154,36 @@ describe("toolTarget", () => {
     expect(toolTarget("WebFetch", { url: "https://x", prompt: "summarize" })).toBe("");
     expect(toolTarget("Edit", undefined)).toBe("");
     expect(toolTarget("Bash", { command: 42 })).toBe("");
+  });
+});
+
+describe("token usage", () => {
+  const lines = fixture("usage.jsonl").split("\n");
+  const at = (second: number) => Date.parse(`2026-09-15T09:00:0${second}.000Z`);
+
+  it("emits one usage event per assistant line with a usage block", () => {
+    const usage = parseTranscriptChunk(fixture("usage.jsonl")).entries.filter((e) => e.kind === "usage");
+    expect(usage).toEqual([
+      { kind: "usage", id: "msg_1|req_1", total: 1152, at: at(1) },
+      { kind: "usage", id: "msg_1|req_1", total: 1182, at: at(2) },
+      { kind: "usage", id: "a4", total: 12, at: at(5) },
+    ]);
+  });
+
+  it("reads one line, summing the four fields and keying on message id and request id", () => {
+    expect(parseUsageLine(lines[1])).toEqual({ id: "msg_1|req_1", total: 1152, at: at(1) });
+    expect(parseUsageLine(lines[2])).toEqual({ id: "msg_1|req_1", total: 1182, at: at(2) });
+  });
+
+  it("falls back to the line uuid and treats missing fields as 0", () => {
+    expect(parseUsageLine(lines[5])).toEqual({ id: "a4", total: 12, at: at(5) });
+  });
+
+  it("returns null for user lines, tool results and assistant lines without usage", () => {
+    expect(parseUsageLine(lines[0])).toBeNull(); // a user line that mentions usage and assistant
+    expect(parseUsageLine(lines[3])).toBeNull(); // synthetic, no usage block
+    expect(parseUsageLine(lines[4])).toBeNull(); // tool result
+    expect(parseUsageLine("not json")).toBeNull();
+    expect(parseUsageLine("")).toBeNull();
   });
 });

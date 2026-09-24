@@ -5,11 +5,12 @@
 import type { PlainMessage, SessionState } from "./types.ts";
 
 // Bump when ServerMessage or AgentState change shape in a way an older hub cannot show.
-export const PROTOCOL = 2;
+// 3: SessionState carries machineTokens.
+export const PROTOCOL = 3;
 // The oldest protocol a hub still accepts. Thirty Macs cannot update in
 // lockstep, so a hub takes a range [MIN_PROTOCOL, PROTOCOL] instead of one
 // exact number. Raise this only once every reporter in the fleet has moved
-// past it.
+// past it. A reporter on 2 sends no machineTokens, so its lots show no total.
 export const MIN_PROTOCOL = 2;
 
 // Whether a hub speaking PROTOCOL still understands a reporter on `protocol`.
@@ -70,7 +71,8 @@ function isSession(value: unknown): value is SessionState {
     typeof value.model === "string" &&
     (value.status === "busy" || value.status === "idle") &&
     Number.isFinite(value.subagents) &&
-    Number.isFinite(value.startedAt)
+    Number.isFinite(value.startedAt) &&
+    (value.machineTokens === undefined || Number.isFinite(value.machineTokens))
   );
 }
 
@@ -117,9 +119,10 @@ export class Hub {
   }
 
   private put(ids: Set<string>, machine: string, session: SessionState): PlainMessage {
-    // Copies the seven wire fields by name, so an extra field a reporter sends
-    // never reaches a browser.
-    const { user, project, model, status, subagents, startedAt } = session;
+    // Copies the wire fields by name, so an extra field a reporter sends never
+    // reaches a browser. A reporter on protocol 2 sends no machineTokens; the
+    // field then stays off the state instead of going out as 0.
+    const { user, project, model, status, subagents, startedAt, machineTokens } = session;
     const stamped: SessionState = {
       id: prefixed(machine, session.id),
       user,
@@ -128,6 +131,7 @@ export class Hub {
       status,
       subagents,
       startedAt,
+      ...(machineTokens === undefined ? {} : { machineTokens }),
     };
     ids.add(stamped.id);
     this.sessions.set(stamped.id, stamped);

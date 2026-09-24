@@ -146,9 +146,9 @@ sudo systemctl restart agent-factory
 
 ### Volgorde als het protocol verandert
 
-Een reporter stuurt bij het verbinden zijn protocolversie mee. De centrale accepteert een bereik, `MIN_PROTOCOL` tot `PROTOCOL` in `server/hub.ts`, en weigert alles daarbuiten. Vandaag zijn beide 2, voor de Macs en de Pi.
+Een reporter stuurt bij het verbinden zijn protocolversie mee. De centrale accepteert een bereik, `MIN_PROTOCOL` tot `PROTOCOL` in `server/hub.ts`, en weigert alles daarbuiten. Vandaag is `PROTOCOL` 3 en `MIN_PROTOCOL` 2, dus de Pi accepteert een Mac op 2 en een Mac op 3.
 
-Verhoogt een wijziging het protocol, kijk dan naar `MIN_PROTOCOL` in de nieuwe versie. Blijft die staan, dan accepteert de nieuwe centrale oude en nieuwe Macs: werk de Pi eerst bij en laat de Macs daarna in hun eigen tempo volgen. Gaat `MIN_PROTOCOL` mee omhoog, dan is er geen overlap, zoals bij de overstap van 1 naar 2. Werk dan eerst de Macs bij en direct daarna de Pi; tussen die twee stappen staat het park half leeg. Een Mac die de centrale niet begrijpt verdwijnt uit de stad: het log van de centrale toont `refused <machine>: protocol N, this hub accepts 2-2` en de Mac schrijft `relay: hub gone (1002 protocol 2-2 expected)` in zijn eigen log.
+Verhoogt een wijziging het protocol, kijk dan naar `MIN_PROTOCOL` in de nieuwe versie. Blijft die staan, dan accepteert de nieuwe centrale oude en nieuwe Macs: werk de Pi eerst bij en laat de Macs daarna in hun eigen tempo volgen. Gaat `MIN_PROTOCOL` mee omhoog, dan is er geen overlap, zoals bij de overstap van 1 naar 2. Werk dan eerst de Macs bij en direct daarna de Pi; tussen die twee stappen staat het park half leeg. Een Mac die de centrale niet begrijpt verdwijnt uit de stad: het log van de centrale toont `refused <machine>: protocol N, this hub accepts 2-3` en de Mac schrijft `relay: hub gone (1002 protocol 2-3 expected)` in zijn eigen log.
 
 ## Wie er verbonden is
 
@@ -170,7 +170,7 @@ curl http://agentfactory.local:4317/healthz
 journalctl -u agent-factory -f
 ```
 
-Per reporter zie je `joined <machine> (protocol 2) from <ip>`, `left <machine>` of een `refused`-regel met de reden. Daartussen staat een regel per sessiewijziging.
+Per reporter zie je `joined <machine> (protocol 3) from <ip>`, `left <machine>` of een `refused`-regel met de reden. Daartussen staat een regel per sessiewijziging.
 
 ## Als het niet werkt
 

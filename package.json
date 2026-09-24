@@ -31,7 +31,7 @@
     "@vitest/coverage-v8": "^5.0.1",
     "concurrently": "^10.0.5",
     "knip": "^6.35.1",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"

@@ -1,10 +1,9 @@
 // Connects a bunch of fake machines to a running central, each reporting a
-// handful of made up sessions that drift over time. Lets phase 3 and 4 (the
-// wall display and the park layout at scale) be tested without thirty real
-// Macs open.
+// handful of made up sessions that drift over time. Lets the wall display and
+// the park layout be tested at scale without thirty real Macs open.
 //
 // Usage: pnpm fake-park
-// Env: SPOKES, SESSIONS_PER_SPOKE, HUB, SEED, FREEZE (see README below).
+// Env: SPOKES, SESSIONS_PER_SPOKE, HUB, SEED, FREEZE (see the README).
 
 import { startRelay, type Relay } from "../server/relay.ts";
 import type { ServerMessage, SessionState } from "../server/types.ts";
@@ -75,8 +74,7 @@ function randomBetween(rng: () => number, min: number, max: number): number {
 let nextSessionSeq = 0;
 
 // Builds one fake session. This is the only place the session shape is
-// assembled: phase 2 already landed, so a future wire change only needs to
-// touch this function.
+// assembled, so a wire change only needs to touch this function.
 function makeSession(rng: () => number, now: number, user: string): SessionState {
   const id = `s${nextSessionSeq++}`;
   const project = pick(rng, PROJECTS);
@@ -102,10 +100,6 @@ type Spoke = {
   connected: boolean;
 };
 
-function send(spoke: Spoke, message: ServerMessage) {
-  spoke.relay?.send(message);
-}
-
 // Uses the real relay: hello and a fresh snapshot on every connect, and the
 // same exponential backoff with jitter a real reporter uses to come back
 // after the hub restarts, so this script exercises the code under test
@@ -129,14 +123,14 @@ function tick(spoke: Spoke, now: number) {
   if (roll < 0.1 && spoke.sessions.size < SESSIONS_PER_SPOKE * 2) {
     const session = makeSession(spoke.rng, now, spoke.user);
     spoke.sessions.set(session.id, session);
-    send(spoke, { type: "session-update", session } satisfies ServerMessage);
+    spoke.relay?.send({ type: "session-update", session } satisfies ServerMessage);
     return;
   }
 
   if (roll < 0.15 && ids.length > 1) {
     const id = pick(spoke.rng, ids);
     spoke.sessions.delete(id);
-    send(spoke, { type: "session-removed", id } satisfies ServerMessage);
+    spoke.relay?.send({ type: "session-removed", id } satisfies ServerMessage);
     return;
   }
 
@@ -156,7 +150,7 @@ function tick(spoke: Spoke, now: number) {
   }
 
   spoke.sessions.set(id, changed);
-  send(spoke, { type: "session-update", session: changed } satisfies ServerMessage);
+  spoke.relay?.send({ type: "session-update", session: changed } satisfies ServerMessage);
 }
 
 function makeSpoke(index: number): Spoke {
@@ -178,34 +172,23 @@ console.log(
 );
 
 const spokes = Array.from({ length: SPOKES }, (_, index) => makeSpoke(index));
-const timers: NodeJS.Timeout[] = [];
 
 spokes.forEach((spoke, index) => {
-  const delay = index * CONNECT_SPREAD_MS;
-  const connectTimer = setTimeout(() => connectSpoke(spoke), delay);
-  timers.push(connectTimer);
+  setTimeout(() => connectSpoke(spoke), index * CONNECT_SPREAD_MS);
 });
 
 function scheduleTick(spoke: Spoke) {
   const delay = randomBetween(spoke.rng, TICK_MIN_MS, TICK_MAX_MS);
-  const timer = setTimeout(() => {
+  setTimeout(() => {
     if (spoke.connected) tick(spoke, Date.now());
     scheduleTick(spoke);
   }, delay);
-  timers.push(timer);
 }
 
 if (!FREEZE) for (const spoke of spokes) scheduleTick(spoke);
 
-const statusTimer = setInterval(() => {
+setInterval(() => {
   const connected = spokes.filter((s) => s.connected).length;
   const totalSessions = spokes.reduce((sum, s) => sum + s.sessions.size, 0);
   console.log(`fake-park: ${connected}/${SPOKES} connected, ${totalSessions} session(s) live`);
 }, STATUS_EVERY_MS);
-
-process.on("SIGINT", () => {
-  clearInterval(statusTimer);
-  for (const timer of timers) clearTimeout(timer);
-  for (const spoke of spokes) spoke.relay?.close();
-  process.exit(0);
-});

@@ -9,7 +9,6 @@
     "dev:hub": "tsx watch server/index.ts --hub",
     "dev:web": "vite",
     "build": "vite build",
-    "build:reporter": "echo 'reporter mode runs server/index.ts via tsx, nothing to bundle; typecheck instead' && tsc --noEmit",
     "start": "tsx server/index.ts",
     "fake-park": "tsx scripts/fake-park.ts",
     "test": "vitest run",

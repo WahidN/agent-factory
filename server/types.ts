@@ -28,4 +28,15 @@ export type PlainMessage =
   | { type: "session-removed"; id: string };
 
 // `batch` wraps the updates from one tick (see batcher.ts).
-export type ServerMessage = PlainMessage | { type: "batch"; messages: PlainMessage[] };
+//
+// `server-mode` tells a browser which kind of server it reached, the one thing
+// the page cannot work out for itself: the hub serves the same bundle as a
+// local server. It sits here and deliberately not in PlainMessage, because a
+// reporter relays plain messages up to the hub and the hub accepts them by
+// name (hub.ts). A variant that only exists on the way down can never travel
+// up that path, and never lands inside a batch either.
+// Everything that says something about sessions, batched or not. The park is
+// built from these alone.
+export type ParkMessage = PlainMessage | { type: "batch"; messages: PlainMessage[] };
+
+export type ServerMessage = ParkMessage | { type: "server-mode"; hub: boolean };

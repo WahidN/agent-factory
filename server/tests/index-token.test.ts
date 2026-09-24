@@ -22,8 +22,16 @@ function nextPort() {
 }
 
 function startCentral(port: number, token: string, home?: string): Promise<void> {
+  return start(port, ["--hub"], token, home);
+}
+
+function startLocal(port: number, home: string): Promise<void> {
+  return start(port, [], "", home);
+}
+
+function start(port: number, args: string[], token: string, home?: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    child = spawn("node", ["--import", "tsx", "server/index.ts", "--hub"], {
+    child = spawn("node", ["--import", "tsx", "server/index.ts", ...args], {
       cwd: process.cwd(),
       env: {
         ...process.env,
@@ -58,13 +66,16 @@ function connect(port: number): Promise<WebSocket> {
   });
 }
 
-// Opens /ws like a browser and resolves with the first message the central
-// sends, or rejects when the upgrade is refused.
-function firstBrowserMessage(port: number, origin?: string): Promise<{ type: string }> {
+// Opens /ws like a browser and resolves with the first message of that type,
+// or rejects when the upgrade is refused. A browser is told the server mode
+// before it gets its snapshot, so a test names the one it is waiting for.
+function browserMessage(port: number, type: string, origin?: string): Promise<{ type: string }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, origin ? { origin } : {});
-    ws.once("message", (data) => {
-      resolve(JSON.parse(data.toString()));
+    ws.on("message", (data) => {
+      const message = JSON.parse(data.toString());
+      if (message.type !== type) return;
+      resolve(message);
       ws.close();
     });
     ws.on("error", reject);
@@ -116,7 +127,7 @@ describe("a reporter sending malformed messages", () => {
     ws.send(JSON.stringify({ type: "snapshot" }));
     ws.send(JSON.stringify({ type: "session-update" }));
     await new Promise((r) => setTimeout(r, 300));
-    expect(await firstBrowserMessage(port)).toMatchObject({ type: "snapshot" });
+    expect(await browserMessage(port, "snapshot")).toMatchObject({ type: "snapshot" });
     ws.close();
   }, 15_000);
 });
@@ -129,7 +140,7 @@ describe("a reporter sending an invalid frame", () => {
     // An unmasked client frame breaks the protocol, so the server socket emits 'error'.
     (ws as unknown as { _socket: import("node:net").Socket })._socket.write(Buffer.from([0x81, 0x01, 0x41]));
     await new Promise((r) => setTimeout(r, 300));
-    expect(await firstBrowserMessage(port)).toMatchObject({ type: "snapshot" });
+    expect(await browserMessage(port, "snapshot")).toMatchObject({ type: "snapshot" });
   }, 15_000);
 });
 
@@ -137,13 +148,15 @@ describe("the origin check on the upgrade", () => {
   it("refuses a browser from a foreign origin", async () => {
     const port = nextPort();
     await startCentral(port, "");
-    await expect(firstBrowserMessage(port, "http://evil.example")).rejects.toThrow(/403/);
+    await expect(browserMessage(port, "snapshot", "http://evil.example")).rejects.toThrow(/403/);
   }, 15_000);
 
   it("accepts a browser whose origin matches the host", async () => {
     const port = nextPort();
     await startCentral(port, "");
-    expect(await firstBrowserMessage(port, `http://127.0.0.1:${port}`)).toMatchObject({ type: "snapshot" });
+    expect(await browserMessage(port, "snapshot", `http://127.0.0.1:${port}`)).toMatchObject({
+      type: "snapshot",
+    });
   }, 15_000);
 });
 
@@ -157,6 +170,25 @@ describe("a machine with no ~/.claude", () => {
     await startCentral(port, "", home);
     const response = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(response.status).toBe(200);
+    await rm(home, { recursive: true, force: true });
+  }, 15_000);
+});
+
+// The page cannot tell a hub from a local server by itself: both serve the
+// same bundle on the same paths. This message is the only thing that does,
+// and the filter panel is built on it.
+describe("the server mode a browser is told", () => {
+  it("is the hub when started with --hub", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: true });
+  }, 15_000);
+
+  it("is not the hub for a plain local server", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agent-factory-local-home-"));
+    const port = nextPort();
+    await startLocal(port, home);
+    expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: false });
     await rm(home, { recursive: true, force: true });
   }, 15_000);
 });

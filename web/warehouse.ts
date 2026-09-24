@@ -33,7 +33,7 @@ export class Warehouse {
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
-  constructor(accent: THREE.Color) {
+  constructor(accent: THREE.Color, variant = 0) {
     this.accent = accent.clone();
     const l = accent.r * 0.3 + accent.g * 0.59 + accent.b * 0.11;
     this.grey = new THREE.Color(l, l, l);
@@ -56,7 +56,27 @@ export class Warehouse {
       builder.box(MATERIALS.parapet, [0, top + 0.3, s * (d / 2 - 0.1)], [w, 0.4, 0.2]);
       builder.box(MATERIALS.parapet, [s * (w / 2 - 0.1), top + 0.3, 0], [0.2, 0.4, d]);
     }
-    builder.box(MATERIALS.frame, [-0.6, top + 0.45, -0.8], [1.3, 0.5, 1.3]); // fan housing
+    // Subagent sheds echo the six parent-factory families in miniature.
+    // All additions remain in StaticBuilder's existing material batches.
+    const profile = variant % 6;
+    const serviceX = profile === 1 || profile === 4 ? 0.8 : -0.8;
+    if (profile === 0) {
+      builder.box(MATERIALS.frame, [0, top + 0.65, -0.15], [3.6, 0.65, 1.25]);
+    } else if (profile === 1) {
+      builder.box(MATERIALS.roof, [0, top + 0.58, 0], [1.5, 0.95, 3.2]);
+    } else if (profile === 2) {
+      for (const x of [-1.25, 1.25]) builder.box(MATERIALS.frame, [x, top + 0.55, 0], [1.05, 0.75, 2.7]);
+    } else if (profile === 3) {
+      builder.box(MATERIALS.roof, [0, top + 0.48, 0], [3.5, 0.55, 2.5]);
+      builder.box(MATERIALS.frame, [0, top + 0.98, 0], [1.8, 0.45, 1.35]);
+    } else if (profile === 4) {
+      builder.box(MATERIALS.roof, [-1.55, top + 0.65, 0], [1, 0.85, 3.4]);
+      builder.box(MATERIALS.frame, [1.3, top + 0.85, 0.65], [1.15, 1.25, 1.15]);
+    } else {
+      builder.box(MATERIALS.frame, [0, top + 0.58, -1.1], [3.8, 0.72, 0.75]);
+      builder.box(MATERIALS.roof, [1.1, top + 0.78, 0.8], [1.6, 1.1, 1.2]);
+    }
+    builder.box(MATERIALS.frame, [serviceX, top + 0.45, -0.8], [1.3, 0.5, 1.3]); // fan housing
 
     this.stack = new Stacks(builder, [w / 2 - 1, -d / 2 + 1], {
       count: 1,
@@ -92,7 +112,7 @@ export class Warehouse {
     this.blades = mergedGroup((b) => {
       for (let i = 0; i < 2; i++) b.box(MATERIALS.darkSteel, [0, 0, 0], [1.1, 0.04, 0.18], [0, (i * Math.PI) / 2, 0]);
     });
-    this.blades.position.set(-0.6, top + 0.75, -0.8);
+    this.blades.position.set(serviceX, top + 0.75, -0.8);
 
     this.body.add(statics, this.stack.group, this.lamp.group, this.door, this.pallet, this.blades);
     this.body.scale.setScalar(0.001);

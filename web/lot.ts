@@ -5,6 +5,8 @@
 import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
+import { destinationFor } from "./leisure.ts";
+import { factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "./factory-style.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
@@ -26,6 +28,7 @@ import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
 import { LotWorkers, type WorkerSlot } from "./workers.ts";
+import type { Point } from "./worker-logic.ts";
 
 // The hall keeps its dock side on every tier, so the dock door, hall door,
 // parked cars and worker routes never move. A smaller hall shrinks toward the
@@ -101,8 +104,9 @@ export function hallShape(tier: ModelTier): HallShape {
 
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
+type BaseSlot = { door: Point; route: [Point, Point] };
 const HALL_DOOR = { x: 1.5, z: -3.3 };
-const WORKER_SLOTS: WorkerSlot[] = [
+const WORKER_SLOTS: BaseSlot[] = [
   {
     door: HALL_DOOR,
     route: [
@@ -132,7 +136,7 @@ const WORKER_SLOTS: WorkerSlot[] = [
     ],
   }, // along the walkway to the gate
   ...WAREHOUSE_SLOTS.map(
-    ([x, z]): WorkerSlot => ({
+    ([x, z]): BaseSlot => ({
       door: { x: x + 1.2, z: z + 2.9 },
       route: [
         { x: x - 1.8, z: z + 3.6 },
@@ -141,6 +145,28 @@ const WORKER_SLOTS: WorkerSlot[] = [
     }),
   ),
 ];
+
+// The gate's local point: the opening in the right fence, GATE.z0..z1 at x = YARD_HALF.
+const GATE_POINT: Point = { x: YARD_HALF, z: (GATE.z0 + GATE.z1) / 2 };
+
+const SPREAD_STRIDE = 3; // spacing between neighbouring workers along the edge
+
+// A quiet lot's workers gather near the nearest claimed cell instead of one
+// another, spread along the cell edge their destination sits on so eight of
+// them are not standing on top of each other.
+function spread(point: Point, axis: "x" | "z", index: number, count: number): Point {
+  const offset = (index - (count - 1) / 2) * SPREAD_STRIDE;
+  return axis === "x" ? { x: point.x + offset, z: point.z } : { x: point.x, z: point.z + offset };
+}
+
+function workerSlotsFor(rank: number, rankCount: number): WorkerSlot[] {
+  const destination = destinationFor(rank, rankCount);
+  return WORKER_SLOTS.map((slot, i) => ({
+    ...slot,
+    gate: GATE_POINT,
+    destination: destination ? spread(destination.point, destination.axis, i, WORKER_SLOTS.length) : null,
+  }));
+}
 
 // Rooftop vents and AC boxes, relative to the hall's back left corner. Ones
 // that fall outside a smaller roof are left out.
@@ -191,7 +217,12 @@ export class Lot {
   // tint only changes with a fresh Lot.
   private wallMaterial: THREE.MeshStandardMaterial;
 
-  private workers = new LotWorkers(WORKER_SLOTS);
+  private workers: LotWorkers;
+  // Where this lot's leisure destination was last computed for; kept so a
+  // repeat call with the same rank/rankCount (the common case: most lots
+  // don't move when one session starts or stops) recomputes nothing.
+  private rank: number;
+  private rankCount: number;
 
   private warehouses = new Map<number, Slot>();
   private leavingWarehouses = new Set<Slot>();
@@ -203,7 +234,13 @@ export class Lot {
   // `settled` skips the rise out of the ground: a lot that only swapped from
   // the far level to this one was already standing, so it must not replay its
   // arrival every time the camera drifts past it.
-  constructor(state: SessionState, settled = false) {
+  //
+  // `rank` and `rankCount` fix where this lot's workers hang around while it
+  // is quiet: the nearest claimed cell to `rank`'s own cell, among the
+  // `rankCount` cells the city plan has claimed so far. The park repacks
+  // ranks whenever a session starts or stops, so `setPlot` keeps this current
+  // without rebuilding the lot; it is not recomputed per frame.
+  constructor(state: SessionState, rank: number, rankCount: number, settled = false) {
     this.state = state;
     this.appear = settled ? 1 : 0;
     this.tier = tierFor(state.model);
@@ -213,6 +250,9 @@ export class Lot {
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
     this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.user)]);
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers = new LotWorkers(workerSlotsFor(rank, rankCount));
 
     this.buildStructure();
 
@@ -243,6 +283,27 @@ export class Lot {
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
     this.updateWarehouses(state.subagents, working, nowMs);
+  }
+
+  // Called whenever the park repacks and this lot's rank or the total rank
+  // count changed, so its leisure destination stays pointed at the right
+  // claimed cell. Only the destination points move; a worker already walking
+  // there keeps its position and simply steers toward the new point next
+  // tick, no rebuild and no jump.
+  // Moves the lot to a new place. The worker mesh hangs under `body`, so it
+  // would carry every worker along; the ones out in the world are shifted
+  // back by the same delta and keep their spot on screen.
+  relocate(x: number, z: number) {
+    const { x: oldX, z: oldZ } = this.group.position;
+    this.group.position.set(x, 0, z);
+    this.workers.translate(oldX - x, oldZ - z);
+  }
+
+  setPlot(rank: number, rankCount: number) {
+    if (rank === this.rank && rankCount === this.rankCount) return;
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers.setSlots(workerSlotsFor(rank, rankCount));
   }
 
   // What this lot sends onto the park roads: always some cars, the truck only while busy.
@@ -297,13 +358,14 @@ export class Lot {
 
   private buildStructure() {
     const size = SIZES[this.tier];
+    const style = factoryStyleFor(this.state.id);
     this.builtModel = this.state.model;
     const builder = new StaticBuilder();
     this.buildYard(builder);
     this.buildHall(builder, size);
 
     const { at: stacksAt, ...stacksOptions } = size.stacks;
-    const stacks = new Stacks(builder, stacksAt, stacksOptions);
+    const stacks = new Stacks(builder, stacksAt, { ...stacksOptions, axis: style.stackAxis });
     const forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
     const searchlight = new Searchlight(builder, [-17, 12], { tower: true, ...size.searchlight, aimAt: [-4, 2] });
     const cooling = new CoolingTower(builder, size.cooling.at, size.cooling.radius, size.cooling.height);
@@ -432,6 +494,7 @@ export class Lot {
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     const wallY = YARD_Y + STRIPE + wall / 2;
+    const style = factoryStyleFor(this.state.id);
 
     b.box(this.accentMaterial, [cx, YARD_Y + STRIPE / 2, cz], [width + 0.1, STRIPE, depth + 0.1]);
     const wallPlane = (length: number) =>
@@ -441,6 +504,18 @@ export class Lot {
     b.add(wallPlane(depth), this.wallMaterial, [x1, wallY, cz], [1, 1, 1], [0, Math.PI / 2, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x0, wallY, cz], [1, 1, 1], [0, -Math.PI / 2, 0]);
 
+    // Slim colored pilasters and a crisp cornice turn the plain box into a
+    // deliberate industrial pavilion. They reuse the animated accent
+    // material, so all pieces still collapse into its existing draw call.
+    const pilasterHeight = top - YARD_Y;
+    for (const x of [x0 + 0.16, x1 - 0.16]) {
+      for (const z of [z0 - 0.02, z1 + 0.02]) {
+        b.box(this.accentMaterial, [x, YARD_Y + pilasterHeight / 2, z], [0.38, pilasterHeight, 0.18]);
+      }
+    }
+    b.box(this.accentMaterial, [cx, top - 0.18, z1 + 0.08], [width + 0.2, 0.36, 0.18]);
+    b.box(this.accentMaterial, [cx, top - 0.18, z0 - 0.08], [width + 0.2, 0.36, 0.18]);
+
     // Flat roof with parapet
     b.box(MATERIALS.roof, [cx, top + 0.15, cz], [width, 0.3, depth]);
     for (const s of [-1, 1]) {
@@ -448,10 +523,30 @@ export class Lot {
       b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), top + 0.4, cz], [0.4, 0.8, depth + 0.1]);
     }
 
+    // Two masses form one of six stable industrial silhouettes. Their shared
+    // resolver is also used by the far LOD, preventing a skyline pop.
+    const roofMasses = resolveRoofMasses(style, width, depth);
+    for (const mass of roofMasses) {
+      const massY = top + 0.8 + mass.elevation + mass.height / 2;
+      b.box(MATERIALS.roof, [cx + mass.x, massY, cz + mass.z], [mass.width, mass.height, mass.depth]);
+      b.box(
+        this.accentMaterial,
+        [cx + mass.x, massY + mass.height * 0.08, cz + mass.z + mass.depth / 2 + 0.04],
+        [Math.max(1.4, mass.width - 0.7), Math.min(0.42, mass.height * 0.28), 0.08],
+      );
+    }
+
     // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
-    // half size inside the parapet.
-    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) =>
-      vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+    // half size inside the parapet and clear of this hall's roof monitor.
+    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => {
+      const inside = vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+      const clearMasses = roofMasses.every(
+        (mass) =>
+          Math.abs(vx - width / 2 - mass.x) > mass.width / 2 + halfX + 0.3 ||
+          Math.abs(vz - depth / 2 - mass.z) > mass.depth / 2 + halfZ + 0.3,
+      );
+      return inside && clearMasses;
+    };
     for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
       const x = x0 + vent[0];
       const z = z0 + vent[1];
@@ -485,7 +580,7 @@ export class Lot {
 
     for (let slot = 0; slot < target; slot++) {
       if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
-      const warehouse = new Warehouse(this.accent);
+      const warehouse = new Warehouse(this.accent, factoryStyleIndex(this.state.id) + slot);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
       for (const mesh of warehouse.pickables) mesh.userData.hover = this;
@@ -519,9 +614,9 @@ export class Lot {
   }
 
   // Yard workers follow the session; each warehouse worker follows the same busy state.
-  private workerBusyFlags(): boolean[] {
+  private workerBusyFlags(): (boolean | null)[] {
     const lotBusy = this.state.status === "busy" && !this.exit;
-    const slotBusy = new Array(MAX_WAREHOUSES).fill(false);
+    const slotBusy: (boolean | null)[] = new Array(MAX_WAREHOUSES).fill(null);
     for (const slot of this.warehouses.keys()) slotBusy[slot] = lotBusy;
     return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
   }

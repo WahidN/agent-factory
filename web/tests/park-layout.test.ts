@@ -12,6 +12,7 @@ import {
   WALL_TINT_COUNT,
   wallTintIndexFor,
 } from "../park-layout.ts";
+import { claimedUpTo } from "../city-plan.ts";
 import { assignPlots, PLOT_SIZE, plotCell } from "../plots.ts";
 
 describe("accentIndexFor", () => {
@@ -67,8 +68,24 @@ describe("parkBounds", () => {
     expect(Math.max(...cells.map((c) => c.row))).toBe(bounds.maxRow);
   });
 
-  it("falls back to the first cell when nothing is used", () => {
-    expect(parkBounds([])).toEqual({ minCol: 0, maxCol: 0, minRow: 0, maxRow: 0 });
+  it("falls back to the first rank when nothing is used", () => {
+    expect(parkBounds([])).toEqual({ minCol: 1, maxCol: 1, minRow: 0, maxRow: 0 });
+  });
+
+  it("still falls back to the first rank when nothing is used, claims included", () => {
+    // Rank 0 sits on cell 1:0 and the curve has already passed the Goffert on
+    // 0:0 by then, so an empty park is two cells wide, not one.
+    expect(parkBounds([], true)).toEqual({ minCol: 0, maxCol: 1, minRow: 0, maxRow: 0 });
+  });
+
+  it("covers the claimed cells too, so a landmark on the edge stays in frame", () => {
+    const bounds = parkBounds([0, 1, 2, 5], true);
+    for (const { cell } of claimedUpTo(6)) {
+      expect(cell.col).toBeGreaterThanOrEqual(bounds.minCol);
+      expect(cell.col).toBeLessThanOrEqual(bounds.maxCol);
+      expect(cell.row).toBeGreaterThanOrEqual(bounds.minRow);
+      expect(cell.row).toBeLessThanOrEqual(bounds.maxRow);
+    }
   });
 });
 
@@ -96,6 +113,16 @@ describe("districtBounds", () => {
     for (const { user, ...box } of bounds) {
       expect(box).toEqual(parkBounds(byUser.get(user)!));
     }
+  });
+
+  it("does not fold in the claimed cells the whole park has passed", () => {
+    // A user with a single, early rank sits right next to the Goffert; a box
+    // that folded in claims (parkBounds's includeClaims) would grow to cover
+    // it too, even though it is not this user's cell.
+    const { user, ...bounds } = districtBounds(new Map([["dennis", [1]]]))[0];
+    const cell = plotCell(1);
+    expect(user).toBe("dennis");
+    expect(bounds).toEqual({ minCol: cell.col, maxCol: cell.col, minRow: cell.row, maxRow: cell.row });
   });
 });
 
@@ -151,8 +178,14 @@ describe("the park fits on screen", () => {
     expect(zoomForLots(300)).toBeGreaterThanOrEqual(MIN_ZOOM);
   });
 
+  // The city plan claims cells, so 300 sessions now walk 360 curve indexes and
+  // the park runs 32 columns wide instead of 24. 150 lots still need the same
+  // zoom; 300 lots need about 0.065, which is why MIN_ZOOM dropped from 0.08
+  // to 0.06 in the same change: 0.065 sits just above the new floor. Claims
+  // more cells (or hands out filler more often via FILLER_EVERY) and this
+  // number sinks under the floor again, so the values are pinned here.
   it("names the zoom each size needs, so a change to the floor is deliberate", () => {
     expect(zoomForLots(150)).toBeCloseTo(0.128, 3);
-    expect(zoomForLots(300)).toBeCloseTo(0.086, 3);
+    expect(zoomForLots(300)).toBeCloseTo(0.065, 3);
   });
 });

@@ -4,6 +4,7 @@
 // has one lane per direction. Vehicles keep right, take a random turn at each
 // crossing (never a U-turn), and slow down behind the vehicle ahead.
 
+import { crossingAt, isWaterEdge, RAIL_BRIDGE } from "./city-plan.ts";
 import { plotCell, PLOT_SIZE } from "./plots.ts";
 
 const LANE = 2.5; // lane center, measured from the road center (roads are 10 wide)
@@ -29,8 +30,8 @@ export type Vehicle = { lane: string; next: string; s: number; speed: number; le
 const crossing = (col: number, row: number) => `${col}:${row}`;
 
 // The cell's 4 corners, clockwise as seen from above.
-function corners(index: number): [number, number][] {
-  const { col, row } = plotCell(index);
+function corners(rank: number): [number, number][] {
+  const { col, row } = plotCell(rank);
   return [
     [col, row],
     [col + 1, row],
@@ -39,11 +40,22 @@ function corners(index: number): [number, number][] {
   ];
 }
 
+// Whether the Waal is in the way of the road between two neighbouring
+// crossings. A road along the water edge is the river itself, so it is gone.
+// A road across that edge ends up on a bridge deck, which only exists on the
+// bridge columns; everywhere else it would run straight into the water.
+function overWater([fc, fr]: [number, number], [, tr]: [number, number]): boolean {
+  if (fr === tr) return isWaterEdge(fr);
+  return (isWaterEdge(fr) || isWaterEdge(tr)) && crossingAt(fc) === null;
+}
+
 // Both lanes of the 4 roads around every used cell. Shared roads are added once.
-export function roadGraph(indexes: number[]): Roads {
+export function roadGraph(ranks: number[], exclusiveRailCorridor = false): Roads {
   const lanes = new Map<string, Lane>();
   const exits = new Map<string, string[]>();
   const add = ([fc, fr]: [number, number], [tc, tr]: [number, number]) => {
+    if (exclusiveRailCorridor && fr !== tr && fc === RAIL_BRIDGE.col) return;
+    if (overWater([fc, fr], [tc, tr])) return;
     const from = crossing(fc, fr);
     const key = `${from}>${crossing(tc, tr)}`;
     if (lanes.has(key)) return;
@@ -57,8 +69,8 @@ export function roadGraph(indexes: number[]): Roads {
     });
     exits.set(from, [...(exits.get(from) ?? []), key]);
   };
-  for (const index of indexes) {
-    const c = corners(index);
+  for (const rank of ranks) {
+    const c = corners(rank);
     c.forEach((corner, i) => {
       add(corner, c[(i + 1) % 4]);
       add(c[(i + 1) % 4], corner);
@@ -68,12 +80,18 @@ export function roadGraph(indexes: number[]): Roads {
 }
 
 // The lanes right next to a lot: driving clockwise keeps the lot on the right.
-export function lotLanes(index: number): string[] {
-  const c = corners(index);
+// A lot on the river bank has fewer than four, so callers filter on the lanes
+// that the graph actually holds.
+export function lotLanes(rank: number): string[] {
+  const c = corners(rank);
   return c.map((corner, i) => `${crossing(...corner)}>${crossing(...c[(i + 1) % 4])}`);
 }
 
-// A random lane out of the crossing at the end of `laneKey`, never straight back.
+// A random lane out of the crossing at the end of `laneKey`, never straight
+// back. A crossing on the river bank can have no way on at all: the road it
+// would continue into is water. The vehicle then turns around, which is what a
+// driver at a dead end does, and `back` is always a real lane because roads are
+// added in both directions at once.
 export function pickNext(roads: Roads, laneKey: string, random: () => number): string {
   const lane = roads.lanes.get(laneKey)!;
   const back = `${lane.to}>${lane.from}`;

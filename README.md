@@ -110,6 +110,12 @@ SPOKES=30 SESSIONS_PER_SPOKE=5 HUB=ws://127.0.0.1:4317 pnpm fake-park
 
 Env-variabelen: `SPOKES` (aantal nepmachines, standaard 10), `SESSIONS_PER_SPOKE` (sessies per machine, standaard 5), `HUB` (adres van de centrale) en `SEED` (voor een reproduceerbare run).
 
+Met `FREEZE=1` bouwt het park zich op en staat daarna stil: geen sessies die komen of gaan, geen statussen die omslaan. Handig als je iets in beeld wilt vergelijken over twee momenten, want normaal wisselt elke machine om de één tot drie seconden iets en groeit hij door tot het dubbele van `SESSIONS_PER_SPOKE`.
+
+```
+FREEZE=1 SEED=park SPOKES=30 SESSIONS_PER_SPOKE=5 HUB=ws://127.0.0.1:4317 pnpm fake-park
+```
+
 ## Ontwikkelen
 
 ```

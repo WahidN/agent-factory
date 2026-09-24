@@ -2,10 +2,11 @@
 // drawn from a handful of shared instanced meshes instead of its own hundreds
 // of meshes.
 //
-// Six draw calls cover the whole park, however many lots there are: one yard
-// slab, one hall per model tier (four), and one roof beacon. The scene is
-// drawn several times per frame (main pass, shadow map, and GTAO's depth and
-// normal passes), so every draw call saved here is saved four or five times.
+// A fixed handful of draw calls covers the whole park, however many lots
+// there are: one yard slab, one hall per model tier (four), two silhouette
+// masses, and one roof beacon. The scene is drawn several times per frame
+// (main pass, shadow map, and GTAO's depth and normal passes), so every draw
+// call saved here is saved four or five times.
 //
 // Colors that differ per lot ride along as per-instance data: the wall tint
 // through setColorAt, and the 0..1 busy value through an own
@@ -16,9 +17,10 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { Activity } from "./activity.ts";
+import { factoryStyleFor, resolveRoofMasses } from "./factory-style.ts";
 import { hallShape } from "./lot.ts";
 import type { ModelTier } from "./model-tier.ts";
-import { COLORS } from "./palette.ts";
+import { COLORS, standard } from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
 
 export type FarLot = {
@@ -59,7 +61,10 @@ function glsl(value: number): string {
 // swizzle: three declares vColor as a vec4, so the bare name does not add to
 // the vec3 totalEmissiveRadiance.
 function addBusyGlow(material: THREE.MeshStandardMaterial, color: string, idle: number, lit: number) {
-  material.onBeforeCompile = (shader) => {
+  const previousCompile = material.onBeforeCompile.bind(material);
+  const previousCacheKey = material.customProgramCacheKey.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previousCompile(shader, renderer);
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float aBusy;\nvarying float vBusy;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvBusy = aBusy;");
@@ -71,6 +76,8 @@ function addBusyGlow(material: THREE.MeshStandardMaterial, color: string, idle: 
 \ttotalEmissiveRadiance += ${color} * (${glsl(idle)} + ${glsl(lit - idle)} * vBusy);`,
       );
   };
+  material.customProgramCacheKey = () => `${previousCacheKey()}-busy-glow-${idle}-${lit}`;
+  material.needsUpdate = true;
   return material;
 }
 
@@ -107,10 +114,33 @@ function hallGeometry(tier: ModelTier): THREE.BufferGeometry {
   ]);
 }
 
+function rooflineMatrix(lot: FarLot, massIndex: number, matrix: THREE.Matrix4): THREE.Matrix4 {
+  const { x0, z0, x1, z1, top } = hallShape(lot.tier);
+  const mass = resolveRoofMasses(factoryStyleFor(lot.id), x1 - x0, z1 - z0)[massIndex];
+  return matrix.compose(
+    new THREE.Vector3(
+      lot.x + (x0 + x1) / 2 + mass.x,
+      top + 0.8 + mass.elevation + mass.height / 2,
+      lot.z + (z0 + z1) / 2 + mass.z,
+    ),
+    new THREE.Quaternion(),
+    new THREE.Vector3(mass.width, mass.height, mass.depth),
+  );
+}
+
 // Where the beacon sits: the middle of the roof of the tier's hall.
-function beaconMatrix(tier: ModelTier, x: number, z: number, matrix: THREE.Matrix4): THREE.Matrix4 {
+function beaconMatrix(lot: FarLot, matrix: THREE.Matrix4): THREE.Matrix4 {
+  const { tier, x, z, id } = lot;
   const { x0, z0, x1, z1, top } = hallShape(tier);
-  return matrix.makeTranslation(x + (x0 + x1) / 2, top + 0.8 + BEACON.height / 2, z + (z0 + z1) / 2);
+  const masses = resolveRoofMasses(factoryStyleFor(id), x1 - x0, z1 - z0);
+  const highest = masses.reduce((best, mass) =>
+    mass.elevation + mass.height > best.elevation + best.height ? mass : best,
+  );
+  return matrix.makeTranslation(
+    x + (x0 + x1) / 2,
+    top + 0.8 + highest.elevation + highest.height + BEACON.height / 2,
+    z + (z0 + z1) / 2,
+  );
 }
 
 // One instanced mesh that grows when the park outgrows it. Three.js fixes an
@@ -198,22 +228,24 @@ export class InstancedLots {
   readonly group = new THREE.Group();
 
   private readonly hallMaterial = addBusyGlow(
-    new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.85, metalness: 0, vertexColors: true }),
+    standard("#ffffff", { roughness: 0.85, metalness: 0, vertexColors: true }),
     literal(new THREE.Color(COLORS.windowLight)),
     0,
     HALL_BUSY_GLOW,
   );
   private readonly beaconMaterial = addBusyGlow(
-    new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.5, metalness: 0 }),
+    standard("#ffffff", { roughness: 0.5, metalness: 0 }),
     "vColor.rgb",
     BEACON_IDLE,
     BEACON_BUSY,
   );
-  private readonly yardMaterial = new THREE.MeshStandardMaterial({ color: COLORS.yard, roughness: 0.95 });
+  private readonly yardMaterial = standard(COLORS.yard, { roughness: 0.95 });
+  private readonly rooflineMaterial = standard("#667078", { roughness: 0.82, metalness: 0.08 });
 
   private readonly halls = new Map<ModelTier, Slab>();
   private readonly beacons: Slab;
   private readonly yards: Slab;
+  private readonly rooflines: readonly [Slab, Slab];
 
   private slots = new Map<string, Slot>();
   private key = "";
@@ -229,6 +261,10 @@ export class InstancedLots {
       this.group,
       true,
     );
+    this.rooflines = [
+      new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false),
+      new Slab(box(1, 1, 1, 0, 0, 0), this.rooflineMaterial, this.group, false),
+    ];
     this.yards = new Slab(
       box(YARD_HALF * 2, YARD_Y, YARD_HALF * 2, 0, YARD_Y / 2, 0),
       this.yardMaterial,
@@ -263,9 +299,11 @@ export class InstancedLots {
   dispose() {
     for (const hall of this.halls.values()) hall.dispose();
     this.beacons.dispose();
+    for (const roofline of this.rooflines) roofline.dispose();
     this.yards.dispose();
     this.hallMaterial.dispose();
     this.beaconMaterial.dispose();
+    this.rooflineMaterial.dispose();
     this.yardMaterial.dispose();
   }
 
@@ -277,6 +315,7 @@ export class InstancedLots {
     for (const lot of lots) perTier.get(lot.tier)?.push(lot);
 
     this.beacons.reset(lots.length);
+    for (const roofline of this.rooflines) roofline.reset(lots.length);
     this.yards.reset(lots.length);
 
     let shared = 0;
@@ -287,7 +326,10 @@ export class InstancedLots {
       group.forEach((lot, index) => {
         slab.place(index, this.matrix.makeTranslation(lot.x, 0, lot.z), lot.wall);
         this.yards.place(shared, this.matrix.makeTranslation(lot.x, 0, lot.z));
-        this.beacons.place(shared, beaconMatrix(tier, lot.x, lot.z, this.matrix), lot.accent);
+        this.rooflines.forEach((roofline, massIndex) => {
+          roofline.place(shared, rooflineMatrix(lot, massIndex, this.matrix));
+        });
+        this.beacons.place(shared, beaconMatrix(lot, this.matrix), lot.accent);
         // A lot that was already far keeps its eased glow, so swapping the set
         // never flashes a hall on or off.
         const activity = previous.get(lot.id)?.activity ?? new Activity();
@@ -299,6 +341,7 @@ export class InstancedLots {
       slab.uploadPlacements();
     }
     this.beacons.uploadPlacements();
+    for (const roofline of this.rooflines) roofline.uploadPlacements();
     this.yards.uploadPlacements();
   }
 }

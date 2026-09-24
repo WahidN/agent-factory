@@ -4,9 +4,16 @@
 // way for every viewer. Removing a session may shift others (the park stays
 // compact, gaps are not kept open for a session that left), but the layout
 // never depends on the order sessions were added or removed in.
-// Plot 0 is a corner and the town grows outward in square shells.
+// Plot 0 is a corner and the town grows outward along a Hilbert curve.
+//
+// A session gets a rank, not a cell: the cells the city plan claims (see
+// city-plan.ts) are skipped, so sessions flow around the parks and landmarks
+// instead of pushing them aside.
+
+import { indexForRank } from "./city-plan.ts";
 
 export const PLOT_SIZE = 60;
+export const ROAD_WIDTH = 10;
 
 export type PlotSession = { id: string; user: string };
 
@@ -103,7 +110,8 @@ export class PlotAllocator {
 // the grid wraps onto itself; the park is designed for 150 and tested at 300.
 const CURVE_SIDE = 64;
 
-export function plotCell(index: number): { col: number; row: number } {
+// The raw curve: index -> cell, city plan and all.
+export function curveCell(index: number): { col: number; row: number } {
   let col = 0;
   let row = 0;
   let rest = index % (CURVE_SIDE * CURVE_SIDE);
@@ -124,7 +132,14 @@ function rotate(size: number, col: number, row: number, flipX: number, flipY: nu
   return flipX === 1 ? [size - 1 - row, size - 1 - col] : [row, col];
 }
 
-export function plotPosition(index: number): { x: number; z: number } {
-  const { col, row } = plotCell(index);
+// A session's cell. Ranks run over the cells the city plan left free, so a
+// park, a church or the Goffert keeps its cell however many sessions come and
+// go around it. Everything downstream (roads, bounds, traffic) works in ranks.
+export function plotCell(rank: number): { col: number; row: number } {
+  return curveCell(indexForRank(rank));
+}
+
+export function plotPosition(rank: number): { x: number; z: number } {
+  const { col, row } = plotCell(rank);
   return { x: col * PLOT_SIZE, z: row * PLOT_SIZE };
 }

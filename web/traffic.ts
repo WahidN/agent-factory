@@ -110,7 +110,7 @@ type Traveler = { key: string; truck: boolean; color: string; presence: number; 
 // all: car bodies, car details, and trucks.
 export class ParkTraffic {
   readonly group = new THREE.Group();
-  private roads: Roads = roadGraph([], true);
+  private roads: Roads = roadGraph([]);
   private travelers: Traveler[] = [];
   private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_VEHICLES);
   private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_VEHICLES);
@@ -128,14 +128,15 @@ export class ParkTraffic {
     for (const mesh of [this.bodies, this.details, this.trucks]) {
       mesh.count = 0;
       mesh.frustumCulled = false; // vehicles drive far from the mesh origin
-      mesh.castShadow = true;
+      // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+      mesh.castShadow = false;
     }
     this.group.add(this.bodies, this.details, this.trucks);
   }
 
   // Call when the used cells change. Vehicles on roads that are gone disappear.
   setRoads(indexes: number[]) {
-    this.roads = roadGraph(indexes, true);
+    this.roads = roadGraph(indexes);
     this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
     for (const t of this.travelers) {
       if (!this.roads.lanes.has(t.vehicle.next))

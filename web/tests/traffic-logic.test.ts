@@ -44,23 +44,28 @@ const rowOf = (crossing: string) => Number(crossing.split(":")[1]);
 const colOf = (crossing: string) => Number(crossing.split(":")[0]);
 
 describe("roadGraph", () => {
-  it("gives a lot two lanes on each of its 4 roads", () => {
-    expect(roadGraph([0]).lanes.size).toBe(8);
+  it("gives two lanes per road, none along the rail corridor", () => {
+    // Rank 0's cell borders the rail corridor at RAIL_BRIDGE.col, so one of
+    // its four sides carries only the train: 3 roads, 2 lanes each.
+    expect(roadGraph([0]).lanes.size).toBe(6);
   });
 
   it("adds a road shared by two lots once", () => {
     expect(plotCell(NEIGHBOURS[0]).row).toBe(plotCell(NEIGHBOURS[1]).row); // side by side
-    expect(roadGraph(NEIGHBOURS).lanes.size).toBe(14); // they share one road
+    // One of the two also borders the rail corridor, so it is short a road too.
+    expect(roadGraph(NEIGHBOURS).lanes.size).toBe(12);
   });
 
   it("includes every lot's own lanes", () => {
     const roads = roadGraph([0, 1, 2, 3]);
     for (const rank of [0, 1, 2, 3]) {
-      // A lot on the bank has fewer than four: the river took the rest.
+      // A lot on the bank or next to the rail corridor has fewer than four:
+      // the river or the corridor took the rest.
       const own = lotLanes(rank).filter((key) => roads.lanes.has(key));
       expect(own.length).toBeGreaterThan(0);
     }
-    for (const key of lotLanes(0)) expect(roads.lanes.has(key)).toBe(true);
+    const ownLanes = lotLanes(0).filter((key) => roads.lanes.has(key));
+    expect(ownLanes.length).toBe(3);
   });
 });
 
@@ -90,8 +95,7 @@ describe("the Waal in the road graph", () => {
   });
 
   it("keeps the entire north-south rail corridor out of the road graph", () => {
-    const exclusiveRoads = roadGraph(ranks, true);
-    const railLanes = [...exclusiveRoads.lanes.values()].filter(
+    const railLanes = [...roads.lanes.values()].filter(
       (lane) => colOf(lane.from) === RAIL_BRIDGE.col && colOf(lane.to) === RAIL_BRIDGE.col,
     );
     expect(railLanes).toEqual([]);
@@ -135,6 +139,32 @@ describe("the Waal in the road graph", () => {
     expect(pickNext(deadEnd, onto, () => 0.5)).toBe(back);
     expect(deadEnd.lanes.has(back)).toBe(true);
   });
+
+  it("keeps heading continuous through a dead-end U-turn, no 180 degree snap", () => {
+    const deadEnd = roadGraph([0]); // rank 0's own dead end: 1:0>2:0 into 2:0>1:0
+    const v: Vehicle = { lane: EAST, next: WEST, s: 0, speed: 10, length: 3.8 };
+    const length = laneLength(deadEnd, v);
+    let previous = vehiclePose(deadEnd, { ...v, s: 0 });
+    for (let s = 0.1; s <= length; s += 0.1) {
+      const pose = vehiclePose(deadEnd, { ...v, s });
+      const jump = Math.abs(
+        Math.atan2(Math.sin(pose.heading - previous.heading), Math.cos(pose.heading - previous.heading)),
+      );
+      expect(jump).toBeLessThan(0.2);
+      previous = pose;
+    }
+    // Right at the end of the turn, the heading must already match the back
+    // lane it is about to drive onto, not swing around after arriving.
+    const justBeforeCrossing = vehiclePose(deadEnd, { ...v, s: length - 1e-6 });
+    const backLaneStart = vehiclePose(deadEnd, { lane: WEST, next: WEST, s: 0, speed: 10, length: 3.8 });
+    const arrivalJump = Math.abs(
+      Math.atan2(
+        Math.sin(justBeforeCrossing.heading - backLaneStart.heading),
+        Math.cos(justBeforeCrossing.heading - backLaneStart.heading),
+      ),
+    );
+    expect(arrivalJump).toBeLessThan(0.2);
+  });
 });
 
 describe("vehiclePose", () => {
@@ -148,7 +178,8 @@ describe("vehiclePose", () => {
 
   it("drives the lot's own lanes next to the lot", () => {
     const roads = roadGraph([0]);
-    for (const key of lotLanes(0)) {
+    // One of the 4 sides borders the rail corridor and has no road at all.
+    for (const key of lotLanes(0).filter((k) => roads.lanes.has(k))) {
       const { x, z } = vehiclePose(roads, car(key, 20));
       const offset = Math.max(Math.abs(x - FIRST.col * PLOT_SIZE), Math.abs(z - FIRST.row * PLOT_SIZE));
       expect(offset).toBeCloseTo(27.5);

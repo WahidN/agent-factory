@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ACCENT_COUNT,
   accentIndexFor,
+  clampToPark,
   fitZoom,
+  fogRange,
   forkliftPose,
   MIN_ZOOM,
   movingCarCount,
@@ -10,6 +12,7 @@ import {
   parkHalfExtent,
   WALL_TINT_COUNT,
   wallTintIndexFor,
+  zoomFloor,
 } from "../park-layout.ts";
 import { claimedUpTo } from "../city-plan.ts";
 import { PLOT_SIZE, plotCell } from "../plots.ts";
@@ -127,9 +130,9 @@ describe("the park fits on screen", () => {
   const VIEW_HEIGHT = 120; // must match web/scene.ts
   const WIDE = (VIEW_HEIGHT * 16) / 9;
 
-  function zoomForLots(count: number): number {
+  function zoomForLots(count: number, viewWidth = WIDE): number {
     const indexes = Array.from({ length: count }, (_, i) => i);
-    return fitZoom(parkHalfExtent(parkBounds(indexes), PLOT_SIZE), VIEW_HEIGHT, WIDE);
+    return fitZoom(parkHalfExtent(parkBounds(indexes), PLOT_SIZE), VIEW_HEIGHT, viewWidth);
   }
 
   it("still fits at 150 lots", () => {
@@ -140,14 +143,59 @@ describe("the park fits on screen", () => {
     expect(zoomForLots(300)).toBeGreaterThanOrEqual(MIN_ZOOM);
   });
 
-  // The city plan claims cells, so 300 sessions now walk 360 curve indexes and
-  // the park runs 32 columns wide instead of 24. 150 lots still need the same
-  // zoom; 300 lots need about 0.065, which is why MIN_ZOOM dropped from 0.08
-  // to 0.06 in the same change: 0.065 sits just above the new floor. Claims
-  // more cells (or hands out filler more often via FILLER_EVERY) and this
-  // number sinks under the floor again, so the values are pinned here.
+  // The fit takes the smaller of the height and the width fit, so a narrow
+  // window (a browser beside an editor) asks the most of the floor.
+  it("still fits at 300 lots in a window at aspect 0.6", () => {
+    expect(zoomForLots(300, VIEW_HEIGHT * 0.6)).toBeGreaterThanOrEqual(MIN_ZOOM);
+  });
+
+  // The city plan claims cells, so 300 sessions walk 360 curve indexes and the
+  // park runs 32 columns wide instead of 24. 300 lots need about 0.065 at 16:9
+  // and 0.025 at aspect 0.6, just above the floor of 0.02. Claim more cells (or
+  // hand out filler more often via FILLER_EVERY) and these numbers sink under
+  // the floor, so the values are pinned here.
   it("names the zoom each size needs, so a change to the floor is deliberate", () => {
     expect(zoomForLots(150)).toBeCloseTo(0.128, 3);
     expect(zoomForLots(300)).toBeCloseTo(0.065, 3);
+    expect(zoomForLots(300, VIEW_HEIGHT * 0.6)).toBeCloseTo(0.0246, 4);
+  });
+});
+
+// Fog distances past the point the camera looks at. The showcase park (half
+// extent 255) keeps the fixed 300..850, a big park pushes the fog out so its
+// far corner is not swallowed.
+describe("fogRange", () => {
+  it("keeps the fixed fog for the showcase-sized park", () => {
+    expect(fogRange(255)).toEqual({ near: 300, far: 850 });
+  });
+
+  it("starts the fog past the far corner of a 300 lot park", () => {
+    expect(fogRange(975)).toEqual({ near: 975, far: 1560 });
+  });
+});
+
+// How far out the user may zoom: a little past the zoom that fits the whole
+// park, never below the hard floor.
+describe("zoomFloor", () => {
+  it("allows zooming out to 80% of the fitted zoom", () => {
+    expect(zoomFloor(0.1)).toBeCloseTo(0.08, 10);
+  });
+
+  it("never goes below MIN_ZOOM", () => {
+    expect(zoomFloor(0.001)).toBe(MIN_ZOOM);
+  });
+});
+
+// Keeps the orbit target over the park, so panning and zoom-to-cursor cannot
+// drift away from the city.
+describe("clampToPark", () => {
+  const park = { x: 900, z: 450, half: 300 };
+
+  it("leaves a point inside the park alone", () => {
+    expect(clampToPark(1000, 500, park)).toEqual({ x: 1000, z: 500 });
+  });
+
+  it("pulls a point outside the park back onto its edge", () => {
+    expect(clampToPark(5000, -5000, park)).toEqual({ x: 1200, z: 150 });
   });
 });

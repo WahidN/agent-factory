@@ -62,9 +62,37 @@ export function fitZoom(halfExtent: number, viewHeight: number, viewWidth: numbe
 //
 // The city plan claims about one cell in seven, so 300 sessions span 360
 // curve indexes, past where the Hilbert curve steps into a wider quadrant (32
-// columns across instead of 24). The floor has to fit that wider park.
-export const MIN_ZOOM = 0.06;
+// columns across instead of 24). The floor has to fit that wider park in a
+// narrow window too: at aspect 0.6 it needs about 0.025.
+export const MIN_ZOOM = 0.02;
 export const MAX_ZOOM = 4;
+
+// How far the user may zoom out for the park in view: a little past the zoom
+// that fits it whole, so zooming out never shrinks the city to a speck.
+export function zoomFloor(fittedZoom: number): number {
+  return Math.max(MIN_ZOOM, fittedZoom * 0.8);
+}
+
+// The orbit target, held within the park's square half extent (which already
+// carries a margin of one and a half plots) around its center.
+export function clampToPark(
+  x: number,
+  z: number,
+  park: { x: number; z: number; half: number },
+): { x: number; z: number } {
+  return {
+    x: Math.min(park.x + park.half, Math.max(park.x - park.half, x)),
+    z: Math.min(park.z + park.half, Math.max(park.z - park.half, z)),
+  };
+}
+
+// Where the fog starts and ends, in world units past the point the camera
+// looks at. A small park keeps a fixed 300..850; a bigger one pushes it out
+// with its half extent, so the far corner (about 0.85 half extents past the
+// center of a 300 lot park) stays clear.
+export function fogRange(halfExtent: number): { near: number; far: number } {
+  return { near: Math.max(300, halfExtent), far: Math.max(850, halfExtent * 1.6) };
+}
 
 export const MAX_MOVING_CARS = 6;
 

@@ -73,11 +73,8 @@ export type CityEventSnapshot = {
 export class CityEvents {
   readonly group = new THREE.Group();
 
-  // A crowd redraws to a new layout on every activity change, so its shadow
-  // is stale the moment shadowMap.autoUpdate is off, until something asks for
-  // a fresh one; the market/parade props they stand among stay put instead.
-  private readonly people = instancedMesh("event-people", bodyGeometry, whiteInstanceMaterial, MAX_PEOPLE, false, true);
-  private readonly heads = instancedMesh("event-heads", headGeometry, skinMaterial, MAX_PEOPLE, false, true);
+  private readonly people = instancedMesh("event-people", bodyGeometry, whiteInstanceMaterial, MAX_PEOPLE);
+  private readonly heads = instancedMesh("event-heads", headGeometry, skinMaterial, MAX_PEOPLE);
   private readonly poles = instancedMesh("event-flag-poles", poleGeometry, steelMaterial, MAX_FLAGS);
   private readonly flags = instancedMesh("event-flags", flagGeometry, whiteInstanceMaterial, MAX_FLAGS, false, false);
   private readonly flowers = instancedMesh("event-gladioli", flowerGeometry, flowerMaterial, MAX_FLOWERS);

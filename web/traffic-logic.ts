@@ -134,8 +134,7 @@ function turnCurve(roads: Roads, v: Vehicle): Point[] {
 // Closed-form Bernstein-basis evaluation for the quadratic (3-point) and
 // cubic (4-point, dead-end U-turn) curves turnCurve produces. gapAhead calls
 // this once per vehicle pair every frame (via laneLength), so it stays
-// allocation-free beyond the one Point it has to return; the old generic
-// De Casteljau reduction built a fresh scratch array per recursion level.
+// allocation-free beyond the one Point it has to return.
 function curvePoint(curve: Point[], t: number): Point {
   const u = 1 - t;
   if (curve.length === 3) {

@@ -23,7 +23,7 @@ Vier randvoorwaarden die de rest bepalen. Een voorstel dat er tegenin gaat hoort
 
 **Altijd 60 fps.** Niet als gemiddelde maar als plafond van de frametijd. Het framebudget mag niet meegroeien met het park. Dat vraagt een harde bovengrens op het aantal volledig gedetailleerde lots, en dus een omslag van meshes per lot naar instanties per park.
 
-Besluit: `/ws`, `/healthz` en `/metrics` hebben bewust geen authenticatie. De centrale is alleen op het LAN bereikbaar. `/ws` en `/healthz` geven niets prijs wat een browser in het park niet al ziet: gebruiker, project, model, status en machinenamen. `/metrics` toont daarnaast per machine de protocolversie en het tijdstip van het laatste bericht, wat op het LAN ook geen geheim is. Alleen `/relay` controleert een token, en dat is een vangrail tegen een verkeerd ingestelde reporter, geen toegangscontrole.
+Besluit: `/ws`, `/healthz` en `/metrics` hebben bewust geen authenticatie. De centrale is alleen op het LAN bereikbaar. `/ws` en `/healthz` geven niets prijs wat een browser in het park niet al ziet: gebruiker, project, model en status. `/metrics` toont daarnaast de machinenamen, en per machine de protocolversie en het tijdstip van het laatste bericht, wat op het LAN ook geen geheim is. Alleen `/relay` controleert een token, en dat is een vangrail tegen een verkeerd ingestelde reporter, geen toegangscontrole.
 
 ## Doelplaatje
 

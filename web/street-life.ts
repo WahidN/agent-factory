@@ -45,22 +45,8 @@ export class StreetLife {
   private readonly tables = instancedMesh("streetlife-tables", tableGeometry, woodMaterial, MAX_TABLES);
   private readonly tableLegs = instancedMesh("streetlife-table-legs", tableLegGeometry, steelMaterial, MAX_TABLES);
   private readonly parasols = instancedMesh("streetlife-parasols", parasolGeometry, coloredMaterial, MAX_PARASOLS);
-  private readonly visitors = instancedMesh(
-    "streetlife-visitors",
-    visitorBodyGeometry,
-    coloredMaterial,
-    MAX_VISITORS,
-    false,
-    true,
-  );
-  private readonly heads = instancedMesh(
-    "streetlife-heads",
-    visitorHeadGeometry,
-    skinMaterial,
-    MAX_VISITORS,
-    false,
-    true,
-  );
+  private readonly visitors = instancedMesh("streetlife-visitors", visitorBodyGeometry, coloredMaterial, MAX_VISITORS);
+  private readonly heads = instancedMesh("streetlife-heads", visitorHeadGeometry, skinMaterial, MAX_VISITORS);
   private claims: CityClaim[] = [];
   private activity: CityActivity = { hour: 12, busyRatio: 0, event: "ordinary" };
   private readonly writer = new InstanceWriter();

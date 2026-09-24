@@ -7,15 +7,24 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { INK_STYLE_ENABLED, inkStandardMaterial } from "./ink-style.ts";
 
 const box = new THREE.BoxGeometry(1, 1, 1);
 const cylinder = new THREE.CylinderGeometry(1, 1, 1, 16);
+const cone = new THREE.ConeGeometry(1, 1, 8);
 const euler = new THREE.Euler();
 const quaternion = new THREE.Quaternion();
 
 export type Vec3 = [number, number, number];
 
-export const BAKED_MATERIAL = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+export const BAKED_MATERIAL = INK_STYLE_ENABLED
+  ? inkStandardMaterial("#ffffff", { vertexColors: true })
+  : new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.82,
+      metalness: 0,
+      flatShading: true,
+    });
 
 function isPlain(material: THREE.Material): material is THREE.MeshStandardMaterial {
   return (
@@ -45,9 +54,19 @@ function prepare(geometry: THREE.BufferGeometry, color: THREE.Color | null) {
 export class StaticBuilder {
   private parts = new Map<THREE.Material, THREE.BufferGeometry[]>();
 
-  add(geometry: THREE.BufferGeometry, material: THREE.Material, position: Vec3, scale: Vec3 = [1, 1, 1], rotation: Vec3 = [0, 0, 0]) {
+  add(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    position: Vec3,
+    scale: Vec3 = [1, 1, 1],
+    rotation: Vec3 = [0, 0, 0],
+  ) {
     quaternion.setFromEuler(euler.set(...rotation));
-    this.addWithMatrix(geometry, material, new THREE.Matrix4().compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale)));
+    this.addWithMatrix(
+      geometry,
+      material,
+      new THREE.Matrix4().compose(new THREE.Vector3(...position), quaternion, new THREE.Vector3(...scale)),
+    );
   }
 
   // For parts placed inside an already transformed object, like a parked car.
@@ -69,13 +88,20 @@ export class StaticBuilder {
     this.add(cylinder, material, position, scale, rotation);
   }
 
+  // Apex up, base radius 1 at y = -0.5: scale x and z are radii, y is height.
+  cone(material: THREE.Material, position: Vec3, scale: Vec3, rotation: Vec3 = [0, 0, 0]) {
+    this.add(cone, material, position, scale, rotation);
+  }
+
   build(): THREE.Group {
     const group = new THREE.Group();
     for (const [material, pieces] of this.parts) {
       const merged = mergeGeometries(pieces);
       for (const piece of pieces) piece.dispose();
       const mesh = new THREE.Mesh(merged, material);
-      mesh.castShadow = !material.transparent;
+      // A material can opt out of casting a shadow even when it is opaque:
+      // see the Waal's water in park.ts for why.
+      mesh.castShadow = !material.transparent && material.userData.castShadow !== false;
       mesh.receiveShadow = true;
       group.add(mesh);
     }

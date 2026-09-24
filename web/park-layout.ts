@@ -1,30 +1,38 @@
 // Pure layout math for the industrial park. No Three.js, so it is easy to test.
 
+import { claimedUpTo } from "./city-plan.ts";
 import { plotCell } from "./plots.ts";
 
 export const ACCENT_COUNT = 8;
 
-// Same folder name, same accent, also across machines.
-export function accentIndexFor(folder: string): number {
+// Same project name, same accent, also across users.
+export function accentIndexFor(project: string): number {
   let hash = 0;
-  for (const char of folder) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of project) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % ACCENT_COUNT;
 }
 
 export const WALL_TINT_COUNT = 6;
 
-// Same machine, same hall color, also across reloads.
-export function wallTintIndexFor(machine: string): number {
+// Same user, same hall color, also across reloads.
+export function wallTintIndexFor(user: string): number {
   let hash = 0;
-  for (const char of machine) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  for (const char of user) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return hash % WALL_TINT_COUNT;
 }
 
 export type Bounds = { minCol: number; maxCol: number; minRow: number; maxRow: number };
 
-// Tight bounds of the cells in use. Falls back to the first cell.
-export function parkBounds(indexes: number[]): Bounds {
-  const cells = (indexes.length ? indexes : [0]).map(plotCell);
+// Tight bounds of the cells in use, plus, when `includeClaims` is set, the
+// claimed cells the curve passes on its way to the highest rank. Those cells
+// are built too, so a landmark on the edge would otherwise fall outside the
+// camera and the shadow map. Falls back to the first rank.
+export function parkBounds(ranks: number[], includeClaims = false): Bounds {
+  const used = ranks.length ? ranks : [0];
+  const cells = [
+    ...used.map(plotCell),
+    ...(includeClaims ? claimedUpTo(Math.max(...used) + 1).map((claim) => claim.cell) : []),
+  ];
   return {
     minCol: Math.min(...cells.map((c) => c.col)),
     maxCol: Math.max(...cells.map((c) => c.col)),
@@ -33,11 +41,36 @@ export function parkBounds(indexes: number[]): Bounds {
   };
 }
 
+// Half the size of the park, with a margin of one and a half plots so the
+// outer roads and verges are not cut off.
+const PARK_MARGIN_PLOTS = 1.5;
+
+export function parkHalfExtent(bounds: Bounds, plotSize: number): number {
+  const span = Math.max(bounds.maxCol - bounds.minCol, bounds.maxRow - bounds.minRow);
+  return (span + PARK_MARGIN_PLOTS) * (plotSize / 2);
+}
+
+// The zoom that puts the whole park on screen. A square town seen
+// isometrically is about 1.9 half extents tall and 3 wide.
+export function fitZoom(halfExtent: number, viewHeight: number, viewWidth: number): number {
+  return Math.min(viewHeight / (halfExtent * 1.9), viewWidth / (halfExtent * 3));
+}
+
+// How far the camera may zoom out. It has to be low enough that the park the
+// project is designed for still fits: see the test next to this file, which
+// pins 150 and 300 lots against this number.
+//
+// The city plan claims about one cell in seven, so 300 sessions span 360
+// curve indexes, past where the Hilbert curve steps into a wider quadrant (32
+// columns across instead of 24). The floor has to fit that wider park.
+export const MIN_ZOOM = 0.06;
+export const MAX_ZOOM = 4;
+
 export const MAX_MOVING_CARS = 6;
 
-// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per busy subagent, up to 6.
-export function movingCarCount(lotBusy: boolean, busySubagents: number): number {
-  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? busySubagents : 0));
+// Every lot sends 2 cars, busy or idle. A busy lot adds 1 per live subagent, up to 6.
+export function movingCarCount(lotBusy: boolean, subagents: number): number {
+  return Math.min(MAX_MOVING_CARS, 2 + (lotBusy ? subagents : 0));
 }
 
 // One forklift trip per phase 0..1: lift at `from`, drive to `to`, lower, drive back empty.

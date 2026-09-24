@@ -13,6 +13,24 @@ import fontData from "./fonts/helvetiker-bold.typeface.json" with { type: "json"
 // Parsed once; every lot reuses the same glyph outlines.
 const FONT = new FontLoader().parse(fontData as unknown as Parameters<FontLoader["parse"]>[0]);
 
+// The alphabet is small and shared by every lot, so a letter's geometry is
+// built once and reused, never disposed by an individual sign.
+const letterGeometryCache = new Map<string, THREE.BufferGeometry>();
+function letterGeometry(char: string): THREE.BufferGeometry {
+  let geometry = letterGeometryCache.get(char);
+  if (geometry) return geometry;
+  geometry = new TextGeometry(char, {
+    font: FONT,
+    size: NOMINAL,
+    depth: DEPTH,
+    bevelEnabled: false,
+    curveSegments: 4,
+  });
+  geometry.computeBoundingBox();
+  letterGeometryCache.set(char, geometry);
+  return geometry;
+}
+
 const MAX_CHARS = 14; // an unknown model id arrives raw, so cap it
 const LETTER_HEIGHT = 3; // the tallest the text may ever be
 const NOMINAL = 3; // TextGeometry size before the fit scale
@@ -45,7 +63,10 @@ export class RoofSign {
   // letters face +z in local space and sit on y = 0 (the roof surface).
   readonly group!: THREE.Group;
 
-  private geometries: THREE.BufferGeometry[] = [];
+  // The frame's merged geometry, owned by this instance and disposed with it.
+  // Letter geometries come from the shared cache above and are never disposed
+  // per lot.
+  private ownGeometries: THREE.BufferGeometry[] = [];
   private letterMaterial: THREE.MeshStandardMaterial | null = null;
 
   // `model` is a raw model id ("claude-opus-5"); an empty or unknown one gives
@@ -67,13 +88,10 @@ export class RoofSign {
         cursor += SPACE_WIDTH + TRACKING;
         continue;
       }
-      const geometry = new TextGeometry(char, { font: FONT, size: NOMINAL, depth: DEPTH, bevelEnabled: false, curveSegments: 4 });
-      geometry.computeBoundingBox();
-      const box = geometry.boundingBox;
-      if (!box) {
-        geometry.dispose(); // a glyph the font does not carry
-        continue;
-      }
+      const geometry = letterGeometry(char);
+      // computeBoundingBox() above always sets one; this is TS narrowing
+      // Box3 | null, not a real empty case.
+      const box = geometry.boundingBox!;
       placed.push({ geometry, left: cursor - box.min.x }); // drop the side bearing
       cursor += box.max.x - box.min.x + TRACKING;
       width = cursor - TRACKING; // right edge of the last letter placed
@@ -92,8 +110,11 @@ export class RoofSign {
       mesh.position.set((left - width / 2) * scale, baseline, (-DEPTH / 2) * scale); // extrusion straddles z = 0
       mesh.scale.setScalar(scale);
       mesh.castShadow = true;
+      // The geometry belongs to the cache above, shared with every other lot
+      // showing this letter. Lot.disposeStructure() walks the whole structure
+      // and disposes what it finds, so it has to be told to leave this one be.
+      mesh.userData.sharedGeometry = true;
       this.group.add(mesh);
-      this.geometries.push(geometry);
     }
 
     // Open scaffold under the letters: a rail at the foot, a rail carrying the
@@ -123,12 +144,12 @@ export class RoofSign {
     const frame = new THREE.Mesh(merged, MATERIALS.darkSteel);
     frame.castShadow = true;
     this.group.add(frame);
-    this.geometries.push(merged);
+    this.ownGeometries.push(merged);
   }
 
   dispose(): void {
-    for (const geometry of this.geometries) geometry.dispose();
-    this.geometries.length = 0;
+    for (const geometry of this.ownGeometries) geometry.dispose();
+    this.ownGeometries.length = 0;
     this.letterMaterial?.dispose();
     this.letterMaterial = null;
     // MATERIALS.darkSteel is shared scene-wide and is never disposed here.

@@ -1,7 +1,8 @@
-// A subagent's small warehouse inside its parent's yard.
+// One of a lot's subagent warehouses. There is no per-subagent identity or
+// tool, just a count: each occupied slot gets a warehouse that mirrors its
+// parent lot's busy state.
 
 import * as THREE from "three";
-import type { AgentState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
 import { CARGO_MATERIAL, mergedGroup, Searchlight, Stacks, YARD_Y } from "./machines.ts";
 import { createWallMaterial, MATERIALS, repeatUv, standard } from "./palette.ts";
@@ -9,27 +10,15 @@ import { StaticBuilder } from "./static-builder.ts";
 
 export const WAREHOUSE = { width: 6, height: 3.4, depth: 5 };
 const STRIPE = 0.5;
-
-type Part = "door" | "stack" | "lamp" | "fan";
-const TOOL_PARTS: Record<string, Part> = {
-  Edit: "door",
-  Write: "door",
-  NotebookEdit: "door",
-  Bash: "stack",
-  Read: "lamp",
-  Grep: "lamp",
-  Glob: "lamp",
-};
+const BLADE_SPEED = 3.6; // radians per second at full busy
 
 export class Warehouse {
   readonly group = new THREE.Group();
   readonly pickables: THREE.Mesh[] = [];
-  state: AgentState;
   gone = false;
 
   private body = new THREE.Group();
   private busy = new Activity();
-  private parts: Record<Part, Activity> = { door: new Activity(), stack: new Activity(), lamp: new Activity(), fan: new Activity() };
   private wallMaterial = createWallMaterial();
   private accentMaterial: THREE.MeshStandardMaterial;
   private accent: THREE.Color;
@@ -45,8 +34,15 @@ export class Warehouse {
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
-  constructor(state: AgentState, accent: THREE.Color) {
-    this.state = state;
+  // Set once this warehouse's pop-in finishes, since it was still scaled
+  // down when the shadow map last baked. Read once by the parent lot's
+  // tick(), which folds it into its own shadowDirty flag.
+  private shadowDirty = false;
+
+  // `settled` skips the pop-in scale animation: a warehouse a lot builds
+  // already settled (a camera promotion, not a fresh subagent) must not
+  // replay its arrival.
+  constructor(accent: THREE.Color, variant = 0, settled = false) {
     this.accent = accent.clone();
     const l = accent.r * 0.3 + accent.g * 0.59 + accent.b * 0.11;
     this.grey = new THREE.Color(l, l, l);
@@ -69,9 +65,34 @@ export class Warehouse {
       builder.box(MATERIALS.parapet, [0, top + 0.3, s * (d / 2 - 0.1)], [w, 0.4, 0.2]);
       builder.box(MATERIALS.parapet, [s * (w / 2 - 0.1), top + 0.3, 0], [0.2, 0.4, d]);
     }
-    builder.box(MATERIALS.frame, [-0.6, top + 0.45, -0.8], [1.3, 0.5, 1.3]); // fan housing
+    // Subagent sheds echo the six parent-factory families in miniature.
+    // All additions remain in StaticBuilder's existing material batches.
+    const profile = variant % 6;
+    const serviceX = profile === 1 || profile === 4 ? 0.8 : -0.8;
+    if (profile === 0) {
+      builder.box(MATERIALS.frame, [0, top + 0.65, -0.15], [3.6, 0.65, 1.25]);
+    } else if (profile === 1) {
+      builder.box(MATERIALS.roof, [0, top + 0.58, 0], [1.5, 0.95, 3.2]);
+    } else if (profile === 2) {
+      for (const x of [-1.25, 1.25]) builder.box(MATERIALS.frame, [x, top + 0.55, 0], [1.05, 0.75, 2.7]);
+    } else if (profile === 3) {
+      builder.box(MATERIALS.roof, [0, top + 0.48, 0], [3.5, 0.55, 2.5]);
+      builder.box(MATERIALS.frame, [0, top + 0.98, 0], [1.8, 0.45, 1.35]);
+    } else if (profile === 4) {
+      builder.box(MATERIALS.roof, [-1.55, top + 0.65, 0], [1, 0.85, 3.4]);
+      builder.box(MATERIALS.frame, [1.3, top + 0.85, 0.65], [1.15, 1.25, 1.15]);
+    } else {
+      builder.box(MATERIALS.frame, [0, top + 0.58, -1.1], [3.8, 0.72, 0.75]);
+      builder.box(MATERIALS.roof, [1.1, top + 0.78, 0.8], [1.6, 1.1, 1.2]);
+    }
+    builder.box(MATERIALS.frame, [serviceX, top + 0.45, -0.8], [1.3, 0.5, 1.3]); // fan housing
 
-    this.stack = new Stacks(builder, [w / 2 - 1, -d / 2 + 1], { count: 1, height: top + 1.8 - YARD_Y, radius: 0.3, frame: false });
+    this.stack = new Stacks(builder, [w / 2 - 1, -d / 2 + 1], {
+      count: 1,
+      height: top + 1.8 - YARD_Y,
+      radius: 0.3,
+      frame: false,
+    });
     this.lamp = new Searchlight(builder, [-w / 2 + 0.6, d / 2 - 0.6], {
       tower: false,
       height: top + 1.2 - YARD_Y,
@@ -100,51 +121,50 @@ export class Warehouse {
     this.blades = mergedGroup((b) => {
       for (let i = 0; i < 2; i++) b.box(MATERIALS.darkSteel, [0, 0, 0], [1.1, 0.04, 0.18], [0, (i * Math.PI) / 2, 0]);
     });
-    this.blades.position.set(-0.6, top + 0.75, -0.8);
+    this.blades.position.set(serviceX, top + 0.75, -0.8);
 
     this.body.add(statics, this.stack.group, this.lamp.group, this.door, this.pallet, this.blades);
-    for (const mesh of this.pickables) mesh.userData.hover = this;
-    this.body.scale.setScalar(0.001);
+    this.appear = settled ? 1 : 0;
+    this.body.scale.setScalar(settled ? 1 : 0.001);
     this.group.add(this.body);
-    this.update(state, performance.now());
   }
 
-  update(state: AgentState, nowMs: number) {
-    this.state = state;
-    const working = state.status === "busy";
-    this.busy.set(working, nowMs);
-    const active = working && state.currentTool ? (TOOL_PARTS[state.currentTool.name] ?? "fan") : null;
-    for (const part of Object.keys(this.parts) as Part[]) this.parts[part].set(part === active, nowMs);
+  // `busy` mirrors the parent lot's own busy state: a warehouse has no
+  // activity of its own to report.
+  update(busy: boolean, nowMs: number) {
+    this.busy.set(busy, nowMs);
   }
 
   remove(onGone: () => void) {
     if (this.exit) return;
     this.busy.set(false, 0);
-    for (const part of Object.values(this.parts)) part.set(false, 0);
     this.exit = { t: 0, onGone };
   }
 
   tick(dt: number, nowMs: number) {
     if (this.gone) return;
     const busy = this.busy.update(dt, nowMs);
-    const door = this.parts.door.update(dt, nowMs);
-    const stack = this.parts.stack.update(dt, nowMs);
-    const lamp = this.parts.lamp.update(dt, nowMs);
-    const fan = this.parts.fan.update(dt, nowMs);
 
     this.wallMaterial.emissiveIntensity = busy * 1.1;
     this.accentMaterial.color.copy(this.accent).lerp(this.grey, (1 - busy) * 0.35);
 
-    this.door.scale.y = 1 - door * 0.85;
-    this.palletPhase += dt * 0.5 * door;
+    this.door.scale.y = 1 - busy * 0.85;
+    this.palletPhase += dt * 0.5 * busy;
     const slide = (Math.sin(this.palletPhase * Math.PI * 2 - Math.PI / 2) + 1) / 2;
-    this.pallet.position.z = WAREHOUSE.depth / 2 - 0.6 + slide * 2.2 * door;
+    this.pallet.position.z = WAREHOUSE.depth / 2 - 0.6 + slide * 2.2 * busy;
 
-    this.stack.tick(dt, busy, stack);
-    this.lamp.tick(dt, lamp);
-    this.blades.rotation.y += dt * (0.6 * busy + 12 * fan);
+    this.stack.tick(dt, busy, busy);
+    this.lamp.tick(dt, busy);
+    this.blades.rotation.y += dt * BLADE_SPEED * busy;
 
     this.tickLifecycle(dt);
+  }
+
+  // Same one-shot pattern as Lot.consumeShadowDirty().
+  consumeShadowDirty(): boolean {
+    if (!this.shadowDirty) return false;
+    this.shadowDirty = false;
+    return true;
   }
 
   dispose() {
@@ -160,8 +180,10 @@ export class Warehouse {
 
   private tickLifecycle(dt: number) {
     if (!this.exit) {
+      const wasRising = this.appear < 1;
       this.appear = Math.min(1, this.appear + dt / 0.5);
       this.body.scale.setScalar(Math.max(0.001, easeOutBack(this.appear)));
+      if (wasRising && this.appear >= 1) this.shadowDirty = true;
       return;
     }
     this.exit.t += dt;

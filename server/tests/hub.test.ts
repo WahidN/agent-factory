@@ -1,34 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { Hub, parseRelayMessage } from "../hub.ts";
+import { Hub, MIN_PROTOCOL, parseRelayMessage, PROTOCOL, protocolSupported } from "../hub.ts";
 import type { SessionState } from "../types.ts";
 
 function session(id: string, extra: Partial<SessionState> = {}): SessionState {
   return {
     id,
-    name: id,
-    folder: "shop",
-    machine: "",
-    status: "idle",
-    currentTool: null,
-    startedAt: 1,
+    user: "dennis",
+    project: "shop",
     model: "",
-    subagents: [],
+    status: "idle",
+    subagents: 0,
+    startedAt: 1,
     ...extra,
   };
 }
 
 describe("Hub", () => {
-  it("prefixes ids and stamps the machine on a session and its subagents", () => {
+  it("prefixes ids but does not stamp a machine on the state", () => {
     const hub = new Hub();
     hub.join("mac-b");
-    const { subagents: _, ...sub } = session("agent-x");
-    const out = hub.apply("mac-b", { type: "session-update", session: session("s1", { subagents: [sub] }) });
-    expect(out).toEqual([
-      {
-        type: "session-update",
-        session: { ...session("s1"), id: "mac-b/s1", machine: "mac-b", subagents: [{ ...sub, machine: "mac-b" }] },
-      },
-    ]);
+    const out = hub.apply("mac-b", { type: "session-update", session: session("s1") });
+    expect(out).toEqual([{ type: "session-update", session: { ...session("s1"), id: "mac-b/s1" } }]);
+    expect(out[0]).toMatchObject({ session: expect.not.objectContaining({ machine: expect.anything() }) });
     expect(hub.remote().map((s) => s.id)).toEqual(["mac-b/s1"]);
   });
 
@@ -46,7 +39,9 @@ describe("Hub", () => {
     const hub = new Hub();
     hub.join("mac-b");
     hub.apply("mac-b", { type: "session-update", session: session("a") });
-    expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([{ type: "session-removed", id: "mac-b/a" }]);
+    expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([
+      { type: "session-removed", id: "mac-b/a" },
+    ]);
     expect(hub.apply("mac-b", { type: "session-removed", id: "a" })).toEqual([]);
     expect(hub.remote()).toEqual([]);
   });
@@ -69,12 +64,18 @@ describe("Hub", () => {
     hub.join("mac-c");
     hub.apply("mac-b", { type: "session-update", session: session("same") });
     hub.apply("mac-c", { type: "session-update", session: session("same") });
-    expect(hub.remote().map((s) => [s.id, s.machine])).toEqual([
-      ["mac-b/same", "mac-b"],
-      ["mac-c/same", "mac-c"],
-    ]);
+    expect(hub.remote().map((s) => s.id)).toEqual(["mac-b/same", "mac-c/same"]);
     hub.leave("mac-b");
     expect(hub.remote().map((s) => s.id)).toEqual(["mac-c/same"]);
+  });
+
+  it("forwards exactly the seven wire fields, dropping anything extra a reporter sends", () => {
+    const hub = new Hub();
+    hub.join("mac-b");
+    const extra = { ...session("s1"), cwd: "/Users/dennis/secret", prompt: "hi" } as SessionState;
+    const out = hub.apply("mac-b", { type: "session-update", session: extra });
+    expect(out).toEqual([{ type: "session-update", session: { ...session("s1"), id: "mac-b/s1" } }]);
+    expect(hub.remote()).toEqual([{ ...session("s1"), id: "mac-b/s1" }]);
   });
 
   it("ignores a machine that did not join", () => {
@@ -86,10 +87,71 @@ describe("Hub", () => {
 
 describe("parseRelayMessage", () => {
   it("accepts hello and server messages, rejects the rest", () => {
-    expect(parseRelayMessage('{"type":"hello","machine":"mac-b","protocol":1}')).toEqual({ type: "hello", machine: "mac-b", protocol: 1 });
+    expect(parseRelayMessage('{"type":"hello","protocol":2,"user":"dennis","machine":"mac-b"}')).toEqual({
+      type: "hello",
+      protocol: 2,
+      user: "dennis",
+      machine: "mac-b",
+    });
     expect(parseRelayMessage('{"type":"session-removed","id":"a"}')).toEqual({ type: "session-removed", id: "a" });
     expect(parseRelayMessage('{"type":"other"}')).toBeNull();
     expect(parseRelayMessage("not json")).toBeNull();
     expect(parseRelayMessage("42")).toBeNull();
+  });
+
+  it("accepts a hello with an optional token and valid sessions in every session message", () => {
+    const hello = { type: "hello", protocol: 2, user: "", machine: "mac-b", token: "t" };
+    expect(parseRelayMessage(JSON.stringify(hello))).toEqual(hello);
+    const snapshot = { type: "snapshot", sessions: [session("a"), session("b", { status: "busy" })] };
+    expect(parseRelayMessage(JSON.stringify(snapshot))).toEqual(snapshot);
+    const update = { type: "session-update", session: session("a") };
+    expect(parseRelayMessage(JSON.stringify(update))).toEqual(update);
+  });
+
+  it("rejects a hello with the wrong field types", () => {
+    const bad = [
+      { type: "hello", user: "dennis", machine: "mac-b" },
+      { type: "hello", protocol: "2", user: "dennis", machine: "mac-b" },
+      { type: "hello", protocol: 2, user: "dennis", machine: "" },
+      { type: "hello", protocol: 2, user: "dennis", machine: 7 },
+      { type: "hello", protocol: 2, machine: "mac-b" },
+      { type: "hello", protocol: 2, user: "dennis", machine: "mac-b", token: 1 },
+    ];
+    for (const message of bad) expect(parseRelayMessage(JSON.stringify(message))).toBeNull();
+  });
+
+  it("rejects session messages without a valid session", () => {
+    const bad = [
+      { type: "snapshot" },
+      { type: "snapshot", sessions: {} },
+      { type: "snapshot", sessions: [session("a"), { id: "b" }] },
+      { type: "session-update" },
+      { type: "session-update", session: null },
+      { type: "session-update", session: session("a", { status: "running" as never }) },
+      { type: "session-update", session: session("a", { subagents: Number.NaN }) },
+      { type: "session-update", session: session("a", { startedAt: "1" as never }) },
+      { type: "session-update", session: session("a", { model: undefined as never }) },
+      { type: "session-removed" },
+      { type: "session-removed", id: 3 },
+    ];
+    for (const message of bad) expect(parseRelayMessage(JSON.stringify(message))).toBeNull();
+  });
+});
+
+describe("PROTOCOL", () => {
+  it("is bumped to 2 for the flat wire format", () => {
+    expect(PROTOCOL).toBe(2);
+  });
+});
+
+describe("protocolSupported", () => {
+  it("accepts anything in [MIN_PROTOCOL, PROTOCOL]", () => {
+    expect(protocolSupported(MIN_PROTOCOL)).toBe(true);
+    expect(protocolSupported(PROTOCOL)).toBe(true);
+  });
+
+  it("rejects below MIN_PROTOCOL and above PROTOCOL", () => {
+    expect(protocolSupported(MIN_PROTOCOL - 1)).toBe(false);
+    expect(protocolSupported(PROTOCOL + 1)).toBe(false);
   });
 });

@@ -2,69 +2,60 @@
 // its own: callers pass `now`, so timing rules can be tested with a fake clock.
 
 import { baseName, type SessionFile, type TranscriptEvent } from "./claude-reader.ts";
-import type { AgentState, CurrentTool, ServerMessage, SessionState } from "./types.ts";
+import type { AgentStatus, PlainMessage, SessionState } from "./types.ts";
 
-export const SUBAGENT_BUSY_MS = 5_000;
 export const SUBAGENT_REMOVE_MS = 60_000;
+// A session counts as busy if its transcript was written to this recently,
+// even when the session file itself still says idle (it lags the transcript).
+export const SESSION_BUSY_MS = 5_000;
 
-type Listener = (message: ServerMessage) => void;
+// The wire format has no room for a tool name or target, so the tracker keeps
+// only the ids of tool calls without a result yet: whether any tool is open is
+// one of the signals that decides busy vs idle.
+type Listener = (message: PlainMessage) => void;
 
-// Tool calls without a result yet, in the order they started.
-class PendingTools {
-  private pending = new Map<string, CurrentTool>();
-
-  apply(event: TranscriptEvent) {
-    if (event.kind === "tool_start") this.pending.set(event.id, { name: event.name, target: event.target });
-    else if (event.kind === "tool_end") this.pending.delete(event.id);
-  }
-
-  current(): CurrentTool | null {
-    let last: CurrentTool | null = null;
-    for (const tool of this.pending.values()) last = tool;
-    return last;
-  }
-}
-
-// `model` is what the transcript names; `alias` is the short name from the
-// meta file, shown until the transcript names a model.
 type Subagent = {
-  id: string;
-  name: string;
-  alias: string;
   model: string;
-  startedAt: number;
   lastWriteAt: number;
-  tools: PendingTools;
+  openTools: Set<string>;
 };
 
 type Session = {
   file: SessionFile;
   model: string;
-  tools: PendingTools;
+  lastWriteAt: number;
+  openTools: Set<string>;
   subagents: Map<string, Subagent>;
 };
 
-export type SubagentInfo = { name: string; model: string };
-
-function applyEvent(target: { tools: PendingTools; model: string }, event: TranscriptEvent) {
+function applyEvent(target: { openTools: Set<string>; model: string }, event: TranscriptEvent) {
   if (event.kind === "model") target.model = event.model;
-  else target.tools.apply(event);
+  else if (event.kind === "tool_start") target.openTools.add(event.id);
+  else target.openTools.delete(event.id);
 }
 
 export class SessionTracker {
   private sessions = new Map<string, Session>();
   private lastSent = new Map<string, string>();
 
-  // `machine` is stamped on every state, so a hub can tell sessions apart by origin.
+  // `user` is stamped on every state: who runs the session, read once from
+  // this machine's environment.
   constructor(
     private listener: Listener,
-    private machine = "",
+    private user = "",
   ) {}
 
   upsertSession(file: SessionFile, now: number) {
     const existing = this.sessions.get(file.sessionId);
     if (existing) existing.file = file;
-    else this.sessions.set(file.sessionId, { file, model: "", tools: new PendingTools(), subagents: new Map() });
+    else
+      this.sessions.set(file.sessionId, {
+        file,
+        model: "",
+        lastWriteAt: 0,
+        openTools: new Set(),
+        subagents: new Map(),
+      });
     this.emit(file.sessionId, now);
   }
 
@@ -74,57 +65,33 @@ export class SessionTracker {
     this.listener({ type: "session-removed", id: sessionId });
   }
 
-  hasSession(sessionId: string) {
-    return this.sessions.has(sessionId);
-  }
-
   sessionIds() {
     return [...this.sessions.keys()];
   }
 
-  // Emits after every event, so a tool that starts and ends in the same read
-  // still reaches clients as two updates instead of vanishing.
-  applySessionEvents(sessionId: string, events: TranscriptEvent[], now: number) {
+  // Applies one read of the transcript and emits at most once, with the state
+  // after the whole read. `writtenAt` is when the session transcript last
+  // changed, used to derive busy.
+  applySessionEvents(sessionId: string, events: TranscriptEvent[], writtenAt: number, now: number) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    for (const event of events) {
-      applyEvent(session, event);
-      this.emit(sessionId, now);
-    }
+    session.lastWriteAt = Math.max(session.lastWriteAt, writtenAt);
+    for (const event of events) applyEvent(session, event);
+    this.emit(sessionId, now);
   }
 
   // `writtenAt` is when the subagent transcript last changed.
-  applySubagentEvents(
-    sessionId: string,
-    agentId: string,
-    info: SubagentInfo,
-    events: TranscriptEvent[],
-    writtenAt: number,
-    now: number,
-  ) {
+  applySubagentEvents(sessionId: string, agentId: string, events: TranscriptEvent[], writtenAt: number, now: number) {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     let subagent = session.subagents.get(agentId);
     if (!subagent) {
-      subagent = {
-        id: agentId,
-        name: info.name,
-        alias: info.model,
-        model: "",
-        startedAt: writtenAt,
-        lastWriteAt: writtenAt,
-        tools: new PendingTools(),
-      };
+      subagent = { model: "", lastWriteAt: writtenAt, openTools: new Set() };
       session.subagents.set(agentId, subagent);
     }
-    subagent.name = info.name;
-    subagent.alias = info.model;
     subagent.lastWriteAt = Math.max(subagent.lastWriteAt, writtenAt);
+    for (const event of events) applyEvent(subagent, event);
     this.emit(sessionId, now);
-    for (const event of events) {
-      applyEvent(subagent, event);
-      this.emit(sessionId, now);
-    }
   }
 
   // Call regularly so subagents turn idle and get removed as time passes.
@@ -132,7 +99,7 @@ export class SessionTracker {
     for (const [sessionId, session] of this.sessions) {
       for (const [agentId, subagent] of session.subagents) {
         const quiet = now - subagent.lastWriteAt;
-        if (!subagent.tools.current() && quiet >= SUBAGENT_REMOVE_MS) session.subagents.delete(agentId);
+        if (subagent.openTools.size === 0 && quiet >= SUBAGENT_REMOVE_MS) session.subagents.delete(agentId);
       }
       this.emit(sessionId, now);
     }
@@ -146,30 +113,16 @@ export class SessionTracker {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     const { file } = session;
-    const subagents: AgentState[] = [...session.subagents.values()].map((subagent) => {
-      const currentTool = subagent.tools.current();
-      const recent = now - subagent.lastWriteAt < SUBAGENT_BUSY_MS;
-      return {
-        id: subagent.id,
-        name: subagent.name,
-        folder: baseName(file.cwd),
-        machine: this.machine,
-        status: currentTool || recent ? "busy" : "idle",
-        currentTool,
-        startedAt: subagent.startedAt,
-        model: subagent.model || subagent.alias,
-      };
-    });
+    const recentWrite = now - session.lastWriteAt < SESSION_BUSY_MS;
+    const status: AgentStatus = file.status === "busy" || session.openTools.size > 0 || recentWrite ? "busy" : "idle";
     return {
       id: file.sessionId,
-      name: file.name,
-      folder: baseName(file.cwd),
-      machine: this.machine,
-      status: file.status,
-      currentTool: session.tools.current(),
-      startedAt: file.startedAt,
+      user: this.user,
+      project: baseName(file.cwd),
       model: session.model,
-      subagents,
+      status,
+      subagents: session.subagents.size,
+      startedAt: file.startedAt,
     };
   }
 

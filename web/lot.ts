@@ -3,36 +3,32 @@
 // sized by the session's model tier, and rebuilt in place when the tier changes.
 
 import * as THREE from "three";
-import type { AgentState, SessionState } from "../server/types.ts";
+import type { SessionState } from "../server/types.ts";
 import { Activity } from "./activity.ts";
+import { destinationFor } from "./leisure.ts";
+import { factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "./factory-style.ts";
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, createTruck, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
-import { accentFor, createWallMaterial, DECALS, MATERIALS, repeatUv, standard, WALL_BAY, WALL_TINTS } from "./palette.ts";
+import {
+  accentFor,
+  createWallMaterial,
+  DECALS,
+  MATERIALS,
+  repeatUv,
+  standard,
+  WALL_BAY,
+  WALL_TINTS,
+} from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
-import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
+import { wallTintIndexFor } from "./park-layout.ts";
 import { RoofSign } from "./roof-sign.ts";
 import { Sign } from "./sign.ts";
 import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
 import { easeOutBack, Warehouse } from "./warehouse.ts";
 import { LotWorkers, type WorkerSlot } from "./workers.ts";
-
-type Part = "forklift" | "stacks" | "searchlight" | "cooling";
-
-const TOOL_PARTS: Record<string, Part> = {
-  Edit: "forklift",
-  Write: "forklift",
-  NotebookEdit: "forklift",
-  Bash: "stacks",
-  Read: "searchlight",
-  Grep: "searchlight",
-  Glob: "searchlight",
-};
-
-function partForTool(name: string): Part {
-  return TOOL_PARTS[name] ?? "cooling";
-}
+import type { Point } from "./worker-logic.ts";
 
 // The hall keeps its dock side on every tier, so the dock door, hall door,
 // parked cars and worker routes never move. A smaller hall shrinks toward the
@@ -96,27 +92,102 @@ function hallTop(size: LotSize) {
   return YARD_Y + STRIPE + size.bays * WALL_BAY.height;
 }
 
+// The hall's outer box per tier. The far level in instanced-lots.ts builds the
+// same volume from one merged geometry, so a lot does not jump size or move
+// when it swaps between the two levels.
+type HallShape = { x0: number; z0: number; x1: number; z1: number; top: number };
+
+export function hallShape(tier: ModelTier): HallShape {
+  const size = SIZES[tier];
+  return { x0: size.hall.x0, z0: size.hall.z0, x1: HALL_X1, z1: HALL_Z1, top: hallTop(size) };
+}
+
 // Worker routes avoid buildings and machines (see design.md). The first 4 work
 // the main yard; the rest stand in front of the warehouse slots.
+type BaseSlot = { door: Point; route: [Point, Point] };
 const HALL_DOOR = { x: 1.5, z: -3.3 };
-const WORKER_SLOTS: WorkerSlot[] = [
-  { door: HALL_DOOR, route: [{ x: 1.5, z: -3.3 }, { x: 2.3, z: 9.3 }] }, // past the hatch, between parked cars
-  { door: HALL_DOOR, route: [{ x: -2.5, z: -3.3 }, { x: -2.5, z: 3.5 }] }, // beside the forklift lane
-  { door: HALL_DOOR, route: [{ x: 6, z: -3.4 }, { x: 17.5, z: -5.8 }] }, // between stacks and cooling tower
-  { door: HALL_DOOR, route: [{ x: 5, z: 9.5 }, { x: 18.5, z: 9.5 }] }, // along the walkway to the gate
-  ...WAREHOUSE_SLOTS.map(([x, z]): WorkerSlot => ({
-    door: { x: x + 1.2, z: z + 2.9 },
-    route: [{ x: x - 1.8, z: z + 3.6 }, { x: x + 1.8, z: z + 3.6 }],
-  })),
+const WORKER_SLOTS: BaseSlot[] = [
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 1.5, z: -3.3 },
+      { x: 2.3, z: 9.3 },
+    ],
+  }, // past the hatch, between parked cars
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: -2.5, z: -3.3 },
+      { x: -2.5, z: 3.5 },
+    ],
+  }, // beside the forklift lane
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 6, z: -3.4 },
+      { x: 17.5, z: -5.8 },
+    ],
+  }, // between stacks and cooling tower
+  {
+    door: HALL_DOOR,
+    route: [
+      { x: 5, z: 9.5 },
+      { x: 18.5, z: 9.5 },
+    ],
+  }, // along the walkway to the gate
+  ...WAREHOUSE_SLOTS.map(
+    ([x, z]): BaseSlot => ({
+      door: { x: x + 1.2, z: z + 2.9 },
+      route: [
+        { x: x - 1.8, z: z + 3.6 },
+        { x: x + 1.8, z: z + 3.6 },
+      ],
+    }),
+  ),
 ];
+
+// The gate's local point: the opening in the right fence, GATE.z0..z1 at x = YARD_HALF.
+const GATE_POINT: Point = { x: YARD_HALF, z: (GATE.z0 + GATE.z1) / 2 };
+
+const SPREAD_STRIDE = 3; // spacing between neighbouring workers along the edge
+
+// A quiet lot's workers gather near the nearest claimed cell instead of one
+// another, spread along the cell edge their destination sits on so eight of
+// them are not standing on top of each other.
+function spread(point: Point, axis: "x" | "z", index: number, count: number): Point {
+  const offset = (index - (count - 1) / 2) * SPREAD_STRIDE;
+  return axis === "x" ? { x: point.x + offset, z: point.z } : { x: point.x, z: point.z + offset };
+}
+
+function workerSlotsFor(rank: number, rankCount: number): WorkerSlot[] {
+  const destination = destinationFor(rank, rankCount);
+  return WORKER_SLOTS.map((slot, i) => ({
+    ...slot,
+    gate: GATE_POINT,
+    destination: destination ? spread(destination.point, destination.axis, i, WORKER_SLOTS.length) : null,
+  }));
+}
 
 // Rooftop vents and AC boxes, relative to the hall's back left corner. Ones
 // that fall outside a smaller roof are left out.
 const VENTS: [number, number][] = [
-  [2, 2.5], [5, 11.5], [8.5, 2], [12, 12], [15.5, 3], [19, 11], [20, 6.5], [3.5, 7],
+  [2, 2.5],
+  [5, 11.5],
+  [8.5, 2],
+  [12, 12],
+  [15.5, 3],
+  [19, 11],
+  [20, 6.5],
+  [3.5, 7],
 ];
-const SKYLIGHTS: [number, number][] = [[9, 4.5], [9, 9.5]];
-const AC_BOXES: [number, number][] = [[17, 4.5], [17.5, 9.5]];
+const SKYLIGHTS: [number, number][] = [
+  [9, 4.5],
+  [9, 9.5],
+];
+const AC_BOXES: [number, number][] = [
+  [17, 4.5],
+  [17.5, 9.5],
+];
 
 type Slot = { warehouse: Warehouse; slot: number };
 type Machines = { stacks: Stacks; forklift: Forklift; searchlight: Searchlight; cooling: CoolingTower };
@@ -137,40 +208,67 @@ export class Lot {
   private builtModel!: string;
   private hallPickables: THREE.Mesh[] = [];
   private busy = new Activity();
-  private parts: Record<Part, Activity> = {
-    forklift: new Activity(),
-    stacks: new Activity(),
-    searchlight: new Activity(),
-    cooling: new Activity(),
-  };
 
   private accent: THREE.Color;
   private accentGrey: THREE.Color;
   private accentMaterial: THREE.MeshStandardMaterial;
-  // Fixed at construction from the machine that opened the session. A machine
+  // Fixed at construction from the user who opened the session. A user
   // switch mid-session (an id gets re-prefixed) does not retint the wall; the
   // tint only changes with a fresh Lot.
   private wallMaterial: THREE.MeshStandardMaterial;
 
-  private workers = new LotWorkers(WORKER_SLOTS);
-  private busySubagents = 0;
+  private workers: LotWorkers;
+  // Where this lot's leisure destination was last computed for; kept so a
+  // repeat call with the same rank/rankCount (the common case: most lots
+  // don't move when one session starts or stops) recomputes nothing.
+  private rank: number;
+  private rankCount: number;
 
-  private warehouses = new Map<string, Slot>();
+  private warehouses = new Map<number, Slot>();
   private leavingWarehouses = new Set<Slot>();
   private overflow = 0;
 
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
-  constructor(state: SessionState) {
+  // The renderer's shadow map only redraws on demand (see scene.ts). Set
+  // whenever this lot moves a shadow caster outside the frame loop's own
+  // checks, and read once by main.ts's tick loop, which resets it.
+  private shadowDirty = false;
+
+  // Set whenever the meshes pickables() returns actually change (a warehouse
+  // slot filled or freed), and read once by main.ts's tick loop, which nulls
+  // its own pickables cache.
+  private pickablesDirty = false;
+
+  // Consumed by the very first updateWarehouses() call, made from the
+  // constructor via update(): a warehouse this lot builds while already
+  // settled must not replay its own pop-in either.
+  private pendingSettled: boolean;
+
+  // `settled` skips the rise out of the ground: a lot that only swapped from
+  // the far level to this one was already standing, so it must not replay its
+  // arrival every time the camera drifts past it.
+  //
+  // `rank` and `rankCount` fix where this lot's workers hang around while it
+  // is quiet: the nearest claimed cell to `rank`'s own cell, among the
+  // `rankCount` cells the city plan has claimed so far. The park repacks
+  // ranks whenever a session starts or stops, so `setPlot` keeps this current
+  // without rebuilding the lot; it is not recomputed per frame.
+  constructor(state: SessionState, rank: number, rankCount: number, settled = false) {
     this.state = state;
+    this.appear = settled ? 1 : 0;
+    this.pendingSettled = settled;
     this.tier = tierFor(state.model);
-    this.accent = accentFor(state.folder);
+    this.accent = accentFor(state.project);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
     this.accentGrey = new THREE.Color(l, l, l);
     this.accentMaterial = standard(this.accent.clone());
     this.accentMaterial.userData.separate = true; // its color animates
-    this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.machine)]);
+    this.wallMaterial = createWallMaterial(WALL_TINTS[wallTintIndexFor(state.user)]);
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers = new LotWorkers(workerSlotsFor(rank, rankCount));
 
     this.buildStructure();
 
@@ -181,7 +279,7 @@ export class Lot {
     parked.traverse((child) => (child.castShadow = child.receiveShadow = true));
 
     this.body.add(parked, this.workers.mesh);
-    this.body.position.y = -SINK_DEPTH;
+    this.body.position.y = settled ? 0 : -SINK_DEPTH;
     this.group.add(this.body);
     this.update(state, performance.now());
   }
@@ -195,21 +293,34 @@ export class Lot {
       this.tier = tier;
       this.disposeStructure();
       this.buildStructure();
+      this.shadowDirty = true; // the hall's shape and shadow just changed
     }
     this.syncSign();
-    this.lightBox.update(this.state.machine);
+    this.lightBox.update(this.state.project);
     const working = state.status === "busy";
     this.busy.set(working, nowMs);
-    const active = working && state.currentTool ? partForTool(state.currentTool.name) : null;
-    for (const part of Object.keys(this.parts) as Part[]) this.parts[part].set(part === active, nowMs);
-    this.busySubagents = state.subagents.filter((s) => s.status === "busy").length;
-    this.updateWarehouses(state.subagents, nowMs);
+    this.updateWarehouses(state.subagents, working, nowMs);
   }
 
-  // What this lot sends onto the park roads: always some cars, the truck only while busy.
-  traffic(): { cars: number; truck: boolean } {
-    const lotBusy = this.state.status === "busy" && !this.exit;
-    return { cars: movingCarCount(lotBusy, this.busySubagents), truck: lotBusy };
+  // Moves the lot to a new place. The worker mesh hangs under `body`, so it
+  // would carry every worker along; the ones out in the world are shifted
+  // back by the same delta and keep their spot on screen.
+  relocate(x: number, z: number) {
+    const { x: oldX, z: oldZ } = this.group.position;
+    this.group.position.set(x, 0, z);
+    this.workers.translate(oldX - x, oldZ - z);
+  }
+
+  // Called whenever the park repacks and this lot's rank or the total rank
+  // count changed, so its leisure destination stays pointed at the right
+  // claimed cell. Only the destination points move; a worker already walking
+  // there keeps its position and simply steers toward the new point next
+  // tick, no rebuild and no jump.
+  setPlot(rank: number, rankCount: number) {
+    if (rank === this.rank && rankCount === this.rankCount) return;
+    this.rank = rank;
+    this.rankCount = rankCount;
+    this.workers.setSlots(workerSlotsFor(rank, rankCount));
   }
 
   pickables(): THREE.Mesh[] {
@@ -221,37 +332,57 @@ export class Lot {
     ];
   }
 
+  // True once, the first time it is called after this lot moved a shadow
+  // caster. The caller (main.ts's frame loop) uses it to flip
+  // view.invalidateShadows() only on the frames that actually need it.
+  consumeShadowDirty(): boolean {
+    if (!this.shadowDirty) return false;
+    this.shadowDirty = false;
+    return true;
+  }
+
+  // Same one-shot pattern as consumeShadowDirty(), for main.ts's pickables cache.
+  consumePickablesDirty(): boolean {
+    if (!this.pickablesDirty) return false;
+    this.pickablesDirty = false;
+    return true;
+  }
+
   remove(onGone: () => void) {
     if (this.exit) return;
     this.busy.set(false, 0);
-    for (const part of Object.values(this.parts)) part.set(false, 0);
-    for (const [id, slot] of this.warehouses) this.leaveWarehouse(id, slot);
+    for (const [slot, entry] of this.warehouses) this.leaveWarehouse(slot, entry);
     this.exit = { t: 0, onGone };
   }
 
   tick(dt: number, nowMs: number) {
     if (this.gone) return;
     const busy = this.busy.update(dt, nowMs);
-    const forklift = this.parts.forklift.update(dt, nowMs);
-    const stacks = this.parts.stacks.update(dt, nowMs);
-    const searchlight = this.parts.searchlight.update(dt, nowMs);
-    const cooling = this.parts.cooling.update(dt, nowMs);
 
     this.wallMaterial.emissiveIntensity = busy * 1.1;
     this.lightBox.setGlow(busy);
     this.accentMaterial.color.copy(this.accent).lerp(this.accentGrey, (1 - busy) * 0.35);
 
-    this.machines.stacks.tick(dt, busy, stacks);
-    this.machines.forklift.tick(dt, forklift);
-    this.machines.searchlight.tick(dt, searchlight);
-    this.machines.cooling.tick(dt, busy, cooling);
+    this.machines.stacks.tick(dt, busy, busy);
+    this.machines.forklift.tick(dt, busy);
+    this.machines.searchlight.tick(dt, busy);
+    this.machines.cooling.tick(dt, busy, busy);
     this.workers.tick(dt, this.workerBusyFlags());
 
-    for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);
+    for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) {
+      slot.warehouse.tick(dt, nowMs);
+      if (slot.warehouse.consumeShadowDirty()) this.shadowDirty = true;
+    }
     this.tickLifecycle(dt);
   }
 
   dispose() {
+    // redistribute() can dispose a lot the frame loop already captured in its
+    // own tick() pass this frame (main.ts still holds a reference from before
+    // this call). `gone` makes that stale tick() a no-op instead of ticking
+    // freed materials and, through a warehouse's own onGone, rebuilding on a
+    // lot that is no longer part of the scene.
+    this.gone = true;
     this.disposeStructure();
     this.wallMaterial.dispose();
     this.accentMaterial.dispose();
@@ -263,13 +394,14 @@ export class Lot {
 
   private buildStructure() {
     const size = SIZES[this.tier];
+    const style = factoryStyleFor(this.state.id);
     this.builtModel = this.state.model;
     const builder = new StaticBuilder();
     this.buildYard(builder);
     this.buildHall(builder, size);
 
     const { at: stacksAt, ...stacksOptions } = size.stacks;
-    const stacks = new Stacks(builder, stacksAt, stacksOptions);
+    const stacks = new Stacks(builder, stacksAt, { ...stacksOptions, axis: style.stackAxis });
     const forklift = new Forklift(builder, DOCK_X, -2.2, 2.6);
     const searchlight = new Searchlight(builder, [-17, 12], { tower: true, ...size.searchlight, aimAt: [-4, 2] });
     const cooling = new CoolingTower(builder, size.cooling.at, size.cooling.radius, size.cooling.height);
@@ -277,7 +409,9 @@ export class Lot {
 
     const statics = builder.build();
     const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
-    this.hallPickables = (statics.children as THREE.Mesh[]).filter((mesh) => hallMaterials.includes(mesh.material as THREE.Material));
+    this.hallPickables = (statics.children as THREE.Mesh[]).filter((mesh) =>
+      hallMaterials.includes(mesh.material as THREE.Material),
+    );
     for (const mesh of this.hallPickables) mesh.userData.hover = this;
 
     this.machines = { stacks, forklift, searchlight, cooling };
@@ -322,7 +456,7 @@ export class Lot {
 
     this.body.add(this.structure);
     this.syncSign();
-    this.lightBox.update(this.state.machine);
+    this.lightBox.update(this.state.project);
   }
 
   private disposeStructure() {
@@ -337,7 +471,12 @@ export class Lot {
     // The sign's own geometries (posts, board, stripe, text planes) are disposed
     // above by Sign.dispose(); this traversal disposes them a second time, which
     // is harmless in Three.js since geometry.dispose() is idempotent.
+    // `sharedGeometry` marks a mesh whose geometry belongs to a cache other lots
+    // draw from too (the roof sign's letters): disposing it here would free the
+    // GPU buffers of every other lot spelling the same letter, and the renderer
+    // would upload the whole alphabet again on the next frame.
     this.structure.traverse((child) => {
+      if (child.userData.sharedGeometry) return;
       if (child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh)) child.geometry.dispose();
     });
   }
@@ -351,7 +490,11 @@ export class Lot {
     const segment = (x0: number, z0: number, x1: number, z1: number) => {
       const length = Math.hypot(x1 - x0, z1 - z0);
       const alongX = Math.abs(x1 - x0) > Math.abs(z1 - z0);
-      b.box(MATERIALS.concrete, [(x0 + x1) / 2, YARD_Y + wallHeight / 2, (z0 + z1) / 2], alongX ? [length, wallHeight, 0.3] : [0.3, wallHeight, length]);
+      b.box(
+        MATERIALS.concrete,
+        [(x0 + x1) / 2, YARD_Y + wallHeight / 2, (z0 + z1) / 2],
+        alongX ? [length, wallHeight, 0.3] : [0.3, wallHeight, length],
+      );
     };
     segment(-h, -h, h, -h);
     segment(-h, h, h, h);
@@ -359,7 +502,12 @@ export class Lot {
     segment(h, -h, h, GATE.z0);
     segment(h, GATE.z1, h, h);
     for (let t = -h; t <= h; t += 5) {
-      for (const [x, z] of [[t, -h], [t, h], [-h, t], [h, t]]) {
+      for (const [x, z] of [
+        [t, -h],
+        [t, h],
+        [-h, t],
+        [h, t],
+      ]) {
         if (x === h && z > GATE.z0 && z < GATE.z1) continue;
         b.box(MATERIALS.parapet, [x, YARD_Y + 0.7, z], [0.5, 1.4, 0.5]);
       }
@@ -387,13 +535,27 @@ export class Lot {
     const cx = (x0 + x1) / 2;
     const cz = (z0 + z1) / 2;
     const wallY = YARD_Y + STRIPE + wall / 2;
+    const style = factoryStyleFor(this.state.id);
 
     b.box(this.accentMaterial, [cx, YARD_Y + STRIPE / 2, cz], [width + 0.1, STRIPE, depth + 0.1]);
-    const wallPlane = (length: number) => repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, size.bays);
+    const wallPlane = (length: number) =>
+      repeatUv(new THREE.PlaneGeometry(length, wall), length / WALL_BAY.width, size.bays);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z1]);
     b.add(wallPlane(width), this.wallMaterial, [cx, wallY, z0], [1, 1, 1], [0, Math.PI, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x1, wallY, cz], [1, 1, 1], [0, Math.PI / 2, 0]);
     b.add(wallPlane(depth), this.wallMaterial, [x0, wallY, cz], [1, 1, 1], [0, -Math.PI / 2, 0]);
+
+    // Slim colored pilasters and a crisp cornice turn the plain box into a
+    // deliberate industrial pavilion. They reuse the animated accent
+    // material, so all pieces collapse into its existing draw call.
+    const pilasterHeight = top - YARD_Y;
+    for (const x of [x0 + 0.16, x1 - 0.16]) {
+      for (const z of [z0 - 0.02, z1 + 0.02]) {
+        b.box(this.accentMaterial, [x, YARD_Y + pilasterHeight / 2, z], [0.38, pilasterHeight, 0.18]);
+      }
+    }
+    b.box(this.accentMaterial, [cx, top - 0.18, z1 + 0.08], [width + 0.2, 0.36, 0.18]);
+    b.box(this.accentMaterial, [cx, top - 0.18, z0 - 0.08], [width + 0.2, 0.36, 0.18]);
 
     // Flat roof with parapet
     b.box(MATERIALS.roof, [cx, top + 0.15, cz], [width, 0.3, depth]);
@@ -402,9 +564,30 @@ export class Lot {
       b.box(MATERIALS.parapet, [cx + s * (width / 2 - 0.2), top + 0.4, cz], [0.4, 0.8, depth + 0.1]);
     }
 
+    // Two masses form one of six stable industrial silhouettes. Their shared
+    // resolver is also used by the far LOD, preventing a skyline pop.
+    const roofMasses = resolveRoofMasses(style, width, depth);
+    for (const mass of roofMasses) {
+      const massY = top + 0.8 + mass.elevation + mass.height / 2;
+      b.box(MATERIALS.roof, [cx + mass.x, massY, cz + mass.z], [mass.width, mass.height, mass.depth]);
+      b.box(
+        this.accentMaterial,
+        [cx + mass.x, massY + mass.height * 0.08, cz + mass.z + mass.depth / 2 + 0.04],
+        [Math.max(1.4, mass.width - 0.7), Math.min(0.42, mass.height * 0.28), 0.08],
+      );
+    }
+
     // Rooftop: vents, skylights, AC boxes. `fits` keeps a piece of the given
-    // half size inside the parapet.
-    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+    // half size inside the parapet and clear of this hall's roof monitor.
+    const fits = ([vx, vz]: [number, number], halfX: number, halfZ: number) => {
+      const inside = vx + halfX < width - 0.5 && vz + halfZ < depth - 0.5;
+      const clearMasses = roofMasses.every(
+        (mass) =>
+          Math.abs(vx - width / 2 - mass.x) > mass.width / 2 + halfX + 0.3 ||
+          Math.abs(vz - depth / 2 - mass.z) > mass.depth / 2 + halfZ + 0.3,
+      );
+      return inside && clearMasses;
+    };
     for (const vent of VENTS.filter((v) => fits(v, 0.5, 0.5))) {
       const x = x0 + vent[0];
       const z = z0 + vent[1];
@@ -429,58 +612,68 @@ export class Lot {
 
   // ---------- Warehouses ----------
 
-  private updateWarehouses(subagents: AgentState[], nowMs: number) {
-    const ids = new Set(subagents.map((s) => s.id));
-    for (const [id, slot] of this.warehouses) if (!ids.has(id)) this.leaveWarehouse(id, slot);
+  // No per-subagent identity survives on the wire, just a count: this fills
+  // slots 0..count-1 and empties the rest, all mirroring the lot's own busy
+  // state (there is no separate busy flag per subagent).
+  private updateWarehouses(count: number, busy: boolean, nowMs: number) {
+    const settled = this.pendingSettled;
+    this.pendingSettled = false;
+    const target = Math.min(count, MAX_WAREHOUSES);
+    for (const [slot, entry] of [...this.warehouses]) if (slot >= target) this.leaveWarehouse(slot, entry);
 
-    let waiting = 0;
-    for (const subagent of [...subagents].sort((a, b) => a.startedAt - b.startedAt)) {
-      const existing = this.warehouses.get(subagent.id);
-      if (existing) {
-        existing.warehouse.update(subagent, nowMs);
-        continue;
-      }
-      const slot = this.freeSlot();
-      if (slot === null || this.exit) {
-        waiting++;
-        continue;
-      }
-      const warehouse = new Warehouse(subagent, this.accent);
+    for (let slot = 0; slot < target; slot++) {
+      if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
+      const warehouse = new Warehouse(this.accent, factoryStyleIndex(this.state.id) + slot, settled);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
+      for (const mesh of warehouse.pickables) mesh.userData.hover = this;
       this.body.add(warehouse.group);
-      this.warehouses.set(subagent.id, { warehouse, slot });
+      this.warehouses.set(slot, { warehouse, slot });
+      this.pickablesDirty = true;
     }
 
+    for (const { warehouse } of this.warehouses.values()) warehouse.update(busy, nowMs);
+
+    const waiting = Math.max(0, count - MAX_WAREHOUSES);
     if (waiting !== this.overflow) {
       this.overflow = waiting;
       this.syncSign();
     }
   }
 
-  // A leaving warehouse keeps its slot until it has shrunk away.
-  private leaveWarehouse(id: string, slot: Slot) {
-    this.warehouses.delete(id);
-    this.leavingWarehouses.add(slot);
-    slot.warehouse.remove(() => {
-      this.leavingWarehouses.delete(slot);
-      this.body.remove(slot.warehouse.group);
-      slot.warehouse.dispose();
+  // A leaving warehouse keeps its slot until it has shrunk away. A slot the
+  // subagent count still wants gets skipped while that shrink is running (see
+  // `slotLeaving` above), so once it finishes this refills the slot if it is
+  // still wanted.
+  private leaveWarehouse(slot: number, entry: Slot) {
+    this.warehouses.delete(slot);
+    this.leavingWarehouses.add(entry);
+    this.pickablesDirty = true; // the leaving warehouse's pickables are already out of pickables()
+    entry.warehouse.remove(() => {
+      this.leavingWarehouses.delete(entry);
+      // This lot can be disposed (redistribute() demoted or removed it)
+      // before this fires: dispose() already freed this warehouse and every
+      // other resource this lot owns, so acting further here would rebuild
+      // on a lot no longer in the scene.
+      if (this.gone) return;
+      this.body.remove(entry.warehouse.group);
+      entry.warehouse.dispose();
+      this.shadowDirty = true; // a shadow caster just disappeared
+      this.updateWarehouses(this.state.subagents, this.state.status === "busy", performance.now());
     });
   }
 
-  // Yard workers follow the session; each warehouse worker follows its subagent.
-  private workerBusyFlags(): boolean[] {
-    const lotBusy = this.state.status === "busy" && !this.exit;
-    const slotBusy = new Array(MAX_WAREHOUSES).fill(false);
-    for (const { warehouse, slot } of this.warehouses.values()) slotBusy[slot] = warehouse.state.status === "busy" && !this.exit;
-    return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
+  private slotLeaving(slot: number): boolean {
+    for (const entry of this.leavingWarehouses) if (entry.slot === slot) return true;
+    return false;
   }
 
-  private freeSlot(): number | null {
-    const used = new Set([...this.warehouses.values(), ...this.leavingWarehouses].map((s) => s.slot));
-    for (let slot = 0; slot < MAX_WAREHOUSES; slot++) if (!used.has(slot)) return slot;
-    return null;
+  // Yard workers follow the session; each warehouse worker follows the same busy state.
+  private workerBusyFlags(): (boolean | null)[] {
+    const lotBusy = this.state.status === "busy" && !this.exit;
+    const slotBusy: (boolean | null)[] = new Array(MAX_WAREHOUSES).fill(null);
+    for (const slot of this.warehouses.keys()) slotBusy[slot] = lotBusy;
+    return [lotBusy, lotBusy, lotBusy, lotBusy, ...slotBusy];
   }
 
   // ---------- Lifecycle ----------
@@ -488,8 +681,12 @@ export class Lot {
   // Rises out of the ground on arrival, sinks back when the session ends.
   private tickLifecycle(dt: number) {
     if (!this.exit) {
+      const wasRising = this.appear < 1;
       this.appear = Math.min(1, this.appear + dt / 0.8);
       this.body.position.y = -SINK_DEPTH * (1 - easeOutBack(this.appear));
+      // The shadow baked while this lot was still sunk, so it needs one more
+      // redraw once the body has fully risen into its final position.
+      if (wasRising && this.appear >= 1) this.shadowDirty = true;
       return;
     }
     this.exit.t += dt;
@@ -504,6 +701,6 @@ export class Lot {
   // ---------- Sign ----------
 
   private syncSign() {
-    this.sign.update({ name: this.state.name, folder: this.state.folder, machine: this.state.machine, model: this.state.model, overflow: this.overflow });
+    this.sign.update({ user: this.state.user, overflow: this.overflow });
   }
 }

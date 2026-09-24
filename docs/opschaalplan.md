@@ -1,5 +1,7 @@
 # Van laptop naar centrale
 
+> De handleidingen voor dagelijks gebruik staan in [`README.md`](../README.md) (meekijken en meedoen met je Mac) en [`deploy/pi.md`](../deploy/pi.md) (de centrale beheren).
+
 Bouwplan, 15 september 2026. Eén Raspberry Pi op het kantoornetwerk draait het park van het hele team. Elke Mac stuurt zeven velden en verder niets. Niemand van buiten komt erbij, want er is niets om bij te komen. Het zware werk verschuift daarmee naar de scène: 150 fabrieken tekenen op 60 fps.
 
 | | |

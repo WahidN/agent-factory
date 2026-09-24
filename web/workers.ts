@@ -31,12 +31,15 @@ export class LotWorkers {
   private workers: Worker[];
   private matrix = new THREE.Matrix4();
   private quaternion = new THREE.Quaternion();
+  private position = new THREE.Vector3();
+  private scale = new THREE.Vector3(1, 1, 1);
   private up = new THREE.Vector3(0, 1, 0);
   private hidden = new THREE.Matrix4().makeScale(0, 0, 0);
 
   constructor(private slots: WorkerSlot[]) {
     this.mesh = new THREE.InstancedMesh(workerGeometry, BAKED_MATERIAL, slots.length);
-    this.mesh.castShadow = true;
+    // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+    this.mesh.castShadow = false;
     this.mesh.frustumCulled = false; // workers walk away from the mesh origin
     this.workers = slots.map((slot) => createWorker(slot.door));
     for (let i = 0; i < slots.length; i++) this.mesh.setMatrixAt(i, this.hidden);
@@ -82,11 +85,8 @@ export class LotWorkers {
       }
       const bob = Math.abs(Math.sin(worker.walked * 3.5)) * 0.07;
       this.quaternion.setFromAxisAngle(this.up, worker.heading);
-      this.matrix.compose(
-        new THREE.Vector3(worker.x, YARD_Y + bob, worker.z),
-        this.quaternion,
-        new THREE.Vector3(1, 1, 1),
-      );
+      this.position.set(worker.x, YARD_Y + bob, worker.z);
+      this.matrix.compose(this.position, this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
     });
     this.mesh.instanceMatrix.needsUpdate = true;

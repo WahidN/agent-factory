@@ -18,7 +18,7 @@ const brengYellow = standard("#f2cf16");
 const brengBlue = standard("#174d73");
 const nsYellow = standard("#ffc917");
 const nsBlue = standard("#003082");
-const window = standard(COLORS.glass);
+const glass = standard(COLORS.glass);
 const skin = standard("#c88c68");
 
 function modelGeometry(build: (builder: StaticBuilder) => void): THREE.BufferGeometry {
@@ -41,7 +41,7 @@ const cyclistGeometry = modelGeometry((b) => {
 const busGeometry = modelGeometry((b) => {
   b.box(brengYellow, [0, 1.35, 0], [10.5, 2.7, 2.55]);
   b.box(brengBlue, [-0.4, 2.22, 0], [8.9, 0.72, 2.59]);
-  b.box(window, [5.26, 2.05, 0], [0.05, 0.95, 2.15]);
+  b.box(glass, [5.26, 2.05, 0], [0.05, 0.95, 2.15]);
   b.box(standard("#ffffff"), [1.2, 1.3, -1.3], [4.4, 0.34, 0.05]);
   for (const x of [-3.25, 3.35]) {
     for (const z of [-1.22, 1.22]) b.add(wheel, MATERIALS.darkSteel, [x, 0.56, z], [0.48, 0.24, 0.48]);
@@ -51,8 +51,8 @@ const busGeometry = modelGeometry((b) => {
 const trainGeometry = modelGeometry((b) => {
   b.box(nsYellow, [0, 1.65, 0], [21, 3.1, 4.9]);
   b.box(nsBlue, [0, 2.2, 0], [17, 0.78, 4.94]);
-  b.box(window, [-10.53, 2.28, 0], [0.05, 0.9, 3.2]);
-  b.box(window, [10.53, 2.28, 0], [0.05, 0.9, 3.2]);
+  b.box(glass, [-10.53, 2.28, 0], [0.05, 0.9, 3.2]);
+  b.box(glass, [10.53, 2.28, 0], [0.05, 0.9, 3.2]);
   for (const x of [-7.4, 7.4]) {
     b.box(MATERIALS.darkSteel, [x, 0.43, 0], [2.2, 0.45, 4.15]);
   }
@@ -62,7 +62,6 @@ const trainGeometry = modelGeometry((b) => {
 export class UrbanMobility {
   readonly group = new THREE.Group();
   readonly simulation = new UrbanMobilitySimulation();
-  readonly drawCallBudget = 3;
   private cyclists = new THREE.InstancedMesh(cyclistGeometry, BAKED_MATERIAL, MAX_CYCLISTS);
   private buses = new THREE.InstancedMesh(busGeometry, BAKED_MATERIAL, MAX_BUSES);
   private trains = new THREE.InstancedMesh(trainGeometry, BAKED_MATERIAL, MAX_TRAINS);
@@ -77,7 +76,8 @@ export class UrbanMobility {
     for (const mesh of [this.cyclists, this.buses, this.trains]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
-      mesh.castShadow = true;
+      // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+      mesh.castShadow = false;
       this.group.add(mesh);
     }
   }

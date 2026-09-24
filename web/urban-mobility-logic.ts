@@ -1,6 +1,5 @@
-import { RAIL_BRIDGE, WAAL_EDGE, claimedUpTo, crossingAt } from "./city-plan.ts";
-import { PLOT_SIZE } from "./plots.ts";
-import { plotCell } from "./plots.ts";
+import { RAIL_BRIDGE, WAAL_EDGE, claimedUpTo } from "./city-plan.ts";
+import { plotCell, PLOT_SIZE } from "./plots.ts";
 import { railSegmentsForCells } from "./rail-corridor.ts";
 import { roadGraph, type Lane, type Roads } from "./traffic-logic.ts";
 
@@ -61,12 +60,15 @@ function laneKey(lane: Lane): string {
  */
 export class UrbanMobilitySimulation {
   private city: Required<MobilityCity> = { seed: 1944, cyclists: 24, buses: 2, train: true };
-  private roads: Roads = roadGraph([], true);
+  private roads: Roads = roadGraph([]);
   private lanes: Lane[] = [];
+  private laneIndex = new Map<string, number>();
   private nextLane = new Int32Array(0);
   private cyclists = makeFleet(MAX_CYCLISTS);
   private buses = makeFleet(MAX_BUSES);
-  private trainZ = WAAL_Z;
+  // Below any real trainMinZ, so the first setRoads call's clamp always
+  // pulls it up to the start of the range instead of leaving it stranded.
+  private trainZ = Number.NEGATIVE_INFINITY;
   private trainMinZ = WAAL_Z;
   private trainMaxZ = WAAL_Z;
   private trainDirection = 1;
@@ -79,15 +81,16 @@ export class UrbanMobilitySimulation {
       buses: boundedCount(city.buses, 2, MAX_BUSES),
       train: city.train ?? true,
     };
-    this.resetFleets();
+    this.resizeFleets();
   }
 
   setRoads(indexes: readonly number[]): void {
-    this.roads = roadGraph([...indexes], true);
+    const oldLanes = this.lanes;
+    this.roads = roadGraph([...indexes]);
     this.lanes = [...this.roads.lanes.values()].sort((a, b) => laneKey(a).localeCompare(laneKey(b)));
-    const laneIndex = new Map<string, number>();
+    this.laneIndex = new Map();
     this.lanes.forEach((lane, index) => {
-      laneIndex.set(laneKey(lane), index);
+      this.laneIndex.set(laneKey(lane), index);
     });
     this.nextLane = new Int32Array(this.lanes.length * 4);
     for (let i = 0; i < this.lanes.length; i++) {
@@ -97,7 +100,7 @@ export class UrbanMobilitySimulation {
       const choices = exits.length ? exits : [back];
       for (let variant = 0; variant < 4; variant++) {
         const choice = choices[mix(this.city.seed + i * 17 + variant * 101) % choices.length];
-        this.nextLane[i * 4 + variant] = laneIndex.get(choice) ?? i;
+        this.nextLane[i * 4 + variant] = this.laneIndex.get(choice) ?? i;
       }
     }
     const railCells = [...indexes.map(plotCell), ...claimedUpTo(indexes.length).map(({ cell }) => cell)];
@@ -105,11 +108,17 @@ export class UrbanMobilitySimulation {
     this.trainMinZ = (railSegments[0]?.from ?? WAAL_Z) + TRAIN_HALF_LENGTH;
     this.trainMaxZ = (railSegments.at(-1)?.to ?? WAAL_Z) - TRAIN_HALF_LENGTH;
     if (this.trainMaxZ < this.trainMinZ) this.trainMaxZ = this.trainMinZ;
-    this.resetFleets();
+    // Keep the train where it was, just clamped to the (possibly narrower)
+    // new range, instead of snapping it back to the start; trainZ starts at
+    // -Infinity, so the very first call still clamps it up to trainMinZ.
+    this.trainZ = Math.min(Math.max(this.trainZ, this.trainMinZ), this.trainMaxZ);
+    this.remapFleet(this.cyclists, oldLanes, this.city.seed + 31, 3.7, 1.1);
+    this.remapFleet(this.buses, oldLanes, this.city.seed + 73, 8.2, 0.7);
+    this.resizeFleets();
   }
 
-  tick(dtSeconds: number): void {
-    const dt = Math.max(0, Math.min(0.1, dtSeconds));
+  // dt is already clamped to a sane frame size by the caller (scene.ts).
+  tick(dt: number): void {
     this.advanceFleet(this.cyclists, dt);
     this.advanceFleet(this.buses, dt);
     if (!this.city.train) return;
@@ -151,32 +160,48 @@ export class UrbanMobilitySimulation {
     return this.lanes[this.buses.lane[index]];
   }
 
-  trainUsesRoadCrossing(): boolean {
-    return crossingAt(RAIL_BRIDGE.col) !== null;
-  }
-
-  private resetFleets(): void {
+  private resizeFleets(): void {
     const available = this.lanes.length;
-    this.cyclists.count = available ? Math.min(this.city.cyclists, MAX_CYCLISTS) : 0;
-    this.buses.count = available ? Math.min(this.city.buses, MAX_BUSES) : 0;
+    this.resizeFleet(
+      this.cyclists,
+      available ? Math.min(this.city.cyclists, MAX_CYCLISTS) : 0,
+      this.city.seed + 31,
+      3.7,
+      1.1,
+    );
+    this.resizeFleet(this.buses, available ? Math.min(this.city.buses, MAX_BUSES) : 0, this.city.seed + 73, 8.2, 0.7);
     this.countSnapshot.cyclists = this.cyclists.count;
     this.countSnapshot.buses = this.buses.count;
     this.countSnapshot.trains = this.city.train ? 1 : 0;
-    this.seedFleet(this.cyclists, this.city.seed + 31, 3.7, 1.1);
-    this.seedFleet(this.buses, this.city.seed + 73, 8.2, 0.7);
-    this.trainZ = this.trainMinZ;
-    this.trainDirection = 1;
   }
 
-  private seedFleet(fleet: Fleet, seed: number, baseSpeed: number, variation: number): void {
+  // Keeps every member the fleet already had and only seeds the ones a
+  // growing count adds; a shrinking count just drops the extras.
+  private resizeFleet(fleet: Fleet, wanted: number, seed: number, baseSpeed: number, variation: number): void {
+    for (let i = fleet.count; i < wanted; i++) this.seedOne(fleet, i, seed, baseSpeed, variation);
+    fleet.count = wanted;
+  }
+
+  // Existing members whose lane is gone from the new road graph get reseeded
+  // in place; the rest keep the lane (remapped to its new index), distance,
+  // speed and variant they already had.
+  private remapFleet(fleet: Fleet, oldLanes: Lane[], seed: number, baseSpeed: number, variation: number): void {
     if (!this.lanes.length) return;
     for (let i = 0; i < fleet.count; i++) {
-      const h = mix(seed + i * 977);
-      fleet.lane[i] = h % this.lanes.length;
-      fleet.distance[i] = ((h >>> 8) / 0x00ffffff) * ROAD_EDGE_LENGTH;
-      fleet.speed[i] = baseSpeed + ((h >>> 24) / 255) * variation;
-      fleet.variant[i] = (h >>> 5) & 3;
+      const oldLane = oldLanes[fleet.lane[i]];
+      const newIndex = oldLane ? this.laneIndex.get(laneKey(oldLane)) : undefined;
+      if (newIndex === undefined) this.seedOne(fleet, i, seed, baseSpeed, variation);
+      else fleet.lane[i] = newIndex;
     }
+  }
+
+  private seedOne(fleet: Fleet, i: number, seed: number, baseSpeed: number, variation: number): void {
+    if (!this.lanes.length) return;
+    const h = mix(seed + i * 977);
+    fleet.lane[i] = h % this.lanes.length;
+    fleet.distance[i] = ((h >>> 8) / 0x00ffffff) * ROAD_EDGE_LENGTH;
+    fleet.speed[i] = baseSpeed + ((h >>> 24) / 255) * variation;
+    fleet.variant[i] = (h >>> 5) & 3;
   }
 
   private advanceFleet(fleet: Fleet, dt: number): void {

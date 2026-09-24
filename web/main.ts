@@ -236,6 +236,7 @@ function refreshActivity() {
   const activity = currentActivity();
   cityEvents.setActivity(activity);
   streetLife.setActivity(activity);
+  view.invalidateShadows(); // the redrawn tables and market stalls still cast a shadow
 }
 
 // ---------- Level of detail ----------

@@ -41,6 +41,38 @@ describe("UrbanMobilitySimulation", () => {
     expect(mobility.counts()).toEqual({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, trains: 1 });
   });
 
+  it("keeps a cyclist's lane and distance when setRoads is called again with the same roads", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, seed: 1944 });
+    mobility.setRoads(RANKS);
+    mobility.tick(1 / 30); // advance off the seeded starting distance
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const before = Array.from({ length: MAX_CYCLISTS }, (_, i) => ({ ...mobility.cyclistPose(i, pose) }));
+    const lanesBefore = Array.from({ length: MAX_CYCLISTS }, (_, i) => mobility.laneForCyclist(i));
+
+    mobility.setRoads(RANKS);
+
+    for (let i = 0; i < MAX_CYCLISTS; i++) {
+      expect(mobility.laneForCyclist(i)).toEqual(lanesBefore[i]);
+      const after = mobility.cyclistPose(i, pose);
+      expect(after.x).toBeCloseTo(before[i].x);
+      expect(after.z).toBeCloseTo(before[i].z);
+    }
+  });
+
+  it("keeps the train's position clamped to the new range instead of resetting it, when setRoads is called again", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setRoads(RANKS);
+    for (let i = 0; i < 300; i++) mobility.tick(1 / 30); // move it away from the start of its range
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const before = { ...mobility.trainPose(pose) };
+
+    mobility.setRoads(RANKS);
+
+    const after = mobility.trainPose(pose);
+    expect(after.z).toBeCloseTo(before.z);
+  });
+
   it("reuses its public count snapshot while ticking", () => {
     const mobility = new UrbanMobilitySimulation();
     mobility.setRoads(RANKS);
@@ -66,7 +98,6 @@ describe("UrbanMobilitySimulation", () => {
     expect(minZ).toBeLessThan((WAAL_EDGE - 0.5) * PLOT_SIZE - 20);
     expect(maxZ).toBeGreaterThan((WAAL_EDGE - 0.5) * PLOT_SIZE + 20);
     expect(crossingAt(RAIL_BRIDGE.col)).toBeNull();
-    expect(mobility.trainUsesRoadCrossing()).toBe(false);
   });
 });
 
@@ -75,7 +106,6 @@ describe("UrbanMobility", () => {
     const mobility = new UrbanMobility();
     mobility.setRoads(RANKS);
     const meshes = [...mobility.group.children];
-    expect(mobility.drawCallBudget).toBe(3);
     expect(meshes).toHaveLength(3);
     for (let i = 0; i < 600; i++) mobility.tick(1 / 60);
     expect(mobility.group.children).toEqual(meshes);

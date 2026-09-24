@@ -9,7 +9,6 @@ import { standard } from "./palette.ts";
 const MAX_BOATS = 6;
 const HULL_COLORS = ["#c94d3d", "#246d83", "#d39a35", "#55765a"];
 export const BOAT_VERTICAL_SCALE = 0.4;
-export const BOAT_MAX_Y = 1.9;
 
 const hullGeometry = mergeGeometries([
   new THREE.BoxGeometry(5.4, 0.7, 1.9).translate(0, 0.45, 0),
@@ -19,6 +18,8 @@ const cabinGeometry = mergeGeometries([
   new THREE.BoxGeometry(2.2, 1.05, 1.5).translate(-0.6, 1.2, 0),
   new THREE.BoxGeometry(2.55, 0.16, 1.75).translate(-0.6, 1.82, 0),
 ]);
+cabinGeometry.computeBoundingBox();
+export const BOAT_MAX_Y = cabinGeometry.boundingBox!.max.y;
 
 const hullMaterial = standard("#ffffff", { roughness: 0.62 });
 const cabinMaterial = standard("#ece8d9", { roughness: 0.72 });
@@ -44,17 +45,19 @@ export class RiverBoats {
     for (const mesh of [this.hulls, this.cabins]) {
       mesh.count = 0;
       mesh.frustumCulled = false;
-      mesh.castShadow = true;
+      // Moving instances leave frozen shadows since shadowMap.autoUpdate is off.
+      mesh.castShadow = false;
       mesh.receiveShadow = true;
     }
     this.group.add(this.hulls, this.cabins);
   }
 
   setRiver(river: RiverBounds | null) {
-    this.river = river;
-    this.boats.length = 0;
-    if (river) {
-      const count = THREE.MathUtils.clamp(Math.floor((river.east - river.west) / 85), 2, MAX_BOATS);
+    const count = river ? THREE.MathUtils.clamp(Math.floor((river.east - river.west) / 85), 2, MAX_BOATS) : 0;
+    // Only reseed when the instance count itself changes; otherwise every
+    // boat keeps the progress and speed it already had.
+    if (count !== this.boats.length) {
+      this.boats.length = 0;
       for (let i = 0; i < count; i++) {
         this.boats.push({
           progress: (i + 0.35) / count,
@@ -64,6 +67,7 @@ export class RiverBoats {
         });
       }
     }
+    this.river = river;
     this.draw();
   }
 
@@ -74,10 +78,6 @@ export class RiverBoats {
       boat.progress = (boat.progress + (boat.direction * boat.speed * dt) / span + 1) % 1;
     }
     this.draw();
-  }
-
-  visibleCount() {
-    return this.boats.length;
   }
 
   private draw() {

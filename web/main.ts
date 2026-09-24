@@ -3,7 +3,15 @@ import type { PlainMessage, ServerMessage, SessionState } from "../server/types.
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { claimedUpTo } from "./city-plan.ts";
 import { CityEvents } from "./city-events.ts";
-import { createFilterPanel, EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom, type Filter } from "./filter.ts";
+import {
+  createFilterPanel,
+  EMPTY_FILTER,
+  jumpTarget,
+  matchesFilter,
+  optionsFrom,
+  pruneFilter,
+  type Filter,
+} from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { LandmarkLabels } from "./landmark-labels.ts";
@@ -91,16 +99,22 @@ let everReceived = false;
 // Set while a batch adds or removes sessions, so the park, the camera and the
 // detail set are all rebuilt once per batch instead of once per lot.
 let changed = false;
+// Set while a batch moves a session in or out of the filter (a status change
+// under a status filter), which changes who may hold detail.
+let matchChanged = false;
 const stats = rendererCapture
   ? createStatsOverlay(rendererCapture.get()!, () => ({ detailed: lots.size, total: sessions.size }))
   : undefined;
 let fitted = false;
 
 function upsert(session: SessionState) {
-  if (!sessions.has(session.id)) {
+  const previous = sessions.get(session.id);
+  if (!previous) {
     changed = true;
     arriving.add(session.id);
     plots.assign(session.id, session.user); // syncPlaces() fills in where, once the batch is in
+  } else if (matchesFilter(previous, filter) !== matchesFilter(session, filter)) {
+    matchChanged = true;
   }
   sessions.set(session.id, session);
   lots.get(session.id)?.update(session, performance.now());
@@ -147,6 +161,7 @@ function handle(message: ServerMessage) {
   everReceived = true;
   let fitNow = false;
   changed = false;
+  matchChanged = false;
 
   for (const plain of flattenBatch(message)) {
     applyPlain(plain);
@@ -160,17 +175,25 @@ function handle(message: ServerMessage) {
     refocus(true); // zoom to fit once, after the first snapshot's lots all exist
   else if (changed) refocus();
 
-  // Only the set changing can move a lot between the two detail levels; a
-  // plain status change just rides along in the instance data.
-  if (changed) redistribute();
+  // A user or project leaves the dropdown with the last session that named it.
+  // The filter lets go of it before anything is drawn against it, or the park
+  // stays empty while the panel reads "all".
+  const { users, projects } = optionsFrom([...sessions.values()]);
+  const pruned = pruneFilter(filter, users, projects);
+  const filterChanged = pruned !== filter;
+  filter = pruned;
+  filterPanel.setOptions(users, projects);
+
+  // Only the set or the filter changing can move a lot between the two detail
+  // levels; a plain status change just rides along in the instance data.
+  if (changed || filterChanged || matchChanged) redistribute();
   else {
     syncFar();
     refreshActivity();
   }
+  if (filterChanged) view.invalidateShadows();
   applyDetailVisibility();
   syncTraffic();
-  const { users, projects } = optionsFrom([...sessions.values()]);
-  filterPanel.setOptions(users, projects);
 }
 
 function applyPlain(message: PlainMessage) {
@@ -277,7 +300,15 @@ function redistribute() {
   decidedAt.z = view0.z;
   decidedAtMs = performance.now();
 
-  const points = [...places].map(([id, place]) => ({ id, ...place }));
+  // Only sessions the filter keeps can win detail. Ranking the hidden ones too
+  // spends the cap on lots nobody sees and leaves the matching ones as
+  // instances.
+  const points = [...places]
+    .filter(([id]) => {
+      const session = sessions.get(id);
+      return session !== undefined && matchesFilter(session, filter);
+    })
+    .map(([id, place]) => ({ id, ...place }));
   const wanted = new Set(selectDetailed(view0, points, DETAIL_CAP, new Set(lots.keys())));
 
   for (const [id, lot] of [...lots]) {
@@ -339,13 +370,17 @@ function syncFar() {
 type TrafficInput = { id: string; index: number; cars: number; truck: boolean };
 let trafficInputs: TrafficInput[] = [];
 
+// A session the filter hides sends nothing either, so its vehicles shrink away
+// instead of driving around an empty plot.
 function syncTraffic() {
-  trafficInputs = [...sessions].map(([id, session]) => ({
-    id,
-    index: plots.indexOf(id)!,
-    cars: movingCarCount(session.status === "busy", session.subagents),
-    truck: session.status === "busy",
-  }));
+  trafficInputs = [...sessions]
+    .filter(([, session]) => matchesFilter(session, filter))
+    .map(([id, session]) => ({
+      id,
+      index: plots.indexOf(id)!,
+      cars: movingCarCount(session.status === "busy", session.subagents),
+      truck: session.status === "busy",
+    }));
 }
 
 // ---------- Filter panel ----------
@@ -363,14 +398,17 @@ function applyDetailVisibility() {
       anyFlipped = true;
     }
   }
-  if (anyFlipped) pickablesCache = null; // a lot's visibility just changed what the pointer can hit
+  if (anyFlipped) {
+    pickablesCache = null; // a lot's visibility just changed what the pointer can hit
+    view.invalidateShadows(); // and switched a shadow caster on or off
+  }
 }
 
 const filterPanel = createFilterPanel(
   (next) => {
     filter = next;
-    applyDetailVisibility();
-    syncFar();
+    redistribute(); // also applies visibility and ends in syncFar()
+    syncTraffic();
     view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
   },
   (user) => {

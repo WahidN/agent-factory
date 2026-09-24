@@ -252,12 +252,13 @@ const tails = new Map<string, Tail>();
 const readQueues = new Map<string, Promise<unknown>>();
 
 // Reads of the same file wait for each other, so no bytes are handled twice.
+// An entry removes itself once it settles and nothing queued behind it, so the
+// map holds only files with a read in flight.
 function readNewEvents(path: string): Promise<ReadResult> {
   const read = (readQueues.get(path) ?? Promise.resolve()).then(() => readNewEventsNow(path));
-  readQueues.set(
-    path,
-    read.catch(() => {}),
-  );
+  const queued = read.catch(() => {});
+  readQueues.set(path, queued);
+  queued.finally(() => readQueues.get(path) === queued && readQueues.delete(path));
   return read;
 }
 

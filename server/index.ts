@@ -171,6 +171,9 @@ wss.on("connection", (socket, request) => {
   }
   browsers.add(socket);
   socket.on("close", () => browsers.delete(socket));
+  // Before the first lots, so the page never draws its panel and takes it away
+  // again a moment later.
+  socket.send(JSON.stringify({ type: "server-mode", hub: IS_HUB } satisfies ServerMessage));
   const sessions = [...tracker.snapshot(Date.now()), ...hub.remote()];
   socket.send(JSON.stringify({ type: "snapshot", sessions } satisfies ServerMessage));
 });

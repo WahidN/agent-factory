@@ -127,7 +127,7 @@ body {
 .filter-panel {
   position: fixed;
   z-index: 10;
-  top: 12px;
+  top: 56px; /* clears the button that opens it */
   left: 12px;
   display: flex;
   gap: 6px;
@@ -159,6 +159,21 @@ body {
 }
 .filter-panel input {
   width: 110px;
+}
+.filter-toggle {
+  position: fixed;
+  z-index: 10;
+  top: 12px;
+  left: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(20, 24, 31, 0.85);
+  color: #eee;
+  font:
+    12px system-ui,
+    sans-serif;
+  cursor: pointer;
 }
 
 /* Inkshift is the default; ?style=classic keeps the original UI available. */
@@ -415,15 +430,39 @@ body[data-style="ink"] .filter-panel :is(select, input, button):focus-visible {
   outline: 3px solid var(--pulse);
   outline-offset: 2px;
 }
+body[data-style="ink"] .filter-toggle {
+  padding: 7px 13px;
+  border: 2px solid var(--signal);
+  border-radius: 0;
+  background: var(--signal);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0 rgba(18, 22, 28, 0.78);
+}
+body[data-style="ink"] .filter-toggle:hover {
+  border-color: var(--paper);
+  background: var(--paper);
+}
+body[data-style="ink"] .filter-toggle:focus-visible {
+  outline: 3px solid var(--pulse);
+  outline-offset: 2px;
+}
 
 @media (max-width: 760px) {
   .filter-panel {
     flex-wrap: wrap;
     max-width: calc(100vw - 20px);
   }
+  .filter-toggle {
+    top: 10px;
+    left: 10px;
+  }
   body[data-style="ink"] .filter-panel {
     display: grid;
-    top: 10px;
+    top: 54px;
     left: 10px;
     grid-template-columns: 30px 1fr;
     width: min(520px, calc(100vw - 20px));

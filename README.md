@@ -126,7 +126,7 @@ Het model komt uit het transcript. Een verse sessie begint daarom op Sonnet-form
 | busy | ramen gloeien, rook en stoom komen op gang, werkers lopen, verkeer rijdt |
 | idle | donkere ramen, machines uit, geen rook |
 
-Links in het paneel filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
+Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Op de centrale zit die knop niet, daar staat het paneel uit. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
 
 ## Hoe het werkt
 
@@ -141,6 +141,8 @@ Links in het paneel filter je op gebruiker, project en status. Vul onder "Vind j
 | lokaal | geen van beide | alleen `127.0.0.1:4317`, alleen je eigen sessies |
 
 `PORT` (standaard 4317), `MACHINE` (standaard de hostnaam), `USER` en `FACTORY_TOKEN` zijn de overige instellingen. `--hub` en `HUB` samen weigert de server met een foutmelding.
+
+De centrale serveert dezelfde pagina als een lokale server, dus de pagina kan de stand niet zelf zien. Daarom stuurt de server bij het verbinden een `server-mode` bericht, voor de eerste kavels. Daarop laat de pagina het filterpaneel weg. Blijft het bericht uit, dan toont de pagina het paneel: een centrale die nog niet bijgewerkt is houdt zo de filters, in plaats van ze stil weg te nemen.
 
 **Liveness aan twee kanten.** De centrale pingt elke socket elke 30 seconden en verbreekt een socket die twee pings mist. Een reporter pingt zelf niet maar let op die pings: hoort hij 90 seconden niets, dan verbreekt hij en verbindt hij opnieuw. Dat opnieuw verbinden wacht willekeurig tussen 0 en een plafond dat van 2 naar 30 seconden oploopt, zodat dertig Macs na een herstart van de Pi niet in dezelfde seconde terugkomen. Valt een reporter weg, dan haalt de centrale zijn sessies uit de stad.
 

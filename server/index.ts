@@ -434,9 +434,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   const path = (request.url ?? "/").split("?")[0];
 
   if (path === "/healthz") {
-    const result = health({ mode: config.mode, reporters: reporters.size, lastUpdateAt, now: Date.now() });
-    response.writeHead(result.status, { "Content-Type": "application/json; charset=utf-8" });
-    response.end(JSON.stringify(result.body));
+    const body = health({ mode: config.mode, reporters: reporters.size, lastUpdateAt, now: Date.now() });
+    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify(body));
     return;
   }
 

@@ -1,6 +1,8 @@
-// Pure health check: no sockets, no clock, no filesystem. Takes a snapshot of
-// state and a timestamp, returns a verdict. Kept pure so the rules can be
-// tested without spinning up a server.
+// Body of /healthz, which always answers 200 while the process serves. It
+// reports facts and leaves the verdict to the caller: `reporters` counts live
+// relay sockets (the heartbeat terminates dead ones), and `lastUpdateAgeMs`
+// only moves when a session changes, so a quiet park and a stuck one look the
+// same from here.
 
 import type { Mode } from "./config.ts";
 
@@ -14,37 +16,11 @@ export type HealthInput = {
 };
 
 export type Health = {
-  ok: boolean;
-  status: number;
-  body: {
-    ok: boolean;
-    mode: Mode;
-    reporters: number;
-    lastUpdateAgeMs: number | null;
-  };
+  mode: Mode;
+  reporters: number;
+  lastUpdateAgeMs: number | null;
 };
 
-// A central with sockets open but nothing coming in for this long is stuck,
-// not idle.
-export const STALE_MS = 120_000;
-
-export function health(input: HealthInput): Health {
-  const { mode, reporters, lastUpdateAt, now } = input;
-  const lastUpdateAgeMs = lastUpdateAt > 0 ? now - lastUpdateAt : null;
-
-  let ok = true;
-  if (mode === "central") {
-    // No reporters at all: a central without anyone reporting to it is
-    // broken, even though the process itself is up.
-    if (reporters === 0) ok = false;
-    // Reporters connected but nothing has arrived in a while: the sockets
-    // are open but the pipeline is dead.
-    else if (lastUpdateAgeMs !== null && lastUpdateAgeMs > STALE_MS) ok = false;
-  }
-
-  return {
-    ok,
-    status: ok ? 200 : 503,
-    body: { ok, mode, reporters, lastUpdateAgeMs },
-  };
+export function health({ mode, reporters, lastUpdateAt, now }: HealthInput): Health {
+  return { mode, reporters, lastUpdateAgeMs: lastUpdateAt > 0 ? now - lastUpdateAt : null };
 }

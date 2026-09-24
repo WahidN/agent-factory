@@ -1,6 +1,6 @@
 // One of a lot's subagent warehouses. There is no per-subagent identity or
-// tool anymore, just a count: each occupied slot gets a warehouse that mirrors
-// its parent lot's busy state.
+// tool, just a count: each occupied slot gets a warehouse that mirrors its
+// parent lot's busy state.
 
 import * as THREE from "three";
 import { Activity } from "./activity.ts";
@@ -10,6 +10,7 @@ import { StaticBuilder } from "./static-builder.ts";
 
 export const WAREHOUSE = { width: 6, height: 3.4, depth: 5 };
 const STRIPE = 0.5;
+const BLADE_SPEED = 3.6; // radians per second at full busy
 
 export class Warehouse {
   readonly group = new THREE.Group();
@@ -33,7 +34,15 @@ export class Warehouse {
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
-  constructor(accent: THREE.Color, variant = 0) {
+  // Set once this warehouse's pop-in finishes, since it was still scaled
+  // down when the shadow map last baked. Read once by the parent lot's
+  // tick(), which folds it into its own shadowDirty flag.
+  private shadowDirty = false;
+
+  // `settled` skips the pop-in scale animation: a warehouse a lot builds
+  // already settled (a camera promotion, not a fresh subagent) must not
+  // replay its arrival.
+  constructor(accent: THREE.Color, variant = 0, settled = false) {
     this.accent = accent.clone();
     const l = accent.r * 0.3 + accent.g * 0.59 + accent.b * 0.11;
     this.grey = new THREE.Color(l, l, l);
@@ -115,12 +124,13 @@ export class Warehouse {
     this.blades.position.set(serviceX, top + 0.75, -0.8);
 
     this.body.add(statics, this.stack.group, this.lamp.group, this.door, this.pallet, this.blades);
-    this.body.scale.setScalar(0.001);
+    this.appear = settled ? 1 : 0;
+    this.body.scale.setScalar(settled ? 1 : 0.001);
     this.group.add(this.body);
   }
 
   // `busy` mirrors the parent lot's own busy state: a warehouse has no
-  // activity of its own to report anymore.
+  // activity of its own to report.
   update(busy: boolean, nowMs: number) {
     this.busy.set(busy, nowMs);
   }
@@ -145,9 +155,16 @@ export class Warehouse {
 
     this.stack.tick(dt, busy, busy);
     this.lamp.tick(dt, busy);
-    this.blades.rotation.y += dt * (0.6 + 3) * busy;
+    this.blades.rotation.y += dt * BLADE_SPEED * busy;
 
     this.tickLifecycle(dt);
+  }
+
+  // Same one-shot pattern as Lot.consumeShadowDirty().
+  consumeShadowDirty(): boolean {
+    if (!this.shadowDirty) return false;
+    this.shadowDirty = false;
+    return true;
   }
 
   dispose() {
@@ -163,8 +180,10 @@ export class Warehouse {
 
   private tickLifecycle(dt: number) {
     if (!this.exit) {
+      const wasRising = this.appear < 1;
       this.appear = Math.min(1, this.appear + dt / 0.5);
       this.body.scale.setScalar(Math.max(0.001, easeOutBack(this.appear)));
+      if (wasRising && this.appear >= 1) this.shadowDirty = true;
       return;
     }
     this.exit.t += dt;

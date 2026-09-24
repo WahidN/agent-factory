@@ -10,16 +10,20 @@ export function createTooltip(
   camera: THREE.Camera,
   element: HTMLElement,
   pickables: () => THREE.Object3D[],
+  onCameraChange: (callback: () => void) => void,
 ) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let screen: { x: number; y: number } | null = null;
   let hovered: Hoverable | null = null;
   let rendered = "";
-  // Only the pointer moving can change what is under it; re-raycasting every
-  // frame re-tests hundreds of meshes for no reason while the mouse sits
-  // still. A still-hovered lot's text can still change every frame below,
-  // since that just rereads its already-known state.
+  let lastPickables: THREE.Object3D[] | null = null;
+  // The pointer moving, the camera moving (the world under a still pointer
+  // changes too), and the pickable set itself changing (a promoted, demoted
+  // or filtered-out lot) all make the raycast worth rerunning; re-testing
+  // hundreds of meshes on every frame regardless would not. A still-hovered
+  // lot's text can still change every frame below, since that just rereads
+  // its already-known state.
   let dirty = true;
 
   canvas.addEventListener("pointermove", (event) => {
@@ -35,16 +39,25 @@ export function createTooltip(
     screen = null;
     dirty = true;
   });
+  onCameraChange(() => {
+    dirty = true;
+  });
 
-  // Called every frame, so the tooltip's text still follows state changes and
-  // camera motion; the raycast itself only reruns when the pointer moved.
+  // Called every frame, so the tooltip's text still follows state changes;
+  // the raycast itself only reruns when something that could change its
+  // result actually did.
   function update() {
+    const current = pickables();
+    if (current !== lastPickables) {
+      lastPickables = current;
+      dirty = true;
+    }
     if (dirty) {
       dirty = false;
       hovered = null;
       if (screen) {
         raycaster.setFromCamera(pointer, camera);
-        const hit = raycaster.intersectObjects(pickables(), false)[0];
+        const hit = raycaster.intersectObjects(current, false)[0];
         const target = hit?.object.userData.hover as Hoverable | undefined;
         if (target && !target.gone) hovered = target;
       }

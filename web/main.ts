@@ -28,6 +28,17 @@ import { viewOptionsFrom } from "./view-options.ts";
 const RECONNECT_MS = 2000;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
+// The city's activity follows the hour where the park actually stands, not
+// the browser's own time zone or UTC.
+const hourFormatter = new Intl.DateTimeFormat("nl-NL", {
+  hour: "numeric",
+  hourCycle: "h23",
+  timeZone: "Europe/Amsterdam",
+});
+function amsterdamHour(date: Date): number {
+  return Number(hourFormatter.format(date));
+}
+
 if (INK_STYLE_ENABLED) document.body.dataset.style = "ink";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#scene")!;
@@ -62,7 +73,11 @@ const leaving = new Set<Lot>();
 // tooltip only needs a fresh list right before it raycasts against it.
 let pickablesCache: THREE.Object3D[] | null = null;
 function pickables(): THREE.Object3D[] {
-  if (!pickablesCache) pickablesCache = [...lots.values()].flatMap((lot) => lot.pickables());
+  if (!pickablesCache) {
+    pickablesCache = [...lots.values()]
+      .filter((lot) => lot.group.visible) // a filter-hidden lot is not under the pointer
+      .flatMap((lot) => lot.pickables());
+  }
   return pickablesCache;
 }
 // Sessions that arrived since the last redistribute, so a brand new lot still
@@ -117,6 +132,10 @@ function remove(id: string) {
     // same cell as whoever the repacking moved into its place.
     if (!sessions.has(id)) plots.release(id);
     refocus();
+    // The far level was still drawing this lot on its old cell: redistribute()
+    // re-selects the detailed set and covers syncFar() for the rest.
+    redistribute();
+    syncTraffic();
   });
 }
 
@@ -149,6 +168,7 @@ function handle(message: ServerMessage) {
     refreshActivity();
   }
   applyDetailVisibility();
+  syncTraffic();
   const { users, projects } = optionsFrom([...sessions.values()]);
   filterPanel.setOptions(users, projects);
 }
@@ -209,7 +229,7 @@ function refocus(fit = false) {
 
 function currentActivity() {
   const now = new Date();
-  return cityActivity(sessions.values(), now.getHours(), eventModeForTime(now));
+  return cityActivity(sessions.values(), amsterdamHour(now), eventModeForTime(now));
 }
 
 function refreshActivity() {
@@ -306,7 +326,25 @@ function syncFar() {
       busy: session.status === "busy",
     });
   }
-  far.sync(entries, performance.now());
+  // A relayout moves or resizes far halls, which the shadow map baked before
+  // the move; nothing else here changes a shadow caster.
+  if (far.sync(entries, performance.now())) view.invalidateShadows();
+}
+
+// What each session sends onto the park roads. Rebuilt whenever the session
+// set or a session's own state changes (handle(), and once more after a
+// lot's sink finishes in remove()'s callback, since ranks can shift then);
+// the frame loop just replays this array instead of rebuilding it every tick.
+type TrafficInput = { id: string; index: number; cars: number; truck: boolean };
+let trafficInputs: TrafficInput[] = [];
+
+function syncTraffic() {
+  trafficInputs = [...sessions].map(([id, session]) => ({
+    id,
+    index: plots.indexOf(id)!,
+    cars: movingCarCount(session.status === "busy", session.subagents),
+    truck: session.status === "busy",
+  }));
 }
 
 // ---------- Filter panel ----------
@@ -316,7 +354,15 @@ let filter: Filter = EMPTY_FILTER;
 // A hidden lot is simply not drawn: simpler than a dimmed material variant,
 // and just as clear at a glance which sessions match.
 function applyDetailVisibility() {
-  for (const lot of lots.values()) lot.group.visible = matchesFilter(lot.state, filter);
+  let anyFlipped = false;
+  for (const lot of lots.values()) {
+    const visible = matchesFilter(lot.state, filter);
+    if (lot.group.visible !== visible) {
+      lot.group.visible = visible;
+      anyFlipped = true;
+    }
+  }
+  if (anyFlipped) pickablesCache = null; // a lot's visibility just changed what the pointer can hit
 }
 
 const filterPanel = createFilterPanel(
@@ -324,6 +370,7 @@ const filterPanel = createFilterPanel(
     filter = next;
     applyDetailVisibility();
     syncFar();
+    view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
   },
   (user) => {
     const points = [...places]
@@ -355,30 +402,32 @@ function connect() {
 
 // ---------- Frame loop ----------
 
-const tooltip = createTooltip(canvas, view.camera, document.querySelector<HTMLElement>("#tooltip")!, pickables);
+const tooltip = createTooltip(
+  canvas,
+  view.camera,
+  document.querySelector<HTMLElement>("#tooltip")!,
+  pickables,
+  view.onCameraChange,
+);
 let activityClockCheckedAt = 0;
-let activeClockHour = new Date().getHours();
+let activeClockHour = amsterdamHour(new Date());
 
 view.onFrame((dt, now) => {
   stats?.recordFrame(dt * 1000);
-  for (const lot of [...lots.values(), ...leaving]) lot.tick(dt, now);
+  for (const lot of [...lots.values(), ...leaving]) {
+    lot.tick(dt, now);
+    if (lot.consumeShadowDirty()) view.invalidateShadows();
+    if (lot.consumePickablesDirty()) pickablesCache = null;
+  }
   far.tick(dt, now);
   if (now - decidedAtMs >= REDISTRIBUTE_INTERVAL_MS && shouldRedistribute(decidedAt, groundCenter())) redistribute();
   // Leaving lots send nothing, so their vehicles shrink away.
-  traffic.tick(
-    dt,
-    [...sessions].map(([id, session]) => ({
-      id,
-      index: plots.indexOf(id)!,
-      cars: movingCarCount(session.status === "busy", session.subagents),
-      truck: session.status === "busy",
-    })),
-  );
+  traffic.tick(dt, trafficInputs);
   boats.tick(dt);
   mobility.tick(dt);
   if (now - activityClockCheckedAt >= ACTIVITY_CLOCK_CHECK_MS) {
     activityClockCheckedAt = now;
-    const clockHour = new Date().getHours();
+    const clockHour = amsterdamHour(new Date());
     if (clockHour !== activeClockHour) {
       activeClockHour = clockHour;
       refreshActivity();

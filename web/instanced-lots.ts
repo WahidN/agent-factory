@@ -48,7 +48,7 @@ const BEACON_BUSY = 2.1;
 // The lit windows of a busy hall, in the same warm light the detailed lot
 // uses. The detailed hall only lights its window panes; here the glow lands on
 // the whole wall, so it has to stay low or it washes the wall tint out to
-// cream (it did, at 0.5).
+// cream at higher values.
 const HALL_BUSY_GLOW = 0.14;
 
 function glsl(value: number): string {
@@ -160,7 +160,14 @@ class Slab {
   }
 
   private build(capacity: number): THREE.InstancedMesh {
-    const mesh = new THREE.InstancedMesh(this.geometry, this.material, capacity);
+    // A glowing slab grows its own aBusy attribute on every rebuild. That
+    // attribute has to sit on a geometry only this mesh owns, so the old
+    // geometry (and the GPU buffer behind aBusy) can be freed with a plain
+    // geometry.dispose() when capacity grows; the base geometry stays a
+    // template, never rendered directly. A non-glowing slab has nothing
+    // capacity-dependent on its geometry, so it keeps sharing the template.
+    const geometry = this.glows ? this.geometry.clone() : this.geometry;
+    const mesh = new THREE.InstancedMesh(geometry, this.material, capacity);
     mesh.count = 0;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -171,9 +178,7 @@ class Slab {
     if (this.glows) {
       this.busyAttribute = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1);
       this.busyAttribute.setUsage(THREE.DynamicDrawUsage);
-      // The geometry is this mesh's own, so the attribute never leaks into
-      // another tier.
-      this.geometry.setAttribute("aBusy", this.busyAttribute);
+      geometry.setAttribute("aBusy", this.busyAttribute);
       // Allocated up front, not on the first setColorAt. The shader only
       // declares vColor once the mesh has an instance color, and a mesh that
       // reaches its first frame without one compiles a program that fails on
@@ -189,7 +194,9 @@ class Slab {
   reset(count: number) {
     if (count > this.mesh.instanceMatrix.count) {
       this.parent.remove(this.mesh);
+      const ownGeometry = this.glows ? this.mesh.geometry : null;
       this.mesh.dispose();
+      ownGeometry?.dispose(); // frees the outgrown aBusy buffer along with it
       this.mesh = this.build(Math.max(MIN_CAPACITY, count * 2));
     }
     this.mesh.count = count;
@@ -211,12 +218,6 @@ class Slab {
 
   uploadBusy() {
     if (this.glows) this.busyAttribute.needsUpdate = true;
-  }
-
-  dispose() {
-    this.parent.remove(this.mesh);
-    this.mesh.dispose();
-    this.geometry.dispose();
   }
 }
 
@@ -276,13 +277,18 @@ export class InstancedLots {
   // The full far set. Matrices and colors are only rewritten when the set (or
   // a lot's tier or place) actually changed; the busy values are taken every
   // time, because those change with every server message.
-  sync(lots: readonly FarLot[], nowMs: number) {
+  // Returns whether the layout actually changed, so a caller that keeps its
+  // own shadow map fresh (see scene.ts's invalidateShadows) only pays for a
+  // redraw when a far hall really moved.
+  sync(lots: readonly FarLot[], nowMs: number): boolean {
     const key = lots.map((lot) => `${lot.id}:${lot.tier}:${lot.x}:${lot.z}`).join("|");
-    if (key !== this.key) {
+    const relayouted = key !== this.key;
+    if (relayouted) {
       this.key = key;
       this.relayout(lots);
     }
     for (const lot of lots) this.slots.get(lot.id)?.activity.set(lot.busy, nowMs);
+    return relayouted;
   }
 
   // Eases every far lot's glow and uploads the whole busy buffer once.
@@ -294,17 +300,6 @@ export class InstancedLots {
     }
     for (const hall of this.halls.values()) hall.uploadBusy();
     this.beacons.uploadBusy();
-  }
-
-  dispose() {
-    for (const hall of this.halls.values()) hall.dispose();
-    this.beacons.dispose();
-    for (const roofline of this.rooflines) roofline.dispose();
-    this.yards.dispose();
-    this.hallMaterial.dispose();
-    this.beaconMaterial.dispose();
-    this.rooflineMaterial.dispose();
-    this.yardMaterial.dispose();
   }
 
   private relayout(lots: readonly FarLot[]) {

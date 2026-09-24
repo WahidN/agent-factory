@@ -21,7 +21,7 @@ import {
   WALL_TINTS,
 } from "./palette.ts";
 import { YARD_HALF } from "./park.ts";
-import { movingCarCount, wallTintIndexFor } from "./park-layout.ts";
+import { wallTintIndexFor } from "./park-layout.ts";
 import { RoofSign } from "./roof-sign.ts";
 import { Sign } from "./sign.ts";
 import { StaticBuilder } from "./static-builder.ts";
@@ -95,7 +95,7 @@ function hallTop(size: LotSize) {
 // The hall's outer box per tier. The far level in instanced-lots.ts builds the
 // same volume from one merged geometry, so a lot does not jump size or move
 // when it swaps between the two levels.
-export type HallShape = { x0: number; z0: number; x1: number; z1: number; top: number };
+type HallShape = { x0: number; z0: number; x1: number; z1: number; top: number };
 
 export function hallShape(tier: ModelTier): HallShape {
   const size = SIZES[tier];
@@ -231,6 +231,21 @@ export class Lot {
   private appear = 0;
   private exit: { t: number; onGone: () => void } | null = null;
 
+  // The renderer's shadow map only redraws on demand (see scene.ts). Set
+  // whenever this lot moves a shadow caster outside the frame loop's own
+  // checks, and read once by main.ts's tick loop, which resets it.
+  private shadowDirty = false;
+
+  // Set whenever the meshes pickables() returns actually change (a warehouse
+  // slot filled or freed), and read once by main.ts's tick loop, which nulls
+  // its own pickables cache.
+  private pickablesDirty = false;
+
+  // Consumed by the very first updateWarehouses() call, made from the
+  // constructor via update(): a warehouse this lot builds while already
+  // settled must not replay its own pop-in either.
+  private pendingSettled: boolean;
+
   // `settled` skips the rise out of the ground: a lot that only swapped from
   // the far level to this one was already standing, so it must not replay its
   // arrival every time the camera drifts past it.
@@ -243,6 +258,7 @@ export class Lot {
   constructor(state: SessionState, rank: number, rankCount: number, settled = false) {
     this.state = state;
     this.appear = settled ? 1 : 0;
+    this.pendingSettled = settled;
     this.tier = tierFor(state.model);
     this.accent = accentFor(state.project);
     const l = this.accent.r * 0.3 + this.accent.g * 0.59 + this.accent.b * 0.11;
@@ -277,6 +293,7 @@ export class Lot {
       this.tier = tier;
       this.disposeStructure();
       this.buildStructure();
+      this.shadowDirty = true; // the hall's shape and shadow just changed
     }
     this.syncSign();
     this.lightBox.update(this.state.project);
@@ -285,11 +302,6 @@ export class Lot {
     this.updateWarehouses(state.subagents, working, nowMs);
   }
 
-  // Called whenever the park repacks and this lot's rank or the total rank
-  // count changed, so its leisure destination stays pointed at the right
-  // claimed cell. Only the destination points move; a worker already walking
-  // there keeps its position and simply steers toward the new point next
-  // tick, no rebuild and no jump.
   // Moves the lot to a new place. The worker mesh hangs under `body`, so it
   // would carry every worker along; the ones out in the world are shifted
   // back by the same delta and keep their spot on screen.
@@ -299,17 +311,16 @@ export class Lot {
     this.workers.translate(oldX - x, oldZ - z);
   }
 
+  // Called whenever the park repacks and this lot's rank or the total rank
+  // count changed, so its leisure destination stays pointed at the right
+  // claimed cell. Only the destination points move; a worker already walking
+  // there keeps its position and simply steers toward the new point next
+  // tick, no rebuild and no jump.
   setPlot(rank: number, rankCount: number) {
     if (rank === this.rank && rankCount === this.rankCount) return;
     this.rank = rank;
     this.rankCount = rankCount;
     this.workers.setSlots(workerSlotsFor(rank, rankCount));
-  }
-
-  // What this lot sends onto the park roads: always some cars, the truck only while busy.
-  traffic(): { cars: number; truck: boolean } {
-    const lotBusy = this.state.status === "busy" && !this.exit;
-    return { cars: movingCarCount(lotBusy, this.state.subagents), truck: lotBusy };
   }
 
   pickables(): THREE.Mesh[] {
@@ -319,6 +330,22 @@ export class Lot {
       ...this.lightBox.pickables,
       ...[...this.warehouses.values()].flatMap((s) => s.warehouse.pickables),
     ];
+  }
+
+  // True once, the first time it is called after this lot moved a shadow
+  // caster. The caller (main.ts's frame loop) uses it to flip
+  // view.invalidateShadows() only on the frames that actually need it.
+  consumeShadowDirty(): boolean {
+    if (!this.shadowDirty) return false;
+    this.shadowDirty = false;
+    return true;
+  }
+
+  // Same one-shot pattern as consumeShadowDirty(), for main.ts's pickables cache.
+  consumePickablesDirty(): boolean {
+    if (!this.pickablesDirty) return false;
+    this.pickablesDirty = false;
+    return true;
   }
 
   remove(onGone: () => void) {
@@ -342,11 +369,20 @@ export class Lot {
     this.machines.cooling.tick(dt, busy, busy);
     this.workers.tick(dt, this.workerBusyFlags());
 
-    for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) slot.warehouse.tick(dt, nowMs);
+    for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) {
+      slot.warehouse.tick(dt, nowMs);
+      if (slot.warehouse.consumeShadowDirty()) this.shadowDirty = true;
+    }
     this.tickLifecycle(dt);
   }
 
   dispose() {
+    // redistribute() can dispose a lot the frame loop already captured in its
+    // own tick() pass this frame (main.ts still holds a reference from before
+    // this call). `gone` makes that stale tick() a no-op instead of ticking
+    // freed materials and, through a warehouse's own onGone, rebuilding on a
+    // lot that is no longer part of the scene.
+    this.gone = true;
     this.disposeStructure();
     this.wallMaterial.dispose();
     this.accentMaterial.dispose();
@@ -511,7 +547,7 @@ export class Lot {
 
     // Slim colored pilasters and a crisp cornice turn the plain box into a
     // deliberate industrial pavilion. They reuse the animated accent
-    // material, so all pieces still collapse into its existing draw call.
+    // material, so all pieces collapse into its existing draw call.
     const pilasterHeight = top - YARD_Y;
     for (const x of [x0 + 0.16, x1 - 0.16]) {
       for (const z of [z0 - 0.02, z1 + 0.02]) {
@@ -578,19 +614,22 @@ export class Lot {
 
   // No per-subagent identity survives on the wire, just a count: this fills
   // slots 0..count-1 and empties the rest, all mirroring the lot's own busy
-  // state (there is no separate busy flag per subagent anymore).
+  // state (there is no separate busy flag per subagent).
   private updateWarehouses(count: number, busy: boolean, nowMs: number) {
+    const settled = this.pendingSettled;
+    this.pendingSettled = false;
     const target = Math.min(count, MAX_WAREHOUSES);
     for (const [slot, entry] of [...this.warehouses]) if (slot >= target) this.leaveWarehouse(slot, entry);
 
     for (let slot = 0; slot < target; slot++) {
       if (this.warehouses.has(slot) || this.slotLeaving(slot) || this.exit) continue;
-      const warehouse = new Warehouse(this.accent, factoryStyleIndex(this.state.id) + slot);
+      const warehouse = new Warehouse(this.accent, factoryStyleIndex(this.state.id) + slot, settled);
       const [x, z] = WAREHOUSE_SLOTS[slot];
       warehouse.group.position.set(x, 0, z);
       for (const mesh of warehouse.pickables) mesh.userData.hover = this;
       this.body.add(warehouse.group);
       this.warehouses.set(slot, { warehouse, slot });
+      this.pickablesDirty = true;
     }
 
     for (const { warehouse } of this.warehouses.values()) warehouse.update(busy, nowMs);
@@ -602,14 +641,25 @@ export class Lot {
     }
   }
 
-  // A leaving warehouse keeps its slot until it has shrunk away.
+  // A leaving warehouse keeps its slot until it has shrunk away. A slot the
+  // subagent count still wants gets skipped while that shrink is running (see
+  // `slotLeaving` above), so once it finishes this refills the slot if it is
+  // still wanted.
   private leaveWarehouse(slot: number, entry: Slot) {
     this.warehouses.delete(slot);
     this.leavingWarehouses.add(entry);
+    this.pickablesDirty = true; // the leaving warehouse's pickables are already out of pickables()
     entry.warehouse.remove(() => {
       this.leavingWarehouses.delete(entry);
+      // This lot can be disposed (redistribute() demoted or removed it)
+      // before this fires: dispose() already freed this warehouse and every
+      // other resource this lot owns, so acting further here would rebuild
+      // on a lot no longer in the scene.
+      if (this.gone) return;
       this.body.remove(entry.warehouse.group);
       entry.warehouse.dispose();
+      this.shadowDirty = true; // a shadow caster just disappeared
+      this.updateWarehouses(this.state.subagents, this.state.status === "busy", performance.now());
     });
   }
 
@@ -631,8 +681,12 @@ export class Lot {
   // Rises out of the ground on arrival, sinks back when the session ends.
   private tickLifecycle(dt: number) {
     if (!this.exit) {
+      const wasRising = this.appear < 1;
       this.appear = Math.min(1, this.appear + dt / 0.8);
       this.body.position.y = -SINK_DEPTH * (1 - easeOutBack(this.appear));
+      // The shadow baked while this lot was still sunk, so it needs one more
+      // redraw once the body has fully risen into its final position.
+      if (wasRising && this.appear >= 1) this.shadowDirty = true;
       return;
     }
     this.exit.t += dt;

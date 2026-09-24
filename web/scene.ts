@@ -50,7 +50,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   controls.enableDamping = true;
   // Panning is what makes the detail set worth redistributing: drag the view
   // to a corner of the park and the nearest lots there get the full treatment.
-  // With it off, the detailed set never moved off the park's centre.
+  // Without it, the detailed set stays fixed on the park's centre.
   controls.enablePan = true;
   controls.enableRotate = true;
   controls.enableZoom = true;
@@ -62,8 +62,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   controls.touches.ONE = THREE.TOUCH.ROTATE;
   controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
   // Both live in park-layout.ts, next to the test that pins them against the
-  // zoom 150 and 300 lots actually need. The old floor of 0.3 cropped the
-  // park from 37 lots onward.
+  // zoom 150 and 300 lots need: a floor above MIN_ZOOM crops the park from
+  // about 37 lots onward.
   controls.minZoom = MIN_ZOOM;
   controls.maxZoom = MAX_ZOOM;
   controls.minPolarAngle = 0.15;
@@ -104,8 +104,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   let focusedHalfExtent: number | null = null;
 
   // A deliberate drag/rotate/zoom owns the camera from that moment onward.
-  // Without this, the old focus loop pulled a manual pan back to the park
-  // centre every frame, making the controls feel broken.
+  // Without this, a manual pan gets pulled back to the park centre every
+  // frame, which reads as broken controls.
   controls.addEventListener("start", () => {
     focusActive = false;
     userOwnsCamera = true;
@@ -203,5 +203,12 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
     focus,
     panTo,
     onFrame: (callback: FrameCallback) => callbacks.add(callback),
+    // The shadow map only redraws when this flag is set (autoUpdate is off
+    // above), so anything that moves or rebuilds a shadow caster outside the
+    // sun-drift and layout checks already in the frame loop has to flip it.
+    invalidateShadows: () => {
+      renderer.shadowMap.needsUpdate = true;
+    },
+    onCameraChange: (callback: () => void) => controls.addEventListener("change", callback),
   };
 }

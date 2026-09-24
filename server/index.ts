@@ -13,7 +13,6 @@ import { createBatcher } from "./batcher.ts";
 import {
   dropPartialFirstLine,
   parseSessionFile,
-  parseSubagentMeta,
   parseTranscriptChunk,
   projectDirFor,
   type SessionFile,
@@ -384,8 +383,7 @@ async function syncTranscript(sessionId: string) {
 async function syncSubagent(sessionId: string, fileName: string) {
   const watched = watchedSessions.get(sessionId);
   if (!watched?.projectDir) return;
-  const dir = join(watched.projectDir, sessionId, "subagents");
-  const path = join(dir, fileName);
+  const path = join(watched.projectDir, sessionId, "subagents", fileName);
   const agentId = basename(fileName, ".jsonl");
   const now = Date.now();
 
@@ -396,9 +394,7 @@ async function syncSubagent(sessionId: string, fileName: string) {
 
   const result = await readNewEvents(path);
   if (!result) return;
-  const meta = parseSubagentMeta(await readFile(join(dir, `${agentId}.meta.json`), "utf8").catch(() => ""));
-  const subagent = { name: meta?.name ?? agentId, model: meta?.model ?? "" };
-  tracker.applySubagentEvents(sessionId, agentId, subagent, result.events, result.mtimeMs, now);
+  tracker.applySubagentEvents(sessionId, agentId, result.events, result.mtimeMs, now);
 }
 
 // ---------- Watching ----------

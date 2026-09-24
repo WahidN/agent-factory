@@ -12,13 +12,6 @@ export type SessionFile = {
   startedAt: number;
 };
 
-export type SubagentMeta = {
-  name: string;
-  agentType: string;
-  description: string;
-  model: string; // short alias like "sonnet", empty when the file has none
-};
-
 export type TranscriptEvent =
   | { kind: "tool_start"; id: string; name: string; target: string; at: number }
   | { kind: "tool_end"; id: string; at: number }
@@ -49,17 +42,6 @@ export function parseSessionFile(json: string): SessionFile | null {
     status: data.status === "busy" ? "busy" : "idle",
     startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
   };
-}
-
-export function parseSubagentMeta(json: string): SubagentMeta | null {
-  const data = parseJson(json);
-  if (!data) return null;
-  const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const agentType = str(data.agentType);
-  const description = str(data.description);
-  const name = str(data.name) || description || agentType;
-  if (!name) return null;
-  return { name, agentType, description, model: str(data.model) };
 }
 
 // Parses complete lines. The unfinished last line comes back as `remainder`

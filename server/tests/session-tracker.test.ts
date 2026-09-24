@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionFile, TranscriptEvent } from "../claude-reader.ts";
-import { SessionTracker, SESSION_BUSY_MS, SUBAGENT_BUSY_MS, SUBAGENT_REMOVE_MS } from "../session-tracker.ts";
+import { SessionTracker, SESSION_BUSY_MS, SUBAGENT_REMOVE_MS } from "../session-tracker.ts";
 import type { ServerMessage, SessionState } from "../types.ts";
 
 const file: SessionFile = {
@@ -21,7 +21,6 @@ const start = (id: string, name: string, target = ""): TranscriptEvent => ({
 });
 const end = (id: string): TranscriptEvent => ({ kind: "tool_end", id, at: 0 });
 const model = (id: string): TranscriptEvent => ({ kind: "model", model: id, at: 0 });
-const review = { name: "review", model: "" };
 
 function setup() {
   const messages: ServerMessage[] = [];
@@ -43,9 +42,9 @@ describe("session state shape", () => {
   it("subagents is a count, not a list", () => {
     const { tracker, latest, now } = setup();
     expect(latest().subagents).toBe(0);
-    tracker.applySubagentEvents("s1", "agent-x", review, [], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [], now.value, now.value);
     expect(latest().subagents).toBe(1);
-    tracker.applySubagentEvents("s1", "agent-y", review, [], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-y", [], now.value, now.value);
     expect(latest().subagents).toBe(2);
   });
 });
@@ -143,23 +142,23 @@ describe("busy from write activity", () => {
 });
 
 describe("subagents", () => {
-  it("is counted while written in the last 5 seconds, then removed once quiet and idle", () => {
+  it("is counted until it has been quiet for SUBAGENT_REMOVE_MS with no open tool", () => {
     const { tracker, latest, now } = setup();
-    tracker.applySubagentEvents("s1", "agent-x", { name: "code-review", model: "" }, [], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [], now.value, now.value);
     expect(latest().subagents).toBe(1);
 
-    now.value += SUBAGENT_BUSY_MS - 1;
+    now.value += SUBAGENT_REMOVE_MS - 1;
     tracker.tick(now.value);
     expect(latest().subagents).toBe(1);
 
-    now.value += SUBAGENT_REMOVE_MS;
+    now.value += 1;
     tracker.tick(now.value);
     expect(latest().subagents).toBe(0);
   });
 
   it("keeps a subagent with a running tool alive however long it is quiet", () => {
     const { tracker, latest, now } = setup();
-    tracker.applySubagentEvents("s1", "agent-x", review, [start("t", "Grep", "foo")], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [start("t", "Grep", "foo")], now.value, now.value);
     now.value += SUBAGENT_REMOVE_MS * 2;
     tracker.tick(now.value);
     expect(latest().subagents).toBe(1);
@@ -168,7 +167,7 @@ describe("subagents", () => {
   it("is removed after 60 seconds quiet with no running tool", () => {
     const { tracker, latest, now } = setup();
     const written = now.value;
-    tracker.applySubagentEvents("s1", "agent-x", review, [start("t", "Grep"), end("t")], written, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [start("t", "Grep"), end("t")], written, now.value);
 
     now.value = written + SUBAGENT_REMOVE_MS - 1;
     tracker.tick(now.value);
@@ -181,9 +180,9 @@ describe("subagents", () => {
 
   it("a new write resets the quiet timer", () => {
     const { tracker, latest, now } = setup();
-    tracker.applySubagentEvents("s1", "agent-x", review, [], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [], now.value, now.value);
     now.value += SUBAGENT_REMOVE_MS - 1000;
-    tracker.applySubagentEvents("s1", "agent-x", review, [], now.value, now.value);
+    tracker.applySubagentEvents("s1", "agent-x", [], now.value, now.value);
     now.value += SUBAGENT_REMOVE_MS - 1000;
     tracker.tick(now.value);
     expect(latest().subagents).toBe(1);
@@ -207,14 +206,19 @@ describe("change notices", () => {
     expect(messages[1]).toMatchObject({ type: "session-update", session: { model: "claude-sonnet-5" } });
   });
 
-  it("a tool that starts and ends in one read still surfaces the busy blip", () => {
+  it("sends one notice per read, with the state after the whole read", () => {
     const { tracker, messages, now } = setup();
     tracker.upsertSession({ ...file, status: "idle" }, now.value);
     const before = messages.length;
-    const oldWrite = now.value - SESSION_BUSY_MS; // outside the recent-write window
-    tracker.applySessionEvents("s1", [start("a", "Read"), end("a")], oldWrite, now.value);
-    const statuses = messages.slice(before).map((m) => (m.type === "session-update" ? m.session.status : "x"));
-    expect(statuses).toEqual(["busy", "idle"]);
+    tracker.applySessionEvents(
+      "s1",
+      [model("claude-sonnet-5"), start("a", "Read"), start("b", "Grep"), end("a")],
+      now.value,
+      now.value,
+    );
+    expect(messages.slice(before)).toEqual([
+      { type: "session-update", session: expect.objectContaining({ model: "claude-sonnet-5", status: "busy" }) },
+    ]);
   });
 
   it("sends a notice when a session turns idle through time alone", () => {

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   dropPartialFirstLine,
   parseSessionFile,
-  parseSubagentMeta,
   parseTranscriptChunk,
   projectDirFor,
   toolTarget,
@@ -154,25 +153,5 @@ describe("toolTarget", () => {
     expect(toolTarget("WebFetch", { url: "https://x", prompt: "summarize" })).toBe("");
     expect(toolTarget("Edit", undefined)).toBe("");
     expect(toolTarget("Bash", { command: 42 })).toBe("");
-  });
-});
-
-describe("parseSubagentMeta", () => {
-  it("reads a valid meta file", () => {
-    expect(parseSubagentMeta(fixture("subagent.meta.json"))).toEqual({
-      name: "code-review",
-      agentType: "general-purpose",
-      description: "/code-review 6",
-      model: "",
-    });
-  });
-
-  it("reads the model alias when the file has one", () => {
-    const meta = parseSubagentMeta('{"agentType":"general-purpose","description":"Review","model":"sonnet"}');
-    expect(meta?.model).toBe("sonnet");
-  });
-
-  it("rejects an invalid meta file", () => {
-    expect(parseSubagentMeta(fixture("subagent-invalid.meta.json"))).toBeNull();
   });
 });

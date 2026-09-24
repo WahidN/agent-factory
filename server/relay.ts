@@ -57,6 +57,7 @@ export function startRelay(
   function connect() {
     const ws = new WebSocket(url);
     pending = ws;
+    let openedAt = 0;
     let silence: NodeJS.Timeout | undefined;
     // The hub's ping is the only thing that ever arrives here: a reporter sends
     // no pings of its own, so no pong comes back, and the hub keeps its
@@ -68,8 +69,7 @@ export function startRelay(
     ws.on("ping", heard);
     ws.on("open", () => {
       socket = ws;
-      announced = false;
-      attempt = 0;
+      openedAt = Date.now();
       heard();
       log(`relay: connected to ${url}`);
       const hello: RelayMessage = token
@@ -84,6 +84,13 @@ export function startRelay(
       if (socket === ws) socket = null;
       if (pending === ws) pending = null;
       if (stopped) return;
+      // Only a connection that held for at least one retry interval counts as
+      // proven: a hub that accepts the socket and then refuses the hello (bad
+      // token, wrong protocol) must not reset the backoff on every attempt.
+      if (openedAt && Date.now() - openedAt >= retryMs) {
+        attempt = 0;
+        announced = false;
+      }
       const wait = backoffDelay(attempt, retryMs, MAX_RETRY_MS, random);
       attempt++;
       if (!announced) {

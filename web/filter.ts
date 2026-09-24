@@ -32,6 +32,17 @@ export function optionsFrom(sessions: readonly Pick<SessionState, "user" | "proj
   };
 }
 
+// Drops a user or project the current sessions no longer offer. Without this a
+// filter can outlive the sessions it named: the dropdown falls back to "all"
+// while the filter still hides everything. Returns the same object when there
+// is nothing to drop, so the caller can skip the work.
+export function pruneFilter(filter: Filter, users: readonly string[], projects: readonly string[]): Filter {
+  const user = filter.user !== null && !users.includes(filter.user) ? null : filter.user;
+  const project = filter.project !== null && !projects.includes(filter.project) ? null : filter.project;
+  if (user === filter.user && project === filter.project) return filter;
+  return { ...filter, user, project };
+}
+
 // Where "jump to me" points the camera: the average position of every lot
 // belonging to that user. Null if that user currently has no lots.
 export function jumpTarget(

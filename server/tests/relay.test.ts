@@ -143,6 +143,32 @@ describe("startRelay", () => {
     await until(() => received.length === 2, 5000);
     expect(lines.at(-1)).toContain("connected");
   });
+
+  // A hub that accepts the socket and then refuses the hello (bad token, wrong
+  // protocol) still fires the open handler, so attempt/announced must not reset
+  // there: a reporter a hub will never accept would otherwise retry at the base
+  // delay forever instead of backing off.
+  it("keeps backing off when the hub accepts the socket and then refuses it", async () => {
+    const hub = await fakeHub();
+    wss = hub.wss;
+    const connectedAt: number[] = [];
+    hub.wss.on("connection", (socket) => {
+      connectedAt.push(Date.now());
+      socket.close(1008, "bad token");
+    });
+
+    const lines: string[] = [];
+    relay = startRelay(hub.url, "mac-b", "dennis", "bad-token", () => [], {
+      retryMs: 20,
+      random: () => 1, // no jitter, so delays are exactly the cap: 20, 40, 80, ...
+      log: (line: string) => lines.push(line),
+    });
+
+    await until(() => connectedAt.length >= 4, 5000);
+    const gaps = connectedAt.slice(1).map((t, i) => t - connectedAt[i]);
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1] * 1.3);
+    expect(lines.filter((l) => l.includes("retrying"))).toHaveLength(1);
+  });
 });
 
 describe("backoffDelay", () => {

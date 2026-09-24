@@ -28,13 +28,17 @@ export function hashString(value: string): number {
 // A stable order for a set of keys: by hash first, then by the key itself.
 // Two keys that hash the same never tie, so the order stays deterministic
 // even under a collision, and it never depends on the order the keys were
-// given in.
+// given in. Each key is hashed once up front, not inside the comparator: a
+// snapshot assigns every session in turn and each assign resorts the park.
 function sortedByHash(keys: string[]): string[] {
-  return [...new Set(keys)].sort((a, b) => {
-    const diff = hashString(a) - hashString(b);
-    if (diff !== 0) return diff;
-    return a < b ? -1 : a > b ? 1 : 0;
-  });
+  return [...new Set(keys)]
+    .map((key) => ({ key, hash: hashString(key) }))
+    .sort((a, b) => {
+      const diff = a.hash - b.hash;
+      if (diff !== 0) return diff;
+      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+    })
+    .map(({ key }) => key);
 }
 
 // Assigns every session a plot index, packed into 0..sessions.length-1 with

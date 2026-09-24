@@ -104,7 +104,10 @@ const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
 const bridgeGapAt = (col: number) => crossingAt(col) !== null || col === RAIL_BRIDGE.col;
 
-const MEADOW_EDGE = 3000;
+// Half the size of the grass plane. Zoomed fully out over a 300 lot park in a
+// window at aspect 0.6, with the orbit target at the edge of its clamp, the
+// screen corners reach about 6850 units out (see meadow-view.test.ts).
+export const MEADOW_EDGE = 8000;
 const GRASS_TILE = 50; // world units per repeat of the grass texture
 const WATER_TILE = 20; // world units per repeat of the current texture, along the river
 

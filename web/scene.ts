@@ -7,15 +7,20 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { INK_OUTLINE_SHADER } from "./ink-outline.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
-import { fitZoom, MAX_ZOOM, MIN_ZOOM } from "./park-layout.ts";
+import { clampToPark, fitZoom, fogRange, MAX_ZOOM, MIN_ZOOM, zoomFloor } from "./park-layout.ts";
 import type { ViewOptions } from "./view-options.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
-const VIEW_HEIGHT = 120; // world units visible top to bottom at zoom 1
-const CAMERA_DISTANCE = 600;
-const AZIMUTH = Math.PI / 4;
-const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
+export const VIEW_HEIGHT = 120; // world units visible top to bottom at zoom 1
+// How far the camera sits back from the point it looks at. An orthographic
+// view looks the same from any distance, but ground between the camera and
+// that point is cut off by the near plane. At MIN_ZOOM the bottom edge of the
+// screen shows ground about 4250 units closer than the look-at point, so the
+// camera sits behind that. Fog and the far plane count from the look-at point.
+export const CAMERA_DISTANCE = 5000;
+export const AZIMUTH = Math.PI / 4;
+export const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
 
 export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { autoFit: false, fitScale: 1 }) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -35,16 +40,28 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   // plane below guarantees that every visible piece of terrain is grass.
   const skyColor = INK_STYLE_ENABLED ? "#797fa3" : "#a9ced7";
   scene.background = new THREE.Color(skyColor);
-  scene.fog = new THREE.Fog(skyColor, 900, 1450);
+  const fog = new THREE.Fog(skyColor);
+  scene.fog = fog;
 
   // Orthographic: parallel edges stay parallel, like the reference render.
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, CAMERA_DISTANCE * 3);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1);
   const viewDirection = new THREE.Vector3(
     Math.cos(ELEVATION) * Math.sin(AZIMUTH),
     Math.sin(ELEVATION),
     Math.cos(ELEVATION) * Math.cos(AZIMUTH),
   );
   camera.position.copy(viewDirection).multiplyScalar(CAMERA_DISTANCE);
+
+  // Fog grows with the park so a big park's far corner is not fogged out. The
+  // far plane stays a little past the fog, where everything is sky colored.
+  function fitFog(halfExtent: number) {
+    const range = fogRange(halfExtent);
+    fog.near = CAMERA_DISTANCE + range.near;
+    fog.far = CAMERA_DISTANCE + range.far;
+    camera.far = fog.far + 350;
+    camera.updateProjectionMatrix();
+  }
+  fitFog(0);
 
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true;
@@ -102,6 +119,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   let focusActive = false;
   let userOwnsCamera = false;
   let focusedHalfExtent: number | null = null;
+  // The park the orbit target is held over, set by focus().
+  let parkArea: { x: number; z: number; half: number } | null = null;
 
   // A deliberate drag/rotate/zoom owns the camera from that moment onward.
   // Without this, a manual pan gets pulled back to the park centre every
@@ -114,8 +133,34 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
   controls.addEventListener("end", () => {
     canvas.style.cursor = "grab";
   });
+  // Panning and zoom-to-cursor both move the target, without bound. Held over
+  // the park, the view cannot drift off the city into empty meadow and sky.
+  // The camera moves along so the viewing angle stays the same.
+  controls.addEventListener("change", () => {
+    if (!parkArea) return;
+    const clamped = clampToPark(controls.target.x, controls.target.z, parkArea);
+    const dx = clamped.x - controls.target.x;
+    const dz = clamped.z - controls.target.z;
+    if (dx === 0 && dz === 0) return;
+    controls.target.x += dx;
+    controls.target.z += dz;
+    camera.position.x += dx;
+    camera.position.z += dz;
+  });
   canvas.style.cursor = "grab";
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+
+  // Zooming out stops a little past the zoom that fits the whole park, for
+  // the park and window shape of the moment, so the city never shrinks to a
+  // speck. A ?zoom below 1 lowers the floor with it.
+  function limitZoom(halfExtent: number) {
+    const fit = fitZoom(halfExtent, VIEW_HEIGHT, camera.right - camera.left);
+    controls.minZoom = zoomFloor(fit * Math.min(1, options.fitScale));
+    if (camera.zoom < controls.minZoom) {
+      camera.zoom = controls.minZoom;
+      camera.updateProjectionMatrix();
+    }
+  }
 
   // Moves the orbit center to the town and sizes the sun's shadow area to it.
   // With `fit`, also zooms so the whole town is in view.
@@ -131,6 +176,9 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
     // first fit and ?view=all still glide the camera to the town.
     if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
     focusedHalfExtent = halfExtent;
+    parkArea = { x, z, half: halfExtent };
+    fitFog(halfExtent);
+    limitZoom(halfExtent);
     const size = halfExtent + 30;
     Object.assign(sun.shadow.camera, { left: -size, right: size, top: size, bottom: -size });
     sun.shadow.camera.updateProjectionMatrix();
@@ -152,6 +200,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { 
       bottom: -VIEW_HEIGHT / 2,
     });
     camera.updateProjectionMatrix();
+    if (focusedHalfExtent !== null) limitZoom(focusedHalfExtent);
     if (options.autoFit && focusedHalfExtent !== null) fitCamera(focusedHalfExtent);
   }
   window.addEventListener("resize", resize);

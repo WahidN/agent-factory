@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom } from "../filter.ts";
+import { EMPTY_FILTER, jumpTarget, matchesFilter, optionsFrom, pruneFilter } from "../filter.ts";
 
 const session = (user: string, project: string, status: "busy" | "idle") => ({ user, project, status });
 
@@ -45,6 +45,36 @@ describe("optionsFrom", () => {
 
   it("returns empty lists for no sessions", () => {
     expect(optionsFrom([])).toEqual({ users: [], projects: [] });
+  });
+});
+
+describe("pruneFilter", () => {
+  it("returns the same object when every field is still on offer", () => {
+    const filter = { user: "dennis", project: "agent-factory", status: "busy" as const };
+    expect(pruneFilter(filter, ["dennis", "wahid"], ["agent-factory"])).toBe(filter);
+  });
+
+  it("returns the same object for the empty filter", () => {
+    expect(pruneFilter(EMPTY_FILTER, [], [])).toBe(EMPTY_FILTER);
+  });
+
+  it("drops a user whose sessions have all ended", () => {
+    const filter = { user: "dennis", project: null, status: null };
+    expect(pruneFilter(filter, ["wahid"], [])).toEqual({ user: null, project: null, status: null });
+  });
+
+  it("drops a project whose sessions have all ended", () => {
+    const filter = { user: "dennis", project: "kennisbank", status: null };
+    expect(pruneFilter(filter, ["dennis"], ["agent-factory"])).toEqual({
+      user: "dennis",
+      project: null,
+      status: null,
+    });
+  });
+
+  it("keeps the status, which does not come from the sessions", () => {
+    const filter = { user: null, project: null, status: "idle" as const };
+    expect(pruneFilter(filter, [], [])).toBe(filter);
   });
 });
 

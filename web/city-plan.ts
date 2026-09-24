@@ -67,7 +67,7 @@ const PLAIN_CROSSING_SPACING = 5;
 
 // The gladiola arch of the Vierdaagse: not a building but a span over a road,
 // on the southern edge of the city, where the walkers come in.
-export const GLADIOLA = { col: 2, row: 0, side: "south" as const };
+export const GLADIOLA = { col: 2, row: 0 };
 
 // Claimed cells, keyed by `col:row`. Landmarks sit in the first few dozen
 // curve indexes so that even a quiet park shows a recognisable city; the
@@ -113,18 +113,28 @@ export function amenityAt(cell: Cell): Amenity | null {
 const plan: (Amenity | null)[] = [];
 // Curve indexes with nothing on them, in order: index = free[rank].
 const free: number[] = [];
+// A claimed cell as the plan hands it out. Readonly because claimedUpTo
+// returns the cached objects themselves.
+export type Claim = { readonly index: number; readonly cell: Readonly<Cell>; readonly amenity: Amenity };
+
+// Every claimed index walked so far, in curve order.
+const claims: Claim[] = [];
 let tableSkipped = 0; // cells passed that the table did not claim
 
 function walkTo(index: number) {
   for (let i = plan.length; i <= index; i++) {
-    const claimed = amenityAt(curveCell(i));
+    const cell = curveCell(i);
+    const claimed = amenityAt(cell);
     if (claimed) {
       plan.push(claimed);
+      claims.push({ index: i, cell, amenity: claimed });
       continue;
     }
     tableSkipped++;
     if (tableSkipped % FILLER_EVERY === 0) {
-      plan.push(FILLER_CYCLE[(tableSkipped / FILLER_EVERY - 1) % FILLER_CYCLE.length]);
+      const filler = FILLER_CYCLE[(tableSkipped / FILLER_EVERY - 1) % FILLER_CYCLE.length];
+      plan.push(filler);
+      claims.push({ index: i, cell, amenity: filler });
     } else {
       plan.push(null);
       free.push(i);
@@ -162,16 +172,19 @@ export function indexForRank(rank: number): number {
 }
 
 // Every claimed cell the curve passes before the last session's cell: exactly
-// what the scene has to build next to `rankCount` lots.
-export function claimedUpTo(rankCount: number): { index: number; cell: Cell; amenity: Amenity }[] {
+// what the scene has to build next to `rankCount` lots. indexForRank has
+// already walked past `last`, so this is a binary search in the cached claims.
+export function claimedUpTo(rankCount: number): readonly Claim[] {
   if (rankCount <= 0) return [];
   const last = indexForRank(rankCount - 1);
-  const claims: { index: number; cell: Cell; amenity: Amenity }[] = [];
-  for (let index = 0; index <= last; index++) {
-    const amenity = claimAt(index);
-    if (amenity) claims.push({ index, cell: curveCell(index), amenity });
+  let low = 0;
+  let high = claims.length;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (claims[mid].index <= last) low = mid + 1;
+    else high = mid;
   }
-  return claims;
+  return claims.slice(0, low);
 }
 
 // Whether two cells sit on the same side of the Waal. A worker never gets a

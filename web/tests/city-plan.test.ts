@@ -114,13 +114,15 @@ describe("claimedUpTo", () => {
   });
 
   it("covers the curve up to the last session, so no claim is skipped", () => {
-    const last = indexForRank(9);
-    const expected = [];
-    for (let index = 0; index <= last; index++) {
-      const amenity = claimAt(index);
-      if (amenity) expected.push({ index, cell: curveCell(index), amenity });
+    for (const sessions of [10, 300]) {
+      const last = indexForRank(sessions - 1);
+      const expected = [];
+      for (let index = 0; index <= last; index++) {
+        const amenity = claimAt(index);
+        if (amenity) expected.push({ index, cell: curveCell(index), amenity });
+      }
+      expect(claimedUpTo(sessions)).toEqual(expected);
     }
-    expect(claimedUpTo(10)).toEqual(expected);
   });
 });
 

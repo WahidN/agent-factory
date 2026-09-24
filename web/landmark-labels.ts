@@ -133,9 +133,15 @@ export function labelOpacity(zoom: number, minZoom: number): number {
   return THREE.MathUtils.clamp((zoom - minZoom) / 0.22, 0, 1);
 }
 
+type Label = { spec: LabelSpec; el: HTMLElement; width: number; height: number; stale: boolean };
+
 export class LandmarkLabels {
   private readonly root = document.createElement("div");
-  private readonly labels = new Map<string, { spec: LabelSpec; el: HTMLElement }>();
+  // Each pill's size is cached: reading offsetWidth after writing a transform
+  // in the frame loop would force a layout per label per frame. A size is
+  // re-read only when it may have changed (new pill, new text, a resize that
+  // can switch the font size), in one batch before update() writes anything.
+  private readonly labels = new Map<string, Label>();
   private readonly point = new THREE.Vector3();
   private readonly last = new Float64Array(8).fill(Number.NaN);
   private dirty = true;
@@ -147,6 +153,10 @@ export class LandmarkLabels {
     this.root.className = "landmark-labels";
     this.root.setAttribute("aria-hidden", "true");
     document.body.appendChild(this.root);
+    window.addEventListener("resize", () => {
+      for (const label of this.labels.values()) label.stale = true;
+      this.dirty = true;
+    });
   }
 
   setCity(rankCount: number, river: RiverBounds | null) {
@@ -160,6 +170,10 @@ export class LandmarkLabels {
     for (const spec of specs) {
       const existing = this.labels.get(spec.key);
       if (existing) {
+        if (existing.spec.name !== spec.name) {
+          existing.el.textContent = spec.name;
+          existing.stale = true;
+        }
         existing.spec = spec;
         continue;
       }
@@ -167,7 +181,7 @@ export class LandmarkLabels {
       el.className = `landmark-label ${spec.kind}`;
       el.textContent = spec.name;
       this.root.appendChild(el);
-      this.labels.set(spec.key, { spec, el });
+      this.labels.set(spec.key, { spec, el, width: spec.name.length * 7 + 28, height: 24, stale: true });
     }
     this.dirty = true;
   }
@@ -188,10 +202,21 @@ export class LandmarkLabels {
     this.last.set(current);
     this.dirty = false;
 
+    // Reads only, before any write below, so this costs at most one layout.
+    // A hidden pill measures 0 and keeps its last size until it shows again.
+    for (const label of this.labels.values()) {
+      if (!label.stale || label.el.hidden) continue;
+      const measuredWidth = label.el.offsetWidth;
+      if (measuredWidth === 0) continue;
+      label.width = measuredWidth;
+      label.height = label.el.offsetHeight || label.height;
+      label.stale = false;
+    }
+
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     const candidates: ScreenLabel[] = [];
-    for (const { spec, el } of this.labels.values()) {
+    for (const { spec, el, width: labelWidth, height: labelHeight } of this.labels.values()) {
       const opacity = labelOpacity(this.camera.zoom, spec.minZoom);
       this.point.set(spec.x, spec.y, spec.z).project(this.camera);
       const onScreen =
@@ -209,8 +234,8 @@ export class LandmarkLabels {
         key: spec.key,
         x,
         y,
-        width: el.offsetWidth || spec.name.length * 7 + 28,
-        height: el.offsetHeight || 24,
+        width: labelWidth,
+        height: labelHeight,
         priority: spec.priority,
       });
     }

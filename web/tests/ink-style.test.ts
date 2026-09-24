@@ -19,9 +19,10 @@ describe("Nijmegen Inkshift materials", () => {
 
   it("keeps standard material features and injects the shared ramp", () => {
     const material = inkStandardMaterial("#ffffff", { vertexColors: true });
+    // three's own standard shader, so a renamed chunk cannot silently skip the ramp.
     const shader = {
       uniforms: {},
-      fragmentShader: "void main() { #include <output_fragment> }",
+      fragmentShader: THREE.ShaderLib.standard.fragmentShader,
     } as THREE.WebGLProgramParametersWithUniforms;
     material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
 

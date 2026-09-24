@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { CELL_HALF } from "../cell-build.ts";
 import { buildDistrictFiller, districtForCell, districtVariant, type FillerAmenity } from "../district-style.ts";
-import { StaticBuilder } from "../static-builder.ts";
+import { StaticBuilder, type Vec3 } from "../static-builder.ts";
 
 function random(seed: number) {
   let state = seed >>> 0;
@@ -64,6 +64,43 @@ describe("Nijmegen district grammar", () => {
         expect(bounds.min.z).toBeGreaterThanOrEqual(-CELL_HALF - 1e-6);
         expect(bounds.max.z).toBeLessThanOrEqual(CELL_HALF + 1e-6);
         expect(bounds.min.y).toBeGreaterThanOrEqual(-1e-6);
+      }
+    }
+  });
+
+  it("never lays two differently coloured floors at the same height", () => {
+    type Slab = { material: THREE.Material; x: [number, number]; z: [number, number]; top: number };
+    class Recorder extends StaticBuilder {
+      slabs: Slab[] = [];
+      override box(material: THREE.Material, position: Vec3, scale: Vec3, rotation: Vec3 = [0, 0, 0]) {
+        if (rotation.every((r) => r === 0)) {
+          const [x, y, z] = position;
+          const [sx, sy, sz] = scale;
+          this.slabs.push({ material, x: [x - sx / 2, x + sx / 2], z: [z - sz / 2, z + sz / 2], top: y + sy / 2 });
+        }
+        super.box(material, position, scale, rotation);
+      }
+    }
+    const overlaps = ([a0, a1]: [number, number], [b0, b1]: [number, number]) =>
+      Math.min(a1, b1) - Math.max(a0, b0) > 1e-6;
+    for (const cell of [
+      { col: 1, row: 1 },
+      { col: 6, row: 1 },
+      { col: 4, row: 3 },
+      { col: 12, row: 8 },
+    ]) {
+      for (const amenity of ["park", "houses", "shops", "field"] as const) {
+        const builder = new Recorder();
+        buildDistrictFiller(amenity, builder, random(42), cell);
+        const { slabs } = builder;
+        for (const [i, a] of slabs.entries()) {
+          for (const b of slabs.slice(i + 1)) {
+            if (a.material === b.material || Math.abs(a.top - b.top) > 1e-6) continue;
+            expect(overlaps(a.x, b.x) && overlaps(a.z, b.z), `${amenity} at ${cell.col},${cell.row}, y ${a.top}`).toBe(
+              false,
+            );
+          }
+        }
       }
     }
   });

@@ -59,7 +59,7 @@ Het bericht dat de lijn overgaat, telt precies zeven velden en niets meer: `id`,
 
 Met `HUB` ingesteld draait de server als reporter: één uitgaande verbinding naar de centrale, en verder niets. Geen HTTP-server, geen poort, geen pagina. Een centrale zet wat hij ontvangt naast zijn eigen sessies en laat de sessies van een machine vallen zodra die verbinding sluit. Kijken doe je bij de centrale.
 
-Beide kanten houden de verbinding in de gaten met een ping elke 30 seconden; twee gemiste antwoorden en de socket gaat dicht. Een reporter die de centrale kwijtraakt begint met 2 seconden en loopt op tot maximaal 30, met wat toeval erin, zodat dertig Macs na een herstart van de centrale niet allemaal in dezelfde seconde terugkomen.
+De centrale pingt elke verbonden socket elke 30 seconden en verbreekt een socket die twee pings op rij niet beantwoordt. Een reporter pingt zelf niet, maar let op de pings van de centrale: blijft die 90 seconden stil, dan verbreekt hij de verbinding en maakt hij een nieuwe. Dat opnieuw verbinden begint met 2 seconden en loopt op tot maximaal 30, met wat toeval erin, zodat dertig Macs na een herstart van de centrale niet allemaal in dezelfde seconde terugkomen.
 
 De pagina in `web/` tekent het park met Three.js. Statische onderdelen van een kavel zijn samengevoegd tot één mesh, en herhaalde onderdelen zoals bomen en ramen zijn instanced.
 
@@ -77,7 +77,7 @@ Claude Code bepaalt het formaat van deze bestanden, dus een update kan de lezer 
 
 Draait het park op de vaste centrale machine, dan hoef je niets te installeren om mee te kijken. Open in de browser `http://agentfactory.local:4317` en je ziet het park van iedereen.
 
-`/healthz` op die centrale geeft de gezondheid terug: 503 zodra er geen reporters verbonden zijn, of zodra er wel reporters zijn maar er een tijd lang niets binnenkomt. `/metrics` geeft het aantal verbonden machines, berichten per seconde, en per machine de protocolversie en het laatste bericht.
+`/healthz` op die centrale antwoordt altijd 200 zolang het proces draait, met in de body het aantal verbonden reporters (`reporters`) en hoe lang de laatste sessiewijziging geleden is (`lastUpdateAgeMs`). Wat daarvan alarm waard is, beslist wie de check aanroept: een stil park en een vastgelopen park zien er in `lastUpdateAgeMs` hetzelfde uit. `/metrics` geeft het aantal verbonden machines, berichten per seconde, en per machine de protocolversie en het laatste bericht.
 
 ## Meedoen op je eigen Mac
 

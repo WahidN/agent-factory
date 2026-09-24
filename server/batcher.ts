@@ -1,7 +1,6 @@
 // Coalesces the messages that arrive in one tick into a single "batch" sent
-// to browsers, instead of one message per session. A snapshot of 150 sessions
-// used to arrive as 150 separate messages, and the page rebuilt every road,
-// kerb, lamp and tree of the park after each one.
+// to browsers, instead of one message per session, so the page rebuilds the
+// park once per tick and not once per session.
 
 import type { PlainMessage, ServerMessage } from "./types.ts";
 

@@ -1,6 +1,7 @@
 // Shared between server and web. Only summaries: never prompts or file contents.
-// The wire format is deliberately small and flat. Everything that could carry a
-// path, a command or a prompt is redacted on the reporter, before it is sent.
+// The wire format is deliberately small and flat. No prompt, command or full
+// path leaves the reporter, but `project` is the last folder name of the
+// session's working directory and every viewer of the park sees it.
 
 export type AgentStatus = "busy" | "idle";
 
@@ -17,21 +18,14 @@ export type AgentState = {
   startedAt: number;
 };
 
-// Kept as a separate name so call sites read the same as before. A session no
-// longer carries nested agents, so the two types are identical.
+// A second name for the same type: the web code uses both.
 export type SessionState = AgentState;
-
-// `batch` wraps the updates from one tick. A snapshot of 150 sessions used to
-// arrive as 150 separate messages, and the page rebuilt every road, kerb, lamp
-// and tree of the park after each one.
-export type ServerMessage =
-  | { type: "snapshot"; sessions: SessionState[] }
-  | { type: "session-update"; session: SessionState }
-  | { type: "session-removed"; id: string }
-  | { type: "batch"; messages: PlainMessage[] };
 
 // What a batch may hold: everything except another batch, so it cannot nest.
 export type PlainMessage =
   | { type: "snapshot"; sessions: SessionState[] }
   | { type: "session-update"; session: SessionState }
   | { type: "session-removed"; id: string };
+
+// `batch` wraps the updates from one tick (see batcher.ts).
+export type ServerMessage = PlainMessage | { type: "batch"; messages: PlainMessage[] };

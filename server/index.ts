@@ -79,9 +79,8 @@ setInterval(() => {
 let lastUpdateAt = 0;
 
 // Only the sockets on /ws. wss.clients also holds every reporter's relay
-// socket, and those want nothing back: a hub that broadcast to all of them
-// sent the whole park to all thirty Macs on every tick, for them to parse and
-// throw away.
+// socket, and a reporter wants nothing back: broadcasting to it would send the
+// whole park to every Mac on every tick, for it to parse and throw away.
 const browsers = new Set<WebSocket>();
 
 function sendToBrowsers(message: ServerMessage) {

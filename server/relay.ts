@@ -11,12 +11,12 @@ export const RETRY_MS = 2000;
 export const MAX_RETRY_MS = 30_000;
 
 // The hub pings every connected socket every 30 seconds and `ws` answers those
-// by itself, which is what lets the hub spot a dead reporter. Nothing told the
-// reporter the other way round. A hub that vanishes without a close frame (an
-// unplugged Pi, a switch that drops the LAN for a minute) leaves this socket
-// open as far as TCP is concerned, and the reporter relays into a hole until
-// someone restarts it. Three missed hub pings and we drop it ourselves, which
-// lands in the close handler below and reconnects with the usual backoff.
+// by itself, which is how the hub spots a dead reporter. The reporter needs
+// the same check the other way round: a hub that vanishes without a close
+// frame (an unplugged Pi, a switch that drops the LAN for a minute) leaves
+// this socket open as far as TCP is concerned. After three missed hub pings
+// the reporter drops the socket itself, which lands in the close handler below
+// and reconnects with the usual backoff.
 export const SILENCE_MS = 90_000;
 
 export type Relay = { send(message: ServerMessage): void; close(): void };

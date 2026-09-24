@@ -7,7 +7,7 @@ import { hostname, userInfo } from "node:os";
 
 // `central`  accepts reporters on /relay and serves the page to the office.
 // `reporter` reads this Mac and relays to a central, nothing listens.
-// `local`    the old default: localhost only, own sessions only.
+// `local`    the default: localhost only, own sessions only.
 export type Mode = "central" | "reporter" | "local";
 
 export type Config = {

@@ -17,11 +17,13 @@ Vier randvoorwaarden die de rest bepalen. Een voorstel dat er tegenin gaat hoort
 
 **Niets verlaat het kantoornetwerk.** Geen VPS, geen publiek domein, geen certificaat, geen port forwarding op de router. De Pi luistert op het LAN-interface en verder nergens. Gevolg: er komt geen auth-laag in de applicatie. Het netwerk is de toegangscontrole, niet de authenticatie. Zit het gastennetwerk niet apart, dan kijkt elke bezoeker mee; dat is het eerste om te controleren, en daarna jaarlijks.
 
-**Zeven velden over de lijn.** Gebruiker, project en model, plus de boolean `status`, het aantal subagents, een id en de starttijd. De tool-naam en het tool-label gaan eruit, en daarmee precies het veld waar een bestandspad of een stuk commando in kon zitten. Gevolg: redactieniveaus zijn overbodig, het formaat zelf is de redactie. De scène verliest heftruck, zoeklicht en gloeiende schoorsteen, want die hingen aan `currentTool`. Wat overblijft is één busy-waarde per lot, en dat is precies de vorm die de instancing in fase 4 nodig heeft.
+**Zeven velden over de lijn.** Gebruiker, project en model, plus `status` (`"busy"` of `"idle"`), het aantal subagents, een id en de starttijd. De tool-naam en het tool-label gaan eruit, en daarmee precies het veld waar een bestandspad of een stuk commando in kon zitten. Gevolg: redactieniveaus zijn overbodig, het formaat zelf is de redactie. De scène verliest heftruck, zoeklicht en gloeiende schoorsteen, want die hingen aan `currentTool`. Wat overblijft is één busy-waarde per lot, en dat is precies de vorm die de instancing in fase 4 nodig heeft.
 
 **De centrale is een Raspberry Pi.** De Pi tekent niets. Three.js draait in de browser van elke kijker; de Pi voegt JSON samen en serveert ongeveer een megabyte aan statische bestanden. Een Pi 4 met 2 GB volstaat ruim. Systemd in plaats van Docker, want voor één proces op één machine is dat simpeler en beter te debuggen.
 
 **Altijd 60 fps.** Niet als gemiddelde maar als plafond van de frametijd. Het framebudget mag niet meegroeien met het park. Dat vraagt een harde bovengrens op het aantal volledig gedetailleerde lots, en dus een omslag van meshes per lot naar instanties per park.
+
+Besluit: `/ws`, `/healthz` en `/metrics` hebben bewust geen authenticatie. De centrale is alleen op het LAN bereikbaar. `/ws` en `/healthz` geven niets prijs wat een browser in het park niet al ziet: gebruiker, project, model, status en machinenamen. `/metrics` toont daarnaast per machine de protocolversie en het tijdstip van het laatste bericht, wat op het LAN ook geen geheim is. Alleen `/relay` controleert een token, en dat is een vangrail tegen een verkeerd ingestelde reporter, geen toegangscontrole.
 
 ## Doelplaatje
 
@@ -165,7 +167,7 @@ Pi-details: Pi 4 met 2 GB of Pi 5, 64-bits Raspberry Pi OS, bedraad. Avahi geeft
 
 De healthcheck moet iets meten dat echt kan stukgaan: een Pi waar geen enkele reporter meer binnenkomt.
 
-Klaar wanneer de Pi na een stroomstoring vanzelf opkomt met een werkend park op `agentfactory.local`, en `/healthz` rood wordt als je alle reporters stopt.
+Klaar wanneer de Pi na een stroomstoring vanzelf opkomt met een werkend park op `agentfactory.local`, en `/healthz` `reporters: 0` meldt als je alle reporters stopt.
 
 ### 02 Minimaal wire-formaat
 
@@ -183,7 +185,7 @@ Van acht velden met geneste subagents naar zeven platte velden. De enige fase di
 | `web/tooltip.ts` | tool-regel eruit |
 | `web/warehouse.ts` | warehouses uit een aantal in plaats van uit een lijst |
 
-De tracker bepaalt busy niet meer uitsluitend uit `currentTool`. Voor subagents werkt dat al via schrijfactiviteit in de laatste 5 seconden (`SUBAGENT_BUSY_MS`); diezelfde regel is voor de sessie bruikbaar.
+De tracker bepaalt busy niet uitsluitend uit een open tool. Een sessie is busy als het sessiebestand dat zegt, als er een tool openstaat, of als het transcript in de laatste 5 seconden is beschreven (`SESSION_BUSY_MS`). Een subagent telt mee tot hij 60 seconden stil is zonder open tool (`SUBAGENT_REMOVE_MS`).
 
 Protocol 1 en 2 kunnen niet naast elkaar. Rol de reporters uit voordat je de Pi omzet, of accepteer een middag waarin het park half leeg staat.
 
@@ -238,7 +240,6 @@ Dertig collega's gaan geen terminal met `pnpm dev` openhouden.
 |---|---|
 | `scripts/install.sh` (nieuw) | naam en token vragen, launchd-plist schrijven, laden, één regel om te stoppen |
 | `deploy/agent-factory.plist` (nieuw) | template met `KeepAlive` en logpad |
-| `package.json` | `build:reporter`, zodat de agent zonder `web/` draait |
 | `server/index.ts` | reporter-modus start geen HTTP-server en geen statische map |
 | `server/hub.ts` | protocol-onderhandeling: accepteer een bereik, log welke versie een machine spreekt |
 | `server/metrics.ts` (nieuw) | verbonden machines, berichten per seconde, laatste update per machine |

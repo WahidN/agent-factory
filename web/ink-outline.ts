@@ -1,7 +1,8 @@
 // A single full-screen edge pass gives the whole city an inked silhouette.
 // Unlike per-mesh outline geometry it adds no scene traversal, duplicated
-// geometry or draw call per object. It deliberately keys off broad luminance
-// changes, so internal toon bands get a lighter line than outer silhouettes.
+// geometry or draw call per object. It keys off luminance changes between
+// neighbouring pixels, so soft shading inside a surface gets a lighter line
+// than a hard silhouette against the ground.
 
 import * as THREE from "three";
 

@@ -39,16 +39,16 @@ const goalWhite = standard("#dcdcd6");
 const fenceGrey = standard("#5a5d61");
 
 // A window with `emissive` is textured/glow-only for StaticBuilder's merge
-// rules, so every glowing window in this module must share this one
-// material or each becomes its own draw call.
-const windowLight = standard("#2a2620", {
+// rules, so every glowing window in the city filler and landmarks shares this
+// one material or each becomes its own draw call.
+export const windowLight = standard("#2a2620", {
   emissive: COLORS.windowLight,
   emissiveIntensity: 0.9,
   roughness: 0.6,
 });
-const windowDark = standard("#2a2620", { roughness: 0.6 });
+export const windowDark = standard("#2a2620", { roughness: 0.6 });
 
-function pick<T>(rand: () => number, options: T[]): T {
+export function pick<T>(rand: () => number, options: T[]): T {
   return options[Math.floor(rand() * options.length) % options.length];
 }
 
@@ -130,7 +130,7 @@ const park: CellBuilder = (b, rand) => {
     pathBetween(b, [3, 7], [18, 2]);
     pathBetween(b, [3, 7], [7, 18]);
     b.cylinder(MATERIALS.curb, [-8, 0.11, -9], [5.7, 0.22, 4.5]);
-    b.cylinder(waterMaterial, [-8, 0.07, -9], [5.3, 0.04, 4.1]);
+    b.cylinder(waterMaterial, [-8, 0.22, -9], [5.3, 0.06, 4.1]);
     bench(b, -1, 4.7, 0.2);
     bench(b, 8, 4.7, -0.25);
     flowerBed(b, 11.5, -10, 2.2, flowerMaterials[2]);
@@ -202,7 +202,7 @@ const houses: CellBuilder = (b, rand) => {
   b.box(MATERIALS.grass, [0, 0.025, 0], [CELL_HALF * 2, 0.05, CELL_HALF * 2]);
 
   const rowCount = 2;
-  const perRow = 4 + Math.floor(rand() * 3); // 4..6, two rows gives 8..12 total (six to ten typical after trims)
+  const perRow = 4 + Math.floor(rand() * 3); // 4..6, two rows gives 8..12 total
   const houseWidth = 6.6;
   const houseDepth = 8;
 
@@ -214,7 +214,6 @@ const houses: CellBuilder = (b, rand) => {
 
     for (let i = 0; i < perRow; i++) {
       const x = startX + i * houseWidth;
-      if (Math.abs(x) > CELL_HALF - houseWidth / 2) continue;
 
       const wall = pick(rand, houseWalls);
       const roofColor = pick(rand, roofDarks);
@@ -322,8 +321,7 @@ const field: CellBuilder = (b, _rand) => {
   b.box(lineWhite, [0, lineY, -fieldD / 2], [fieldW, lineH, 0.15]);
   b.box(lineWhite, [fieldW / 2, lineY, 0], [0.15, lineH, fieldD]);
   b.box(lineWhite, [-fieldW / 2, lineY, 0], [0.15, lineH, fieldD]);
-  // Halfway line and center circle ring, approximated with a thin torus-free
-  // ring of short boxes kept simple as a cylinder shell.
+  // Halfway line and a filled center circle: a flat disc, not a ring.
   b.box(lineWhite, [0, lineY, 0], [fieldW, lineH, 0.15]);
   b.cylinder(lineWhite, [0, lineY, 0], [3, 0.01, 3]);
 

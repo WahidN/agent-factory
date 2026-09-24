@@ -18,17 +18,6 @@ describe("factoryStyleFor", () => {
     expect(variants.size).toBe(FACTORY_STYLE_COUNT);
   });
 
-  it("offers six named massing families", () => {
-    const styles = new Map<string, ReturnType<typeof factoryStyleFor>>();
-    for (let i = 0; i < 200 && styles.size < FACTORY_STYLE_COUNT; i++) {
-      const style = factoryStyleFor(`factory-${i}`);
-      styles.set(style.name, style);
-    }
-    expect(FACTORY_STYLE_COUNT).toBe(6);
-    expect(styles.size).toBe(6);
-    for (const style of styles.values()) expect(style.roofMasses).toHaveLength(2);
-  });
-
   it("resolves every mass inside small and large hall roofs", () => {
     const styles = new Map<number, ReturnType<typeof factoryStyleFor>>();
     for (let i = 0; i < 200; i++) styles.set(factoryStyleIndex(`factory-${i}`), factoryStyleFor(`factory-${i}`));

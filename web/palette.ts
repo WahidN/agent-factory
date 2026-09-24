@@ -134,7 +134,9 @@ function drawPanes(ctx: CanvasRenderingContext2D, fill: string) {
 
 export const TEXTURES = {
   // A tiny, deterministic meadow tile gives the enormous ground plane scale
-  // without adding geometry, draw calls, or anything to the frame loop.
+  // without adding geometry, draw calls, or anything to the frame loop. The
+  // grass and water keep repeat 1: their geometry sets the tiling in its UVs
+  // (see park.ts), so every surface keeps the same world-size tile.
   grass: canvasTexture(256, 256, (ctx) => {
     ctx.fillStyle = COLORS.grass;
     ctx.fillRect(0, 0, 256, 256);
@@ -212,9 +214,6 @@ export const TEXTURES = {
     ctx.fillRect(0, 0, 128, 128);
   }),
 };
-
-TEXTURES.grass.repeat.set(120, 120);
-TEXTURES.water.repeat.set(12, 2);
 
 export const DECALS = {
   hatch: new THREE.MeshBasicMaterial({ map: TEXTURES.hatch, transparent: true, depthWrite: false }),

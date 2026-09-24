@@ -1,17 +1,12 @@
-// Five stylized Nijmegen landmarks, one per named city cell. Same contract as
+// Six stylized Nijmegen landmarks, one per named city cell. Same contract as
 // filler.ts and machines.ts: an origin at the cell's middle, y = 0 ground,
 // +z north, everything inside CELL_HALF, and all geometry through the given
 // StaticBuilder so it merges into a handful of draw calls.
 
-import * as THREE from "three";
+import type * as THREE from "three";
 import type { CellBuilder } from "./cell-build.ts";
 import { MATERIALS, standard } from "./palette.ts";
 import type { StaticBuilder } from "./static-builder.ts";
-
-// Unit cone (apex up, base radius 1 at y = -0.5), the same convention as the
-// box and cylinder StaticBuilder already offers, for spires, roof caps and
-// pointed-arch window tops.
-const cone = new THREE.ConeGeometry(1, 1, 8);
 
 // ---------- Shared materials ----------
 // Brick gets its own color per landmark (still dark and desaturated to match
@@ -56,18 +51,12 @@ function tree(b: StaticBuilder, rand: () => number, [x, z]: [number, number]) {
   const canopy = 1 + rand() * 0.6;
   b.cylinder(MATERIALS.trunk, [x, height * 0.25, z], [0.15, height * 0.5, 0.15]);
   const leaf = rand() > 0.5 ? MATERIALS.pineDark : MATERIALS.pineLight;
-  b.add(cone, leaf, [x, height * 0.5 + canopy * 0.6, z], [canopy, canopy * 1.6, canopy]);
+  b.cone(leaf, [x, height * 0.5 + canopy * 0.6, z], [canopy, canopy * 1.6, canopy]);
 }
 
 function bench(b: StaticBuilder, [x, z]: [number, number], rotationY: number) {
   b.box(MATERIALS.wood, [x, 0.45, z], [1.6, 0.1, 0.5], [0, rotationY, 0]);
   b.box(MATERIALS.darkSteel, [x, 0.22, z], [1.5, 0.06, 0.45], [0, rotationY, 0]);
-}
-
-export function pitchedRoofRotationX(zSide: -1 | 1, angle: number): number {
-  // A panel south of the ridge tilts up toward +z; a panel north of it tilts
-  // up toward -z. Reversing these signs creates an upside-down valley roof.
-  return zSide * angle;
 }
 
 // ---------- Linku — St. Canisiussingel 19-G2 ----------
@@ -115,8 +104,10 @@ function linku(b: StaticBuilder, rand: () => number) {
   const rise = 2.4;
   const slope = Math.hypot(halfDepth, rise);
   const roofAngle = Math.atan2(rise, halfDepth);
-  b.box(roofDark, [0, 15.7, -halfDepth / 2], [33, 0.45, slope], [pitchedRoofRotationX(-1, roofAngle), 0, 0]);
-  b.box(roofDark, [0, 15.7, halfDepth / 2], [33, 0.45, slope], [pitchedRoofRotationX(1, roofAngle), 0, 0]);
+  // A panel south of the ridge tilts up toward +z (negative x rotation), a
+  // panel north of it up toward -z. Swapping the signs makes a valley roof.
+  b.box(roofDark, [0, 15.7, -halfDepth / 2], [33, 0.45, slope], [-roofAngle, 0, 0]);
+  b.box(roofDark, [0, 15.7, halfDepth / 2], [33, 0.45, slope], [roofAngle, 0, 0]);
   for (const x of [-10, 0, 10]) {
     b.box(linkuGlass, [x, 16, 7.9], [4.3, 3.1, 0.28]);
     b.box(linkuWhite, [x - 1.05, 16.1, 8.1], [2.7, 0.18, 0.18], [0, 0, 0.85]);
@@ -181,8 +172,10 @@ function stevenskerk(b: StaticBuilder, rand: () => number) {
 
   // Broad transept and polygonal choir make the ground plan read as a Gothic
   // church instead of a hall behind a tower.
-  b.box(brickChurch, [0, 5, 4.5], [14, 10, 5]);
-  gableRoof(b, roofDark, 0, 10, 4.5, 7, 3.1, 5);
+  const transeptZ = 4.5;
+  const transeptDepth = 5;
+  b.box(brickChurch, [0, 5, transeptZ], [14, 10, transeptDepth]);
+  gableRoof(b, roofDark, 0, 10, transeptZ, 7, 3.1, transeptDepth);
   b.cylinder(brickChurch, [0, 4.5, 10], [4.4, 9, 4.4]);
   b.cone(roofDark, [0, 10.7, 10], [4.7, 3.4, 4.7]);
 
@@ -194,13 +187,15 @@ function stevenskerk(b: StaticBuilder, rand: () => number) {
     }
   }
 
-  // A row of narrow, pointed-arch windows on each long wall.
+  // A row of narrow, pointed-arch windows on each long wall, except where
+  // the transept covers the wall.
   const windows = 4;
   for (let i = 0; i < windows; i++) {
     const z = naveZ - naveLength / 2 + 2 + i * ((naveLength - 4) / (windows - 1));
+    if (Math.abs(z - transeptZ) < transeptDepth / 2) continue;
     for (const side of [-1, 1] as const) {
       b.box(glow, [side * (naveHalfWidth + 0.02), 4, z], [0.9, 4, 0.1]);
-      b.add(cone, brickChurch, [side * (naveHalfWidth + 0.05), 6.3, z], [0.5, 1, 0.1]);
+      b.cone(brickChurch, [side * (naveHalfWidth + 0.05), 6.3, z], [0.5, 1, 0.1]);
     }
   }
 
@@ -316,7 +311,8 @@ function plein1944(b: StaticBuilder, rand: () => number) {
   // A compact post-war edge block and its vertical accent make the square
   // read as Plein 1944 instead of an open market field.
   b.box(brickStation, [-12.8, 4.2, 0], [3.5, 8.4, 24]);
-  for (const z of [-8, -3, 2, 7]) {
+  // No window at z = -8, where the tower covers the block's east face.
+  for (const z of [-3, 2, 7]) {
     b.box(windowDark, [-11.02, 4.7, z], [0.1, 2.2, 2.4]);
   }
   b.box(brickStation, [-10.5, 9, -9], [4, 18, 4]);

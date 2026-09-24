@@ -13,11 +13,18 @@ const cells = [
 const river = { minCol: 1, maxCol: 3 };
 
 describe("static Nijmegen relief", () => {
-  it("is deterministic and adds both dike and stuwwal cues", () => {
+  it("is deterministic and adds the stuwwal cues", () => {
     const first = terrainFeaturesForCells(cells, river);
     expect(terrainFeaturesForCells(cells, river)).toEqual(first);
-    expect(first.some(({ kind }) => kind === "north-dike")).toBe(true);
     expect(first.filter(({ kind }) => kind === "stuwwal-terrace")).toHaveLength(2);
+  });
+
+  it("centers the terraces on the Valkhof's claimed cell", () => {
+    for (const { x } of terrainFeaturesForCells(cells, river)) expect(x).toBe(3 * PLOT_SIZE);
+  });
+
+  it("adds nothing while the Valkhof is not part of the city", () => {
+    expect(terrainFeaturesForCells([{ col: 1, row: 1 }], river)).toEqual([]);
   });
 
   it("stays within the active riverfront cells and remains low", () => {
@@ -29,12 +36,6 @@ describe("static Nijmegen relief", () => {
       expect(feature.x + feature.width / 2).toBeLessThanOrEqual(east);
       expect(feature.y + feature.height / 2).toBeLessThanOrEqual(1);
     }
-  });
-
-  it("leaves a gap in the dike at the railway bridge", () => {
-    const dikes = terrainFeaturesForCells(cells, river).filter(({ kind }) => kind === "north-dike");
-    const railX = 1.5 * PLOT_SIZE;
-    expect(dikes.every(({ x, width }) => railX <= x - width / 2 || railX >= x + width / 2)).toBe(true);
   });
 
   it("returns no terrain before the city reaches the Waal", () => {

@@ -13,7 +13,7 @@ export const RAIL_PEDESTRIAN_CLEARANCE = 5.5;
 
 const waterZ = (WAAL_EDGE - 0.5) * PLOT_SIZE;
 const ballast = standard("#77756f", { roughness: 1 });
-const railSteel = standard("#4b555c", { roughness: 0.55, metalness: 0.5 });
+export const railSteel = standard("#4b555c", { roughness: 0.55, metalness: 0.5 });
 const fenceSteel = standard("#687177", { roughness: 0.72, metalness: 0.28 });
 
 export type RailSegment = { from: number; to: number };

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { CELL_HALF } from "../cell-build.ts";
-import { CITY_LANDMARKS, pitchedRoofRotationX } from "../landmarks-city.ts";
+import { CITY_LANDMARKS } from "../landmarks-city.ts";
 import { StaticBuilder } from "../static-builder.ts";
 
 // Deterministic seeded random, same shape as the one park.ts uses.
@@ -80,11 +80,5 @@ describe("CITY_LANDMARKS", () => {
       if (name === "stevenskerk") continue;
       expect(heights.stevenskerk).toBeGreaterThan(heights[name]);
     }
-  });
-
-  it("slopes both Linku roof panels upward toward the central ridge", () => {
-    const angle = Math.PI / 8;
-    expect(pitchedRoofRotationX(-1, angle)).toBe(-angle);
-    expect(pitchedRoofRotationX(1, angle)).toBe(angle);
   });
 });

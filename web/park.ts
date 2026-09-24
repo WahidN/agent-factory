@@ -3,7 +3,7 @@
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import type { CellBuilder } from "./cell-build.ts";
+import { CELL_HALF, type CellBuilder } from "./cell-build.ts";
 import {
   type Amenity,
   BRIDGES,
@@ -71,7 +71,7 @@ class OffsetBuilder extends StaticBuilder {
   }
 }
 
-export const YARD_HALF = 20; // the fenced yard is 40 x 40
+export const YARD_HALF = CELL_HALF; // the fenced yard is the same 40 x 40 block a claimed cell builds in
 const SIDEWALK = 2;
 const ROAD_DASH_REPEAT = 7.5; // divides a 60 unit cell edge evenly
 
@@ -92,6 +92,7 @@ const quayMaterial = standard("#777b79", { roughness: 0.92 });
 
 export const WATER_Y = -1.35;
 export const ROAD_BRIDGE_UNDERSIDE_Y = -0.45;
+const BRIDGE_DECK_THICKNESS = 0.5;
 const CHANNEL_FLOOR_Y = -1.7;
 const QUAY_TOP_Y = 1;
 const QUAY_HEIGHT = QUAY_TOP_Y - CHANNEL_FLOOR_Y;
@@ -104,15 +105,28 @@ const bankZ = (side: number) => waterZ + side * (WAAL_WIDTH / 2);
 const bridgeGapAt = (col: number) => crossingAt(col) !== null || col === RAIL_BRIDGE.col;
 
 const MEADOW_EDGE = 3000;
+const GRASS_TILE = 50; // world units per repeat of the grass texture
+const WATER_TILE = 20; // world units per repeat of the current texture, along the river
+
+// A flat ground plane in world coordinates, with UVs taken from world x and z
+// so every piece of grass shares one seamless tile of the same size.
+function groundPlane(width: number, depth: number, x: number, y: number, z: number) {
+  const geometry = new THREE.PlaneGeometry(width, depth).rotateX(-Math.PI / 2).translate(x, y, z);
+  const position = geometry.attributes.position;
+  const uv = geometry.attributes.uv as THREE.BufferAttribute;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, position.getX(i) / GRASS_TILE, -position.getZ(i) / GRASS_TILE);
+  uv.needsUpdate = true;
+  return geometry;
+}
 
 function meadowGeometry() {
   const edge = MEADOW_EDGE;
   const southLength = bankZ(-1) + edge;
   const northLength = edge - bankZ(1);
   const pieces = [
-    new THREE.PlaneGeometry(edge * 2, southLength).rotateX(-Math.PI / 2).translate(0, 0, -edge + southLength / 2),
-    new THREE.PlaneGeometry(edge * 2, WAAL_WIDTH).rotateX(-Math.PI / 2).translate(0, CHANNEL_FLOOR_Y, waterZ),
-    new THREE.PlaneGeometry(edge * 2, northLength).rotateX(-Math.PI / 2).translate(0, 0, bankZ(1) + northLength / 2),
+    groundPlane(edge * 2, southLength, 0, 0, -edge + southLength / 2),
+    groundPlane(edge * 2, WAAL_WIDTH, 0, CHANNEL_FLOOR_Y, waterZ),
+    groundPlane(edge * 2, northLength, 0, 0, bankZ(1) + northLength / 2),
   ];
   const merged = mergeGeometries(pieces)!;
   for (const piece of pieces) piece.dispose();
@@ -200,7 +214,7 @@ export class Park {
 
   // Streets for every cell the city uses, lots and claimed cells alike: a
   // claimed cell without roads would leave a hole in the street plan.
-  private rebuild(lots: Cell[], claimed: Cell[], river: RiverSpan) {
+  private rebuild(lots: Cell[], claimed: readonly Cell[], river: RiverSpan) {
     const cells = [...lots, ...claimed];
     for (const child of this.group.children) disposeTree(child);
     this.group.clear();
@@ -300,7 +314,16 @@ export class Park {
     }
 
     appendRailCorridor(builder, cells);
-    this.waal(builder, river);
+    // The road surface of every bridge shares the roads' textured material,
+    // so it merges into their mesh here instead of adding one to the claims.
+    if (river) {
+      for (let col = river.minCol; col <= river.maxCol + 1; col++) {
+        if (!crossingAt(col)) continue;
+        const deck = repeatUv(new THREE.PlaneGeometry(ROAD_WIDTH, BRIDGE_LENGTH), 1, BRIDGE_LENGTH / ROAD_DASH_REPEAT);
+        builder.add(deck, roadMaterial, [(col - 0.5) * PLOT_SIZE, 0.045, waterZ], [1, 1, 1], [-Math.PI / 2, 0, 0]);
+        deck.dispose();
+      }
+    }
     this.group.add(builder.build(), createTrees(trees));
     patch.dispose();
   }
@@ -308,7 +331,8 @@ export class Park {
   // The river, its quays and its bridges, across the columns that actually
   // have a cell on at least one bank right now. Nothing to draw at all until
   // the city reaches the water. The water is a cell edge, not a cell, so both
-  // banks are riverfront and no ground is lost to it.
+  // banks are riverfront and no ground is lost to it. Everything here uses
+  // world coordinates and depends only on the river span.
   private waal(builder: StaticBuilder, river: RiverSpan) {
     // The sunken channel floor spans the full meadow, but the visible Waal is
     // finite. Fill the unused parts back to ground level so the outline pass
@@ -321,8 +345,8 @@ export class Park {
       : [[-MEADOW_EDGE, MEADOW_EDGE]];
     for (const [from, to] of drySpans) {
       if (to <= from) continue;
-      const dryGround = new THREE.PlaneGeometry(to - from, WAAL_WIDTH);
-      builder.add(dryGround, terrainMaterial, [(from + to) / 2, 0, waterZ], [1, 1, 1], [-Math.PI / 2, 0, 0]);
+      const dryGround = groundPlane(to - from, WAAL_WIDTH, (from + to) / 2, 0, waterZ);
+      builder.add(dryGround, terrainMaterial, [0, 0, 0]);
       dryGround.dispose();
     }
     if (!river) return;
@@ -330,7 +354,7 @@ export class Park {
     const west = (minCol - 0.5) * PLOT_SIZE;
     const east = (maxCol + 0.5) * PLOT_SIZE;
 
-    const surface = new THREE.PlaneGeometry(east - west, WAAL_WIDTH);
+    const surface = repeatUv(new THREE.PlaneGeometry(east - west, WAAL_WIDTH), (east - west) / WATER_TILE, 2);
     builder.add(surface, waterMaterial, [(west + east) / 2, WATER_Y, waterZ], [1, 1, 1], [-Math.PI / 2, 0, 0]);
     surface.dispose();
 
@@ -344,21 +368,22 @@ export class Park {
       }
     }
 
-    // Every crossing's deck: the two named bridges and any plain one that
-    // falls in range. A bridge arch appears under exactly this same
-    // condition, in rebuildClaims.
+    // Every crossing's deck structure: the two named bridges and any plain
+    // one that falls in range. Its road surface (rebuild()) and a bridge
+    // arch (below) appear under exactly this same condition.
     for (let col = minCol; col <= maxCol + 1; col++) {
       if (crossingAt(col)) this.bridge(builder, (col - 0.5) * PLOT_SIZE);
     }
   }
 
   // A flat deck from bank to bank, at road height so a car drives onto it
-  // without a step. The arches come later.
+  // without a step. rebuild() lays the road surface on top.
   private bridge(builder: StaticBuilder, x: number) {
-    builder.box(quayMaterial, [x, -0.2, waterZ], [ROAD_WIDTH + 1.6, 0.5, BRIDGE_LENGTH]);
-    const deck = repeatUv(new THREE.PlaneGeometry(ROAD_WIDTH, BRIDGE_LENGTH), 1, BRIDGE_LENGTH / ROAD_DASH_REPEAT);
-    builder.add(deck, roadMaterial, [x, 0.045, waterZ], [1, 1, 1], [-Math.PI / 2, 0, 0]);
-    deck.dispose();
+    builder.box(
+      quayMaterial,
+      [x, ROAD_BRIDGE_UNDERSIDE_Y + BRIDGE_DECK_THICKNESS / 2, waterZ],
+      [ROAD_WIDTH + 1.6, BRIDGE_DECK_THICKNESS, BRIDGE_LENGTH],
+    );
     for (const side of [-1, 1]) {
       const rail = x + side * (ROAD_WIDTH / 2 + 0.35);
       builder.box(MATERIALS.darkSteel, [rail, 0.55, waterZ], [0.22, 1.1, BRIDGE_LENGTH]);
@@ -367,12 +392,15 @@ export class Park {
   }
 
   // Every claimed cell's own building, drawn by its amenity's builder and
-  // merged into one small group of meshes, plus the bridge arches and the
-  // gladiolenboog: fixed city structure that does not belong to any one
-  // cell. All of this changes only when the city plan hands out another
+  // merged into one small group of meshes, plus the Waal, the bridge arches
+  // and the gladiolenboog: fixed city structure that does not belong to any
+  // one cell. All of this changes only when the city plan hands out another
   // cell, not on every session that starts, so it lives here rather than in
   // the per-session rebuild above.
-  private rebuildClaims(claims: { cell: Cell; amenity: Amenity }[], river: RiverSpan) {
+  private rebuildClaims(
+    claims: readonly { readonly cell: Readonly<Cell>; readonly amenity: Amenity }[],
+    river: RiverSpan,
+  ) {
     const key = `${claims.map(({ cell, amenity }) => `${cell.col}:${cell.row}:${amenity}`).join(",")}|${
       river ? `${river.minCol}:${river.maxCol}` : "none"
     }`;
@@ -389,14 +417,15 @@ export class Park {
       else AMENITY_BUILDERS[amenity](builder, rand);
     }
 
-    // Relief uses world coordinates. Reset the OffsetBuilder first so the
-    // last claimed cell cannot accidentally offset the riverbank features.
+    // Relief and the Waal use world coordinates. Reset the OffsetBuilder
+    // first so the last claimed cell cannot offset the riverbank features.
     builder.place(0, 0);
     appendTerrainRelief(
       builder,
       claims.map(({ cell }) => cell),
       river,
     );
+    this.waal(builder, river);
 
     // A named bridge's arch appears under the exact same condition as its
     // deck (see waal()): only once a cell on either side of it is actually
@@ -415,13 +444,13 @@ export class Park {
       railBridge(builder);
     }
 
-    // The gladiolenboog only stands once the cell it spans is actually part
-    // of the city; that cell is Plein 1944, on the far side of GLADIOLA's
-    // road. bridgeArch's deck runs along z, matching bridge()'s own deck, so
-    // it needs no rotation; the gladiolenboog is built for a road whose
-    // width runs along x (a north-south, column-boundary road), but GLADIOLA
-    // sits on a south, row-boundary edge, whose road runs east-west with its
-    // width along z instead, so it is rotated a quarter turn to fit.
+    // The gladiolenboog only stands once the cell whose south road it spans
+    // is actually part of the city; that cell is the station. bridgeArch's
+    // deck runs along z, matching bridge()'s own deck, so it needs no
+    // rotation; the gladiolenboog is built for a road whose width runs along
+    // x (a north-south, column-boundary road), but GLADIOLA sits on a south,
+    // row-boundary edge, whose road runs east-west with its width along z
+    // instead, so it is rotated a quarter turn to fit.
     if (claims.some(({ cell }) => cell.col === GLADIOLA.col && cell.row === GLADIOLA.row)) {
       builder.place(GLADIOLA.col * PLOT_SIZE, (GLADIOLA.row - 0.5) * PLOT_SIZE, Math.PI / 2);
       gladiolaArch(builder);

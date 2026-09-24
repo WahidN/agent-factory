@@ -39,8 +39,8 @@ export function isFillerAmenity(amenity: Amenity): amenity is FillerAmenity {
 // greener edge. These bands are intentionally broad, not a cadastral map.
 export function districtForCell({ col, row }: Cell): District {
   if (row >= WAAL_EDGE) return row <= WAAL_EDGE + 4 && col <= 10 ? "waalsprong" : "stadsrand";
-  if (row <= 1 && col <= 3) return "benedenstad";
-  if (row <= 4 && col <= 10) return "oost";
+  if (col <= 3) return "benedenstad";
+  if (col <= 10) return "oost";
   return "stadsrand";
 }
 
@@ -59,14 +59,16 @@ export function buildDistrictFiller(amenity: FillerAmenity, builder: StaticBuild
   decorateDistrictCell(builder, amenity, cell);
 }
 
-export function decorateDistrictCell(builder: StaticBuilder, amenity: FillerAmenity, cell: Cell) {
+function decorateDistrictCell(builder: StaticBuilder, amenity: FillerAmenity, cell: Cell) {
   const district = districtForCell(cell);
   const variant = districtVariant(cell, 3);
 
   if (district === "benedenstad") {
     // A continuous warm plinth and shallow stone stoops reinforce the narrow,
-    // joined-up street wall without adding more individual buildings.
-    if (amenity === "houses" || amenity === "shops") {
+    // joined-up street wall without adding more individual buildings. Only
+    // the shops leave that strip free, behind their row; every other
+    // composition gets the stone edge along its north side instead.
+    if (amenity === "shops") {
       builder.box(oldBrick, [0, 0.38, -10.05], [35, 0.76, 0.38]);
       for (let x = -14 + variant; x <= 14; x += 7) {
         builder.box(oldStone, [x, 0.16, -10.7], [2.2, 0.32, 1.05]);
@@ -81,7 +83,9 @@ export function decorateDistrictCell(builder: StaticBuilder, amenity: FillerAmen
     // Oost is read through green front gardens, pale bay-like projections and
     // a measured avenue rhythm rather than a different roof gimmick.
     builder.box(hedge, [0, 0.42, 17.2], [34, 0.84, 0.65]);
-    if (amenity === "houses" || amenity === "shops") {
+    // The bays sit against the back of the northern house row; in the open
+    // shops square they would stand alone.
+    if (amenity === "houses") {
       for (const x of [-12 + variant, -4 + variant, 4 + variant, 12 + variant]) {
         builder.box(eastBrick, [x, 2.7, 12.1], [3.2, 5.4, 1.1]);
         builder.box(eastTrim, [x, 5.55, 12.1], [3.5, 0.3, 1.25]);
@@ -109,13 +113,17 @@ export function decorateDistrictCell(builder: StaticBuilder, amenity: FillerAmen
   }
 
   // At the city edge, repeated hedgerows and a tiny orchard are more useful
-  // silhouettes than another building facade. The three canopies remain low
-  // enough to keep a sports field or meadow visually open.
-  builder.box(hedge, [-17.1, 0.55, 0], [0.7, 1.1, 34]);
+  // silhouettes than another building facade. Houses and shops fill the cell
+  // from edge to edge, so only open compositions get the hedge and gravel
+  // path, and only a sports field leaves the strip outside its fence free for
+  // the orchard.
+  if (amenity === "houses" || amenity === "shops") return;
   // Just below a sports field's 0.08 surface, which it overlaps at x 13.6-14.
   builder.box(gravel, [14.8, 0.035, 0], [2.4, 0.07, 31]);
+  builder.box(hedge, [-17.1, 0.55, 0], [0.7, 1.1, 34]);
+  if (amenity !== "field") return;
   for (const z of [-10 + variant, 0 + variant, 10 + variant]) {
-    builder.cylinder(MATERIALS.trunk, [10.5, 0.85, z], [0.18, 1.7, 0.18]);
-    builder.cylinder(orchard, [10.5, 2.35, z], [1.45, 1.5, 1.45]);
+    builder.cylinder(MATERIALS.trunk, [18, 0.85, z], [0.18, 1.7, 0.18]);
+    builder.cylinder(orchard, [18, 2.35, z], [1.45, 1.5, 1.45]);
   }
 }

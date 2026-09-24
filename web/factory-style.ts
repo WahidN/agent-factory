@@ -16,14 +16,8 @@ export type FactoryStyle = {
   roofMasses: readonly [RoofMass, RoofMass];
 };
 
-export type ResolvedRoofMass = {
-  width: number;
-  depth: number;
-  height: number;
-  x: number;
-  z: number;
-  elevation: number;
-};
+// The same fields as RoofMass, resolved to world units for one hall.
+export type ResolvedRoofMass = Record<keyof RoofMass, number>;
 
 // Six legible industrial families. Every family deliberately uses two simple
 // volumes: enough to change the skyline, but still only two instanced draw

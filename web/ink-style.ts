@@ -2,9 +2,9 @@
 //
 // The look comes from the Inkshift palette and the full-screen outline pass
 // (ink-outline.ts). Materials stay plain MeshStandardMaterial, which keeps
-// vertex colors, instancing, maps, emissive windows and shadows working. A
-// four-band toon ramp was tried and removed: once it actually ran it made the
-// overview muddy and flattened the contrast between buildings and roads.
+// vertex colors, instancing, maps, emissive windows and shadows working.
+// There is no toon ramp: banded shading muddies the overview and flattens the
+// contrast between buildings and roads.
 
 import * as THREE from "three";
 

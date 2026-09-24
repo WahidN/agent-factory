@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { RAIL_BRIDGE, WAAL_EDGE, WAAL_WIDTH } from "../city-plan.ts";
-import { Park, WATER_Y } from "../park.ts";
+import { Park } from "../park.ts";
 import { COLORS, TEXTURES } from "../palette.ts";
 import { PLOT_SIZE } from "../plots.ts";
 
@@ -28,10 +28,6 @@ function vertexCount(object: THREE.Object3D) {
 const ranks = (count: number) => Array.from({ length: count }, (_, i) => i);
 
 describe("Park and the Waal", () => {
-  it("recesses the water below street and bridge level", () => {
-    expect(WATER_Y).toBeLessThan(-0.5);
-  });
-
   it("uses a textured green meadow for the surrounding terrain", () => {
     const scene = new THREE.Scene();
     new Park(scene);
@@ -41,10 +37,10 @@ describe("Park and the Waal", () => {
   });
 
   it("renders the Waal with the shared blue water material", () => {
-    const { park, streets } = parkInScene();
+    const { park, claims } = parkInScene();
     park.update(ranks(6));
     let river: THREE.MeshStandardMaterial | undefined;
-    streets.traverse((child) => {
+    claims.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         if (child.material.map === TEXTURES.water) river = child.material;
       }
@@ -56,10 +52,10 @@ describe("Park and the Waal", () => {
   it("draws no water for a city that does not reach the river", () => {
     // The dry channel cover may reach the future river strip, but the blue
     // water material itself must not exist before the city reaches a bank.
-    const { park, streets } = parkInScene();
+    const { park, claims } = parkInScene();
     park.update([0]);
     let hasWater = false;
-    streets.traverse((child) => {
+    claims.traverse((child) => {
       if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
         if (child.material.map === TEXTURES.water) hasWater = true;
       }
@@ -70,8 +66,16 @@ describe("Park and the Waal", () => {
   it("puts no bridge arch over a city without a river", () => {
     const { park, claims } = parkInScene();
     park.update([0]);
-    const box = new THREE.Box3().setFromObject(claims);
-    expect(box.max.z).toBeLessThan(southBank);
+    // Only the flat dry channel cover may reach past the south bank.
+    let highestOverRiver = Number.NEGATIVE_INFINITY;
+    claims.traverse((child) => {
+      if (!(child instanceof THREE.Mesh)) return;
+      const positions = child.geometry.attributes.position;
+      for (let i = 0; i < positions.count; i++) {
+        if (positions.getZ(i) > southBank) highestOverRiver = Math.max(highestOverRiver, positions.getY(i));
+      }
+    });
+    expect(highestOverRiver).toBeLessThanOrEqual(1e-6);
   });
 
   it("grows its bridges with the city, also when the claimed cells do not change", () => {

@@ -12,6 +12,8 @@ import { beam } from "./machines.ts";
 import { COLORS, MATERIALS, standard } from "./palette.ts";
 import type { StaticBuilder, Vec3 } from "./static-builder.ts";
 import type { CellBuilder } from "./cell-build.ts";
+import { pick, windowDark, windowLight } from "./filler.ts";
+import { railSteel } from "./rail-corridor.ts";
 
 // ---------- Shared materials (module-level, so lots merge across sessions) ----------
 
@@ -33,12 +35,6 @@ const basteiBrick = standard("#9a654c", { roughness: 0.9 });
 const glasDoos = standard(COLORS.glass, { roughness: 0.15, metalness: 0.2, transparent: true, opacity: 0.7 });
 const terrasVloer = standard("#bbb4a5", { roughness: 0.9 });
 const parasolColors = ["#8a3c3c", "#3c6b8a", "#c48a2a"].map((c) => standard(c));
-const raamLicht = standard("#2a2620", {
-  emissive: COLORS.windowLight,
-  emissiveIntensity: 0.9,
-  roughness: 0.6,
-});
-const raamDonker = standard("#2a2620", { roughness: 0.6 });
 
 // An actual eight-sided drum is important to the Sint-Nicolaaskapel's
 // silhouette. Keep it module-level so no geometry is allocated per cell.
@@ -47,7 +43,6 @@ const octagonalDrum = new THREE.CylinderGeometry(1, 1, 1, 8);
 const brugRood = standard(COLORS.band, { roughness: 0.6, metalness: 0.3 });
 const oversteekSteel = standard("#d3d1c9", { roughness: 0.48, metalness: 0.38 });
 const cableSteel = standard("#7a8288", { roughness: 0.45, metalness: 0.55 });
-const railSteel = standard("#4b555c", { roughness: 0.55, metalness: 0.5 });
 const railRust = standard("#74584c", { roughness: 0.78, metalness: 0.2 });
 const railBrick = standard("#865044", { roughness: 0.92 });
 const brugLicht = standard("#fff4d6", {
@@ -57,17 +52,12 @@ const brugLicht = standard("#fff4d6", {
 });
 
 const pilaar = standard("#c9c7c0", { roughness: 0.9 });
-const boogBalk = standard("#c9c7c0", { roughness: 0.9 });
 const gladiolaColors = ["#c23b3b", "#d97a9c", "#f0ece0", "#e6c23a", "#e08a2e"].map((c) => standard(c));
-
-function pick<T>(rand: () => number, options: T[]): T {
-  return options[Math.floor(rand() * options.length) % options.length];
-}
 
 // ---------- valkhof ----------
 
 const valkhof: CellBuilder = (b, rand) => {
-  // Grass base, shifted toward the north edge (the water side).
+  // Grass base over the whole cell.
   b.box(hillGrass, [0, 0.025, 0], [40, 0.05, 40]);
 
   // The heuvel: a low, wide plateau centered toward the north (water) side.
@@ -122,9 +112,10 @@ const valkhof: CellBuilder = (b, rand) => {
       );
     }
   }
-  // The two pale columns that frame the open side survive as a distinctive pair.
-  for (const z of [ruinZ - ruinRadius, ruinZ + ruinRadius]) {
-    b.cylinder(tufa, [ruinX - 0.25, 6.1, z], [0.34, 6.2, 0.34]);
+  // The two pale columns that frame the open (south) side survive as a
+  // distinctive pair, just in front of the apse's two end piers.
+  for (const x of [ruinX - ruinRadius, ruinX + ruinRadius]) {
+    b.cylinder(tufa, [x, 6.1, ruinZ - 1.1], [0.34, 6.2, 0.34]);
   }
 
   // Paths across the plateau and down to the yard.
@@ -153,22 +144,24 @@ const waalkade: CellBuilder = (b, rand) => {
   // y=0 with the infinite ground plane, which caused depth-buffer flicker.
   b.box(pathGravel, [0, 0.025, 0], [40, 0.05, 40]);
 
-  // Two-level stone quay facing the Waal, with broad stairs and dark mooring
+  // The Waalkade sits on row 1, so the Waal runs past its north edge (+z).
+  // Two-level stone quay along that edge, with broad stairs and dark mooring
   // bollards. It anchors the facade row to the river rather than open paving.
-  b.box(quayStone, [0, 0.45, -12.5], [40, 0.9, 4.5]);
-  b.box(pathGravel, [0, 0.94, -12.5], [40, 0.08, 4.5]);
+  b.box(quayStone, [0, 0.45, 12.5], [40, 0.9, 4.5]);
+  b.box(pathGravel, [0, 0.94, 12.5], [40, 0.08, 4.5]);
   for (let step = 0; step < 4; step++) {
-    b.box(quayStone, [-10, 0.15 + step * 0.2, -9.8 - step * 0.55], [7, 0.2, 0.9]);
+    b.box(quayStone, [-10, 0.15 + step * 0.2, 9.8 + step * 0.55], [7, 0.2, 0.9]);
   }
   for (const x of [-16, -8, 0, 8, 16]) {
-    b.cylinder(MATERIALS.darkSteel, [x, 1.25, -13.7], [0.22, 0.55, 0.22]);
-    b.box(MATERIALS.darkSteel, [x, 1.58, -13.7], [0.7, 0.12, 0.3]);
+    b.cylinder(MATERIALS.darkSteel, [x, 1.25, 13.7], [0.22, 0.55, 0.22]);
+    b.box(MATERIALS.darkSteel, [x, 1.58, 13.7], [0.7, 0.12, 0.3]);
   }
 
+  // The row ends short of the Bastei at its east end.
   const count = 6 + Math.floor(rand() * 3); // 6..8 panden
-  const width = 30 / count;
+  const width = 27 / count;
   const depth = 6;
-  const rowZ = 6; // toward the water, north side
+  const rowZ = -6; // south of the quay, facades facing north to the water
   const startX = -16 + width / 2;
 
   for (let i = 0; i < count; i++) {
@@ -177,7 +170,7 @@ const waalkade: CellBuilder = (b, rand) => {
     const height = 6 + rand() * 3;
 
     b.box(wall, [x, height / 2, rowZ], [width - 0.2, height, depth]);
-    b.box(roofTile, [x, height + 0.2, rowZ + 0.7], [width, 0.4, depth - 1]);
+    b.box(roofTile, [x, height + 0.2, rowZ - 0.7], [width, 0.4, depth - 1]);
 
     // A puntgevel: pick trapgevel, klokgevel or tuitgevel, all a triangular
     // or stepped shape sitting above the flat wall top.
@@ -186,31 +179,31 @@ const waalkade: CellBuilder = (b, rand) => {
       // Trapgevel: three stacked, narrowing steps.
       for (let s = 0; s < 3; s++) {
         const stepW = (width - 0.2) * (1 - s * 0.28);
-        b.box(wall, [x, height + 0.6 + s * 1.2, rowZ - depth / 2 + 0.3], [stepW, 1.2, 0.5]);
+        b.box(wall, [x, height + 0.6 + s * 1.2, rowZ + depth / 2 - 0.3], [stepW, 1.2, 0.5]);
       }
     } else if (gevelStyle === 1) {
       // Klokgevel: a rounded top approximated with a stepped-in cylinder cap.
-      b.cylinder(wall, [x, height + 0.4, rowZ - depth / 2 + 0.3], [width * 0.4, 0.8, 0.4]);
-      b.box(wall, [x, height + 1.4, rowZ - depth / 2 + 0.3], [width * 0.5, 1.2, 0.5]);
+      b.cylinder(wall, [x, height + 0.4, rowZ + depth / 2 - 0.3], [width * 0.4, 0.8, 0.4]);
+      b.box(wall, [x, height + 1.4, rowZ + depth / 2 - 0.3], [width * 0.5, 1.2, 0.5]);
     } else {
       // Tuitgevel: two sloping sides meeting at the ridge. Each side runs
       // along x from the wall's corner to the apex and is tilted about z.
       const rise = 2 + rand();
       const slope = Math.sqrt(rise * rise + (width / 2) * (width / 2));
       const angle = Math.atan2(rise, width / 2);
-      const gevelZ = rowZ - depth / 2 + 0.15;
+      const gevelZ = rowZ + depth / 2 - 0.15;
       b.box(wall, [x - width / 4, height + rise / 2, gevelZ], [slope, 0.2, 0.5], [0, 0, angle]);
       b.box(wall, [x + width / 4, height + rise / 2, gevelZ], [slope, 0.2, 0.5], [0, 0, -angle]);
     }
 
     // Narrow individual sash windows preserve the vertical rhythm of the
     // historic waterfront houses better than one broad glowing stripe.
-    const frontZ = rowZ - depth / 2 - 0.03;
+    const frontZ = rowZ + depth / 2 + 0.03;
     for (let row = 0; row < 2; row++) {
       for (const offset of [-0.22, 0.22]) {
         const lit = rand() < 0.5;
         b.box(
-          lit ? raamLicht : raamDonker,
+          lit ? windowLight : windowDark,
           [x + offset * width, height * 0.32 + row * height * 0.34, frontZ],
           [Math.max(0.5, width * 0.24), 1.25, 0.08],
         );
@@ -218,7 +211,7 @@ const waalkade: CellBuilder = (b, rand) => {
     }
 
     // Terras met parasol of stoelen.
-    const terraceZ = frontZ - 2.2 - rand() * 1.2;
+    const terraceZ = frontZ + 2.2 + rand() * 1.2;
     // The terrace also needs its own height layer instead of intersecting the
     // quay paving below it.
     b.box(terrasVloer, [x, 0.075, terraceZ], [width - 0.3, 0.05, 3]);
@@ -237,12 +230,12 @@ const waalkade: CellBuilder = (b, rand) => {
   // De Bastei at the foot of the Valkhof: a heavy, curved brick fortification
   // rising from the quay with the modern angular glass pavilion set into it.
   const basteiX = 16.4;
-  const basteiZ = rowZ - depth / 2 - 3;
-  b.box(basteiBrick, [basteiX - 2.2, 3.2, basteiZ + 2], [5, 6.4, 7]);
+  const basteiZ = rowZ + depth / 2 + 3;
+  b.box(basteiBrick, [basteiX - 2.2, 3.2, basteiZ - 2], [5, 6.4, 7]);
   b.cylinder(bakstenenToren, [basteiX, 4.2, basteiZ], [3.3, 8.4, 3.3]);
   b.cylinder(quayStone, [basteiX, 1, basteiZ], [3.55, 1.2, 3.55]);
-  b.box(glasDoos, [basteiX - 0.6, 7.1, basteiZ - 1.1], [4.5, 3.6, 3.2], [0, Math.PI / 9, 0]);
-  b.box(roofTile, [basteiX - 0.6, 9.05, basteiZ - 1.1], [4.9, 0.3, 3.6], [0, Math.PI / 9, 0]);
+  b.box(glasDoos, [basteiX - 0.6, 7.1, basteiZ + 1.1], [4.5, 3.6, 3.2], [0, -Math.PI / 9, 0]);
+  b.box(roofTile, [basteiX - 0.6, 9.05, basteiZ + 1.1], [4.9, 0.3, 3.6], [0, -Math.PI / 9, 0]);
 };
 
 export const RIVER_LANDMARKS: Record<"valkhof" | "waalkade", CellBuilder> = {
@@ -418,7 +411,7 @@ export function gladiolaArch(b: StaticBuilder): void {
     const x = -span / 2 + t * span;
     const y = pillarHeight + rise * Math.sin(t * Math.PI);
     const point: Vec3 = [x, y, 0];
-    beam(b, boogBalk, prev, point, 0.4);
+    beam(b, pilaar, prev, point, 0.4);
     prev = point;
   }
 

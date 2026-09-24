@@ -41,6 +41,25 @@ export function percentile95(values: number[]): number {
   return sorted[index];
 }
 
+// Frame time from the wall clock, not from the frame loop's dt: scene.ts clamps
+// that to 100 ms so a stall cannot throw the animation, and the clamped value
+// reads every slow frame as exactly 100.0 ms.
+export class FrameClock {
+  private previousMs: number | undefined;
+
+  tick(nowMs: number): number | undefined {
+    const elapsed = this.previousMs === undefined ? undefined : nowMs - this.previousMs;
+    this.previousMs = nowMs;
+    return elapsed;
+  }
+
+  // Forgets the previous frame, so the gap while a tab was hidden does not
+  // count as one very long frame.
+  reset() {
+    this.previousMs = undefined;
+  }
+}
+
 const FRAME_WINDOW = 120; // about 2 seconds at 60 fps
 const REFRESH_MS = 500;
 
@@ -75,6 +94,8 @@ export type LotCount = { detailed: number; total: number };
 
 export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () => LotCount) {
   const frameTimes = new RingBuffer(FRAME_WINDOW);
+  const clock = new FrameClock();
+  document.addEventListener("visibilitychange", () => clock.reset());
 
   // scene.ts renders through an EffectComposer, which calls renderer.render()
   // several times per frame (the scene pass, then a fullscreen quad per post
@@ -120,8 +141,9 @@ export function createStatsOverlay(renderer: THREE.WebGLRenderer, countLots: () 
   render();
 
   return {
-    recordFrame(ms: number) {
-      frameTimes.push(ms);
+    recordFrame(nowMs: number) {
+      const ms = clock.tick(nowMs);
+      if (ms !== undefined) frameTimes.push(ms);
       renderer.info.reset();
     },
   };

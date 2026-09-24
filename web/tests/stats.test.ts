@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { average, percentile95, RingBuffer, statsRequested } from "../stats.ts";
+import { average, FrameClock, percentile95, RingBuffer, statsRequested } from "../stats.ts";
 
 describe("statsRequested", () => {
   it("is true only when ?stats is present", () => {
@@ -55,5 +55,30 @@ describe("percentile95", () => {
   it("reports the outlier once it is more than 5% of the window", () => {
     const values = [...Array(90).fill(16), ...Array(10).fill(200)];
     expect(percentile95(values)).toBe(200);
+  });
+});
+
+describe("FrameClock", () => {
+  it("has no frame time for the first frame", () => {
+    expect(new FrameClock().tick(1000)).toBeUndefined();
+  });
+
+  it("reports the wall-clock time between two frames", () => {
+    const clock = new FrameClock();
+    clock.tick(1000);
+    expect(clock.tick(1016.5)).toBe(16.5);
+  });
+
+  it("reports a slow frame in full, above the 100 ms simulation clamp", () => {
+    const clock = new FrameClock();
+    clock.tick(1000);
+    expect(clock.tick(1250)).toBe(250);
+  });
+
+  it("has no frame time for the first frame after a reset", () => {
+    const clock = new FrameClock();
+    clock.tick(1000);
+    clock.reset();
+    expect(clock.tick(60_000)).toBeUndefined();
   });
 });

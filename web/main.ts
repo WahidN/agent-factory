@@ -414,7 +414,7 @@ let activityClockCheckedAt = 0;
 let activeClockHour = amsterdamHour(new Date());
 
 view.onFrame((dt, now) => {
-  stats?.recordFrame(dt * 1000);
+  stats?.recordFrame(now);
   for (const lot of [...lots.values(), ...leaving]) {
     lot.tick(dt, now);
     if (lot.consumeShadowDirty()) view.invalidateShadows();

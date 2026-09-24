@@ -535,12 +535,25 @@ async function serveStatic(urlPath: string, method: string | undefined, response
   }
 
   const contentType = CONTENT_TYPES[extname(requested)] ?? "application/octet-stream";
-  response.writeHead(200, { "Content-Type": contentType });
   if (method === "HEAD") {
+    response.writeHead(200, { "Content-Type": contentType });
     response.end();
     return;
   }
-  response.end(await readFile(requested));
+
+  // Read before writing the status: once writeHead(200) has gone out, a
+  // failed read can no longer become the 500 it should be, and the response
+  // ends as an empty 200 instead.
+  let body: Buffer;
+  try {
+    body = await readFile(requested);
+  } catch {
+    response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Internal server error");
+    return;
+  }
+  response.writeHead(200, { "Content-Type": contentType });
+  response.end(body);
 }
 
 async function isBuildMissing(): Promise<boolean> {

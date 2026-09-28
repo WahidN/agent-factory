@@ -39,6 +39,7 @@ function start(port: number, args: string[], token: string, home?: string): Prom
         MACHINE: "test-hub",
         USER: "tester",
         FACTORY_TOKEN: token,
+        HUB: "", // a HUB in the shell would turn a local server into a reporter
         ...(home ? { HOME: home } : {}),
       },
     });

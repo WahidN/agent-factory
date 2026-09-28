@@ -1,9 +1,9 @@
-// Gives each session a plot index that is a pure function of the whole set
-// of sessions currently on the park: no arrival order, no counter, no state
-// that depends on history. The same set of sessions always lays out the same
-// way for every viewer. Removing a session may shift others (the park stays
-// compact, gaps are not kept open for a session that left), but the layout
-// never depends on the order sessions were added or removed in.
+// Gives each session, and each user's HQ, a plot index that is a pure function
+// of the whole set of sessions currently on the park: no arrival order, no
+// counter, no state that depends on history. The same set of sessions always
+// lays out the same way for every viewer. Removing a session may shift others
+// (the park stays compact, gaps are not kept open for a session that left),
+// but the layout never depends on the order sessions were added or removed in.
 // Plot 0 is a corner and the town grows outward along a Hilbert curve.
 //
 // A session gets a rank, not a cell: the cells the city plan claims (see
@@ -16,6 +16,10 @@ export const PLOT_SIZE = 60;
 export const ROAD_WIDTH = 10;
 
 type PlotSession = { id: string; user: string };
+
+// Every plot the city has handed out: one per session, plus one HQ for every
+// user that has a session.
+export type Plots = { sessions: Map<string, number>; hqs: Map<string, number> };
 
 // FNV-ish string hash: cheap, and different enough that two unrelated ids or
 // usernames very rarely land in the same bucket.
@@ -41,16 +45,15 @@ function sortedByHash(keys: string[]): string[] {
     .map(({ key }) => key);
 }
 
-// Assigns every session a plot index, packed into 0..sessions.length-1 with
-// no gaps: the park's footprint only ever depends on how many sessions there
-// are, the same as if they all belonged to one user, never on how many
-// users share them. Users are sorted deterministically and each user's
-// sessions (also sorted deterministically) form one contiguous run of
-// indexes, so a user's plots stay next to each other. Because the packing is
-// exact, removing a session shifts the ranks (and so the positions) of
-// whichever sessions came after it in this order; that is expected, not a
-// bug, it is what keeps the park compact.
-export function assignPlots(sessions: PlotSession[]): Map<string, number> {
+// Assigns every session and every HQ a plot index, packed into 0..n-1 with no
+// gaps, where n is the number of sessions plus one for each user that has
+// one. Users are sorted deterministically and each user's sessions (also
+// sorted deterministically) form one contiguous run of indexes behind that
+// user's HQ, so a user's plots stay next to each other. Because the packing
+// is exact, removing a session shifts the ranks (and so the positions) of
+// whichever plots came after it in this order; that is expected, not a bug,
+// it is what keeps the park compact.
+export function assignPlots(sessions: PlotSession[]): Plots {
   const byUser = new Map<string, string[]>();
   for (const { id, user } of sessions) {
     const ids = byUser.get(user);
@@ -58,11 +61,16 @@ export function assignPlots(sessions: PlotSession[]): Map<string, number> {
     else byUser.set(user, [id]);
   }
 
-  const result = new Map<string, number>();
+  const result: Plots = { sessions: new Map(), hqs: new Map() };
   let index = 0;
   for (const user of sortedByHash([...byUser.keys()])) {
+    // The HQ takes the first plot of its user's run. The sessions behind it
+    // are sorted by hash, so one of them starting or stopping shifts the rest
+    // of that run and leaves the HQ where it stands.
+    result.hqs.set(user, index);
+    index++;
     for (const id of sortedByHash(byUser.get(user)!)) {
-      result.set(id, index);
+      result.sessions.set(id, index);
       index++;
     }
   }
@@ -73,14 +81,14 @@ export function assignPlots(sessions: PlotSession[]): Map<string, number> {
 // lookups (indexOf, indexes) stay cheap instead of resorting everything.
 export class PlotAllocator {
   private sessions = new Map<string, string>(); // id -> user
-  private cache: Map<string, number> | null = null;
+  private cache: Plots | null = null;
 
   assign(id: string, user: string): number {
     if (!this.sessions.has(id)) {
       this.sessions.set(id, user);
       this.cache = null;
     }
-    return this.recompute().get(id)!;
+    return this.recompute().sessions.get(id)!;
   }
 
   release(id: string) {
@@ -88,14 +96,22 @@ export class PlotAllocator {
   }
 
   indexOf(id: string): number | undefined {
-    return this.recompute().get(id);
+    return this.recompute().sessions.get(id);
   }
 
+  // Where this user's HQ stands, or undefined while the user has no session.
+  hqIndexOf(user: string): number | undefined {
+    return this.recompute().hqs.get(user);
+  }
+
+  // Every plot in use, HQs included: what the park builds roads, sidewalks,
+  // lamps and trees for, and what the camera has to keep in frame.
   indexes(): number[] {
-    return [...this.recompute().values()];
+    const { sessions, hqs } = this.recompute();
+    return [...hqs.values(), ...sessions.values()];
   }
 
-  private recompute(): Map<string, number> {
+  private recompute(): Plots {
     if (!this.cache) {
       this.cache = assignPlots([...this.sessions].map(([id, user]) => ({ id, user })));
     }

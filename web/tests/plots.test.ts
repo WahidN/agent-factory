@@ -15,8 +15,24 @@ describe("PlotAllocator", () => {
 
     plots.release("b");
 
+    // Plot 0 is the user's HQ, so the sessions start at 1.
     const remaining = ["a", "c", "d"].map((id) => plots.indexOf(id));
-    expect(new Set(remaining)).toEqual(new Set([0, 1, 2]));
+    expect(new Set(remaining)).toEqual(new Set([1, 2, 3]));
+  });
+
+  it("gives every user one HQ plot and takes it back with the last session", () => {
+    const plots = new PlotAllocator();
+    plots.assign("a", "dennis");
+    plots.assign("b", "wahid");
+
+    expect(plots.hqIndexOf("dennis")).toBeDefined();
+    expect(plots.hqIndexOf("wahid")).toBeDefined();
+    expect(new Set(plots.indexes())).toEqual(new Set([0, 1, 2, 3]));
+
+    plots.release("a");
+
+    expect(plots.hqIndexOf("dennis")).toBeUndefined();
+    expect(new Set(plots.indexes())).toEqual(new Set([0, 1]));
   });
 });
 
@@ -34,20 +50,28 @@ describe("assignPlots", () => {
     const alsoShuffled = assignPlots([sessions[2], sessions[0], sessions[4], sessions[3], sessions[1]]);
 
     for (const { id } of sessions) {
-      expect(shuffled.get(id)).toBe(forward.get(id));
-      expect(alsoShuffled.get(id)).toBe(forward.get(id));
+      expect(shuffled.sessions.get(id)).toBe(forward.sessions.get(id));
+      expect(alsoShuffled.sessions.get(id)).toBe(forward.sessions.get(id));
+    }
+    for (const user of ["dennis", "wahid", "sara"]) {
+      expect(shuffled.hqs.get(user)).toBe(forward.hqs.get(user));
     }
   });
 
-  it("packs every session into 0..n-1 with no gaps, regardless of how many users share them", () => {
-    // Compactness is the point: 150 sessions from one user, or 150 sessions
-    // split over ten users, must take up exactly the same amount of room.
+  it("packs every plot into 0..n-1 with no gaps, one HQ per user on top of the sessions", () => {
+    // Compactness is the point: 150 sessions cost 150 plots, plus one for
+    // every user's HQ, and nothing sits empty in between.
     const oneUser = Array.from({ length: 150 }, (_, i) => ({ id: `s${i}`, user: "dennis" }));
     const tenUsers = Array.from({ length: 150 }, (_, i) => ({ id: `s${i}`, user: `user${i % 10}` }));
 
-    for (const sessions of [oneUser, tenUsers]) {
+    for (const [sessions, users] of [
+      [oneUser, 1],
+      [tenUsers, 10],
+    ] as const) {
       const assignment = assignPlots(sessions);
-      expect(new Set(assignment.values())).toEqual(new Set(Array.from({ length: 150 }, (_, i) => i)));
+      expect(assignment.hqs.size).toBe(users);
+      const taken = [...assignment.sessions.values(), ...assignment.hqs.values()];
+      expect(new Set(taken)).toEqual(new Set(Array.from({ length: 150 + users }, (_, i) => i)));
     }
   });
 
@@ -60,9 +84,11 @@ describe("assignPlots", () => {
       { id: "d3", user: "dennis" },
     ];
     const assignment = assignPlots(sessions);
-    const dennisIndexes = ["d1", "d2", "d3"].map((id) => assignment.get(id)!);
+    const dennisIndexes = ["d1", "d2", "d3"].map((id) => assignment.sessions.get(id)!);
     const span = Math.max(...dennisIndexes) - Math.min(...dennisIndexes) + 1;
     expect(span).toBe(dennisIndexes.length); // no gap, and no other user's plot in between
+    // The HQ stands on the plot right in front of that run.
+    expect(assignment.hqs.get("dennis")).toBe(Math.min(...dennisIndexes) - 1);
   });
 
   it("removing a session is allowed to shift the plots that come after it", () => {
@@ -73,9 +99,9 @@ describe("assignPlots", () => {
     const before = assignPlots(sessions);
     const after = assignPlots(sessions.filter((s) => s.id !== "s0"));
 
-    expect(new Set(after.values())).toEqual(new Set([0, 1, 2, 3]));
-    // s0 sat at index 0, so everything after it is free to have moved down.
-    expect(after.get("s1")).not.toBe(before.get("s1"));
+    expect(new Set([...after.sessions.values(), ...after.hqs.values()])).toEqual(new Set([0, 1, 2, 3, 4]));
+    // s0 sat right behind the HQ, so everything after it is free to have moved down.
+    expect(after.sessions.get("s1")).not.toBe(before.sessions.get("s1"));
   });
 
   it("still gives a valid, gap free assignment when hashes collide", () => {
@@ -88,7 +114,8 @@ describe("assignPlots", () => {
       { id: "other-user-BB", user: "BB" },
     ];
     const assignment = assignPlots(sessions);
-    expect(new Set(assignment.values())).toEqual(new Set([0, 1, 2, 3]));
+    const taken = [...assignment.sessions.values(), ...assignment.hqs.values()];
+    expect(new Set(taken)).toEqual(new Set([0, 1, 2, 3, 4, 5, 6]));
   });
 });
 
@@ -156,7 +183,7 @@ describe("plotCell", () => {
     ];
     const cellsFor = (list: typeof sessions) => {
       const assignment = assignPlots(list);
-      return sessions.map(({ id }) => plotCell(assignment.get(id)!));
+      return sessions.map(({ id }) => plotCell(assignment.sessions.get(id)!));
     };
     expect(cellsFor([...sessions].reverse())).toEqual(cellsFor(sessions));
   });

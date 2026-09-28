@@ -126,7 +126,7 @@ Het model komt uit het transcript. Een verse sessie begint daarom op Sonnet-form
 | busy | ramen gloeien, rook en stoom komen op gang, werkers lopen, verkeer rijdt |
 | idle | donkere ramen, machines uit, geen rook |
 
-Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Op de centrale zit die knop niet, daar staat het paneel uit. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
+Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Op de centrale zit die knop niet, daar staat het paneel uit. De centrale zelf open je op http://agentfactory.local:4317. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
 
 ## Hoe het werkt
 

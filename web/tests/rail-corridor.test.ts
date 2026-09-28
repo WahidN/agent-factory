@@ -4,6 +4,8 @@ import { RAIL_BRIDGE_SPAN, WAAL_EDGE } from "../city-plan.ts";
 import { PLOT_SIZE, ROAD_WIDTH } from "../plots.ts";
 import {
   appendRailCorridor,
+  crossingZ,
+  levelCrossingRows,
   RAIL_PEDESTRIAN_CLEARANCE,
   RAIL_X,
   railSafeX,
@@ -37,6 +39,20 @@ describe("rail corridor", () => {
       { from: -PLOT_SIZE / 2, to: PLOT_SIZE / 2 },
       { from: 2.5 * PLOT_SIZE, to: 3.5 * PLOT_SIZE },
     ]);
+  });
+
+  it("reports a level crossing on every road row that meets the track", () => {
+    // The same rows the bed leaves open below, so a barrier always lands in a gap.
+    expect(
+      levelCrossingRows([
+        { col: 1, row: 0 },
+        { col: 2, row: 1 },
+        { col: 2, row: 2 },
+        { col: 1, row: 3 },
+      ]),
+    ).toEqual([0, 1, 3, 4]);
+    expect(levelCrossingRows([])).toEqual([]);
+    expect(crossingZ(3)).toBe(2.5 * PLOT_SIZE);
   });
 
   it("keeps people outside the fenced right-of-way", () => {

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
+import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { claimedUpTo } from "./city-plan.ts";
 import { CityEvents } from "./city-events.ts";
@@ -11,6 +11,7 @@ import {
   optionsFrom,
   pruneFilter,
   type Filter,
+  type FilterPanel,
 } from "./filter.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
 import { createLadderDialog, type UserTotal } from "./ladder-dialog.ts";
@@ -163,7 +164,7 @@ function remove(id: string) {
 // as a batch of one. Lots are applied first, then the park (roads, kerbs,
 // lamps, trees) is rebuilt at most once for the whole batch: rebuilding it per
 // lot costs 150 full rebuilds on a 150 session snapshot.
-function handle(message: ServerMessage) {
+function handle(message: ParkMessage) {
   everReceived = true;
   let fitNow = false;
   changed = false;
@@ -191,7 +192,8 @@ function handle(message: ServerMessage) {
   const pruned = pruneFilter(filter, users, projects);
   const filterChanged = pruned !== filter;
   filter = pruned;
-  filterPanel.setOptions(users, projects);
+  showFilterPanel(); // a server older than the mode message, or showcase
+  filterPanel?.setOptions(users, projects);
 
   // Only the set or the filter changing can move a lot between the two detail
   // levels; a plain status change just rides along in the instance data.
@@ -427,21 +429,40 @@ function applyDetailVisibility() {
   }
 }
 
-const filterPanel = createFilterPanel(
-  (next) => {
-    filter = next;
-    redistribute(); // also applies visibility and ends in syncFar()
-    syncTraffic();
-    view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
-  },
-  (user) => {
-    const points = [...places]
-      .map(([id, place]) => ({ user: sessions.get(id)?.user, ...place }))
-      .filter((p): p is { user: string; x: number; z: number } => p.user !== undefined);
-    const target = jumpTarget(user, points);
-    if (target) view.panTo(target.x, target.z);
-  },
-);
+// Shown unless a hub says not to. Building it up front and removing it again
+// flashed the button for 90 to 170 ms on every hub load, so nothing is built
+// until something decides: the mode message, park data from a server too old
+// to send one, a socket that never opened, or showcase. Only `hub: true`
+// decides against. It beats the first lots, but not a close that came before
+// it, so it takes a panel back out as well. Without a panel the filter stays
+// EMPTY_FILTER, which matches every session, so the park itself is
+// unaffected.
+let filterPanel: FilterPanel | null = null;
+let toldHub = false;
+
+function showFilterPanel() {
+  if (toldHub || filterPanel) return;
+  filterPanel = createFilterPanel(
+    (next) => {
+      filter = next;
+      redistribute(); // also applies visibility and ends in syncFar()
+      syncTraffic();
+      view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
+    },
+    (user) => {
+      const points = [...places]
+        .map(([id, place]) => ({ user: sessions.get(id)?.user, ...place }))
+        .filter((p): p is { user: string; x: number; z: number } => p.user !== undefined);
+      const target = jumpTarget(user, points);
+      if (target) view.panTo(target.x, target.z);
+    },
+  );
+}
+
+function removeFilterPanel() {
+  filterPanel?.remove();
+  filterPanel = null;
+}
 
 // ---------- Connection ----------
 
@@ -455,9 +476,21 @@ function connect() {
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const socket = new WebSocket(`${protocol}://${location.host}/ws`);
   socket.onopen = () => setLive(true);
-  socket.onmessage = (event) => handle(JSON.parse(event.data));
+  socket.onmessage = (event) => {
+    const message: ServerMessage = JSON.parse(event.data);
+    // Taken off here and not in handle(): flattenBatch() maps a ServerMessage
+    // to PlainMessage[], and this one is deliberately not a PlainMessage.
+    if (message.type === "server-mode") {
+      toldHub = message.hub;
+      if (toldHub) removeFilterPanel();
+      else showFilterPanel();
+      return;
+    }
+    handle(message);
+  };
   socket.onclose = () => {
     setLive(false);
+    showFilterPanel(); // nothing will ever tell us, so fall back to showing it
     setTimeout(connect, RECONNECT_MS);
   };
 }

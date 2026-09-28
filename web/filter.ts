@@ -58,15 +58,30 @@ export function jumpTarget(
 
 export type FilterPanel = {
   setOptions(users: string[], projects: string[]): void;
+  /** Takes the button and the panel back out of the body. */
+  remove(): void;
 };
 
 // A small fixed panel, appended to the body. No framework, no router: three
-// dropdowns and a jump box.
+// dropdowns and a jump box. It starts closed behind a button, so the park is
+// the first thing you see. A hub never builds one at all, see main.ts.
 export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (user: string) => void): FilterPanel {
   const root = document.createElement("div");
   root.className = "filter-panel";
   root.setAttribute("role", "group");
   root.setAttribute("aria-label", "Filter agents in de stad");
+  root.hidden = true;
+
+  // `[hidden]` is `display: none !important` in style.css, which is what makes
+  // this win from the skin rules that set the panel to `display: flex`.
+  const toggle = document.createElement("button");
+  toggle.className = "filter-toggle";
+  toggle.textContent = "filters";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.addEventListener("click", () => {
+    root.hidden = !root.hidden;
+    toggle.setAttribute("aria-expanded", String(!root.hidden));
+  });
 
   const title = document.createElement("div");
   title.className = "filter-panel__title";
@@ -122,12 +137,16 @@ export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (u
   jump.append(labelledControl("Vind je district", jumpInput), jumpButton);
 
   root.append(title, filters, jump);
-  document.body.append(root);
+  document.body.append(toggle, root);
 
   return {
     setOptions(users, projects) {
       fillSelect(userSelect, users, "alle gebruikers");
       fillSelect(projectSelect, projects, "alle projecten");
+    },
+    remove() {
+      toggle.remove();
+      root.remove();
     },
   };
 }

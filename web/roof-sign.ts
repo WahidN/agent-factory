@@ -1,13 +1,12 @@
 // Extruded rooftop letters on a steel frame, like a factory's company name.
-// The text is the session's model, so a hall says OPUS 5 or HAIKU 4.5. Static:
-// the lot rebuilds this when its model changes.
+// A hall says its model, so OPUS 5 or HAIKU 4.5, and an HQ says its user.
+// Static: the owner rebuilds this when its text changes.
 
 import * as THREE from "three";
 import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import { FontLoader } from "three/addons/loaders/FontLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { MATERIALS, standard } from "./palette.ts";
-import { modelLabel } from "./sign-text.ts";
 import fontData from "./fonts/helvetiker-bold.typeface.json" with { type: "json" };
 
 // Parsed once; every lot reuses the same glyph outlines.
@@ -31,7 +30,7 @@ function letterGeometry(char: string): THREE.BufferGeometry {
   return geometry;
 }
 
-const MAX_CHARS = 14; // an unknown model id arrives raw, so cap it
+const MAX_CHARS = 14; // an unknown model id and a long user name both arrive raw
 const LETTER_HEIGHT = 3; // the tallest the text may ever be
 const NOMINAL = 3; // TextGeometry size before the fit scale
 const DEPTH = NOMINAL * 0.18;
@@ -69,11 +68,11 @@ export class RoofSign {
   private ownGeometries: THREE.BufferGeometry[] = [];
   private letterMaterial: THREE.MeshStandardMaterial | null = null;
 
-  // `model` is a raw model id ("claude-opus-5"); an empty or unknown one gives
-  // an empty group. `maxWidth` is the hall width the letters must fit inside.
-  constructor(model: string, maxWidth: number) {
+  // `label` is what the letters spell; an empty one gives an empty group.
+  // `maxWidth` is the width of the roof the letters must fit inside.
+  constructor(label: string, maxWidth: number) {
     this.group = new THREE.Group();
-    const text = modelLabel(model).toUpperCase().slice(0, MAX_CHARS).trim();
+    const text = label.toUpperCase().slice(0, MAX_CHARS).trim();
 
     // A geometry per character, not one for the whole string: separate letters
     // read as bolted-on signage and can be spaced by hand. A space only moves
@@ -110,9 +109,9 @@ export class RoofSign {
       mesh.position.set((left - width / 2) * scale, baseline, (-DEPTH / 2) * scale); // extrusion straddles z = 0
       mesh.scale.setScalar(scale);
       mesh.castShadow = true;
-      // The geometry belongs to the cache above, shared with every other lot
-      // showing this letter. Lot.disposeStructure() walks the whole structure
-      // and disposes what it finds, so it has to be told to leave this one be.
+      // The geometry belongs to the cache above, shared with every other sign
+      // showing this letter. A structure's dispose walks everything it holds
+      // and frees what it finds, so it has to be told to leave this one be.
       mesh.userData.sharedGeometry = true;
       this.group.add(mesh);
     }

@@ -58,6 +58,8 @@ export function jumpTarget(
 
 export type FilterPanel = {
   setOptions(users: string[], projects: string[]): void;
+  /** Takes the button and the panel back out of the body. */
+  remove(): void;
 };
 
 // A small fixed panel, appended to the body. No framework, no router: three
@@ -141,6 +143,10 @@ export function createFilterPanel(onChange: (filter: Filter) => void, onJump: (u
     setOptions(users, projects) {
       fillSelect(userSelect, users, "alle gebruikers");
       fillSelect(projectSelect, projects, "alle projecten");
+    },
+    remove() {
+      toggle.remove();
+      root.remove();
     },
   };
 }

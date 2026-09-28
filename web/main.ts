@@ -183,6 +183,7 @@ function handle(message: ParkMessage) {
   const pruned = pruneFilter(filter, users, projects);
   const filterChanged = pruned !== filter;
   filter = pruned;
+  showFilterPanel(); // a server older than the mode message, or showcase
   filterPanel?.setOptions(users, projects);
 
   // Only the set or the filter changing can move a lot between the two detail
@@ -195,7 +196,6 @@ function handle(message: ParkMessage) {
   if (filterChanged) view.invalidateShadows();
   applyDetailVisibility();
   syncTraffic();
-  showFilterPanel(); // a server older than the mode message, or showcase
 }
 
 function applyPlain(message: PlainMessage) {
@@ -410,9 +410,10 @@ function applyDetailVisibility() {
 // flashed the button for 90 to 170 ms on every hub load, so nothing is built
 // until something decides: the mode message, park data from a server too old
 // to send one, a socket that never opened, or showcase. Only `hub: true`
-// decides against, and it always arrives before the first lots. Without a
-// panel the filter stays EMPTY_FILTER, which matches every session, so the
-// park itself is unaffected.
+// decides against. It beats the first lots, but not a close that came before
+// it, so it takes a panel back out as well. Without a panel the filter stays
+// EMPTY_FILTER, which matches every session, so the park itself is
+// unaffected.
 let filterPanel: FilterPanel | null = null;
 let toldHub = false;
 
@@ -435,6 +436,11 @@ function showFilterPanel() {
   );
 }
 
+function removeFilterPanel() {
+  filterPanel?.remove();
+  filterPanel = null;
+}
+
 // ---------- Connection ----------
 
 function setLive(live: boolean) {
@@ -453,7 +459,8 @@ function connect() {
     // to PlainMessage[], and this one is deliberately not a PlainMessage.
     if (message.type === "server-mode") {
       toldHub = message.hub;
-      if (!toldHub) showFilterPanel();
+      if (toldHub) removeFilterPanel();
+      else showFilterPanel();
       return;
     }
     handle(message);

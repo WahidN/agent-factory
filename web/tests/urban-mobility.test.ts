@@ -38,6 +38,8 @@ describe("UrbanMobilitySimulation", () => {
     const mobility = new UrbanMobilitySimulation();
     mobility.setRoads(RANKS);
     mobility.setCity({ cyclists: 10_000, buses: 10_000, train: true });
+    // The first train rolls on once the service starts, so it takes a tick.
+    for (let i = 0; i < 3; i++) mobility.tick(1 / 30);
     expect(mobility.counts()).toEqual({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, trains: 1 });
   });
 
@@ -101,14 +103,172 @@ describe("UrbanMobilitySimulation", () => {
   });
 });
 
+describe("edge fade", () => {
+  it("fades a cyclist out where the road ends and rides a new one in elsewhere", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: 8, buses: 0, train: false, seed: 7 });
+    // One lot only: the rail corridor and the river leave every route here
+    // ending within a few roads.
+    mobility.setRoads([0]);
+    const fading = Array.from({ length: 8 }, () => false);
+    const landings: string[][] = Array.from({ length: 8 }, () => []);
+
+    for (let frame = 0; frame < 6_000; frame++) {
+      mobility.tick(1 / 30);
+      expect(mobility.counts().cyclists).toBe(8);
+      for (let i = 0; i < 8; i++) {
+        const presence = mobility.cyclistPresence(i);
+        expect(presence).toBeGreaterThanOrEqual(0);
+        expect(presence).toBeLessThanOrEqual(1);
+        if (presence < 0.05) fading[i] = true;
+        else if (presence > 0.9 && fading[i]) {
+          fading[i] = false;
+          const lane = mobility.laneForCyclist(i)!;
+          landings[i].push(`${lane.from}>${lane.to}`);
+        }
+      }
+    }
+
+    const returned = landings.filter((list) => list.length >= 2);
+    expect(returned.length).toBeGreaterThan(0);
+    // The generation counter is what makes a replacement land somewhere else.
+    for (const list of returned) expect(new Set(list).size).toBeGreaterThan(1);
+  });
+});
+
+describe("train service", () => {
+  it("runs one way, then leaves the track empty for at least 35 seconds", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: 0, buses: 0, train: true, seed: 1944 });
+    mobility.setRoads(RANKS);
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const gaps: number[] = [];
+    const headings = new Set<number>();
+    let empty = 0;
+    let seenTrain = false;
+    let previousZ: number | null = null;
+    let way = 0;
+
+    for (let frame = 0; frame < 30_000; frame++) {
+      mobility.tick(1 / 30);
+      if (mobility.counts().trains === 0) {
+        if (seenTrain) empty += 1 / 30; // the frames before the first train are not a gap
+        previousZ = null;
+        way = 0;
+        continue;
+      }
+      seenTrain = true;
+      if (empty > 0) {
+        gaps.push(empty);
+        empty = 0;
+      }
+      const z = mobility.trainPose(pose).z;
+      headings.add(pose.heading);
+      const step = previousZ === null ? 0 : Math.sign(z - previousZ);
+      if (step !== 0) {
+        if (way === 0) way = step;
+        expect(step).toBe(way); // never reverses inside a run
+      }
+      previousZ = z;
+    }
+
+    expect(gaps.length).toBeGreaterThan(1);
+    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(35);
+    expect(headings.size).toBe(2); // trains come from both ends
+  });
+
+  it("keeps the rails empty and the booms up when the city has no train", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: 0, buses: 0, train: false });
+    mobility.setRoads(RANKS);
+    for (let frame = 0; frame < 3_000; frame++) {
+      mobility.tick(1 / 30);
+      expect(mobility.counts().trains).toBe(0);
+      for (let i = 0; i < mobility.crossingCount(); i++) expect(mobility.boomAt(i)).toBe(0);
+      expect(mobility.shutCrossings().size).toBe(0);
+    }
+  });
+});
+
+describe("level crossings", () => {
+  it("shuts a crossing before the train arrives and opens it once it has passed", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: 0, buses: 0, train: true, seed: 1944 });
+    mobility.setRoads(RANKS);
+    expect(mobility.crossingCount()).toBeGreaterThan(1);
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const warned = new Set<number>();
+    const opened = new Set<number>();
+    const shutAhead = new Map<number, number>();
+
+    for (let frame = 0; frame < 12_000; frame++) {
+      mobility.tick(1 / 30);
+      const running = mobility.counts().trains > 0;
+      const trainZ = mobility.trainPose(pose).z;
+      for (let i = 0; i < mobility.crossingCount(); i++) {
+        const distance = Math.abs(trainZ - mobility.crossingZAt(i));
+        const boom = mobility.boomAt(i);
+        // Down and locked before the train is anywhere near the road.
+        if (running && boom === 1 && distance > 20) shutAhead.set(i, distance);
+        if (running && distance < 10) {
+          expect(boom).toBe(1);
+          warned.add(i);
+        }
+        if (warned.has(i) && boom === 0) opened.add(i);
+      }
+    }
+
+    expect(warned.size).toBeGreaterThan(1);
+    expect(opened.size).toBe(warned.size);
+    for (const i of warned) expect(shutAhead.get(i)).toBeGreaterThan(20);
+  });
+
+  it("holds cyclists clear of the track and spread out while the barrier is shut", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, train: true, seed: 1944 });
+    // Four lots: a short network, so several riders queue at the one crossing.
+    mobility.setRoads([0, 1, 2, 3]);
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const railX = (RAIL_BRIDGE.col - 0.5) * PLOT_SIZE;
+    const previousX = new Float64Array(MAX_CYCLISTS).fill(Number.NaN);
+    let waited = 0;
+    let spreadOut = 0;
+
+    for (let frame = 0; frame < 12_000; frame++) {
+      mobility.tick(1 / 30);
+      const shut = mobility.shutCrossings();
+      const queues = new Map<string, Set<number>>();
+      for (let i = 0; i < mobility.counts().cyclists; i++) {
+        const lane = mobility.laneForCyclist(i)!;
+        const { x } = mobility.cyclistPose(i, pose);
+        const before = previousX[i];
+        previousX[i] = x;
+        if (!shut.has(rowOf(lane.to)) || colOf(lane.to) !== RAIL_BRIDGE.col) continue;
+        if (x !== before || mobility.cyclistPresence(i) < 1) continue; // rolling on, or fading out
+        expect(Math.abs(x - railX)).toBeGreaterThan(4.3); // waiting, so clear of the ballast
+        waited++;
+        const key = `${lane.from}>${lane.to}`;
+        queues.set(key, (queues.get(key) ?? new Set()).add(Math.round(x * 10)));
+      }
+      // Riders held at one crossing stand at their own spot, not all on one.
+      for (const spots of queues.values()) if (spots.size > 2) spreadOut++;
+    }
+
+    expect(waited).toBeGreaterThan(0);
+    expect(spreadOut).toBeGreaterThan(0);
+  });
+});
+
 describe("UrbanMobility", () => {
-  it("uses three stable instanced meshes while everything moves", () => {
+  it("uses five stable instanced meshes while everything moves", () => {
     const mobility = new UrbanMobility();
     mobility.setRoads(RANKS);
-    const meshes = [...mobility.group.children];
-    expect(meshes).toHaveLength(3);
+    const children = [...mobility.group.children];
+    // Cyclists, buses and the train, plus the crossing posts and booms.
+    const meshes = children.flatMap((child) => ("isInstancedMesh" in child ? [child] : child.children));
+    expect(meshes).toHaveLength(5);
     for (let i = 0; i < 600; i++) mobility.tick(1 / 60);
-    expect(mobility.group.children).toEqual(meshes);
-    expect(mobility.group.children.every((child) => "isInstancedMesh" in child)).toBe(true);
+    expect(mobility.group.children).toEqual(children);
+    expect(meshes.every((child) => "isInstancedMesh" in child)).toBe(true);
   });
 });

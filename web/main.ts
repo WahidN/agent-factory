@@ -516,10 +516,12 @@ view.onFrame((dt, now) => {
   }
   far.tick(dt, now);
   if (now - decidedAtMs >= REDISTRIBUTE_INTERVAL_MS && shouldRedistribute(decidedAt, groundCenter())) redistribute();
-  // Leaving lots send nothing, so their vehicles shrink away.
-  traffic.tick(dt, trafficInputs);
-  boats.tick(dt);
+  // The city moves first, so the barrier state the cars read is from this
+  // frame and not the last one.
   mobility.tick(dt);
+  // Leaving lots send nothing, so their vehicles shrink away.
+  traffic.tick(dt, trafficInputs, mobility.simulation.shutCrossings());
+  boats.tick(dt);
   if (now - activityClockCheckedAt >= ACTIVITY_CLOCK_CHECK_MS) {
     activityClockCheckedAt = now;
     const clockHour = amsterdamHour(new Date());

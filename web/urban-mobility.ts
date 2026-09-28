@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { LevelCrossings } from "./level-crossing.ts";
 import { COLORS, MATERIALS, standard } from "./palette.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
 import {
@@ -58,10 +59,11 @@ const trainGeometry = modelGeometry((b) => {
   }
 });
 
-/** Three draw calls total, independent of the visible vehicle count. */
+/** Five draw calls total, independent of the visible vehicle count. */
 export class UrbanMobility {
   readonly group = new THREE.Group();
   readonly simulation = new UrbanMobilitySimulation();
+  private crossings = new LevelCrossings();
   private cyclists = new THREE.InstancedMesh(cyclistGeometry, BAKED_MATERIAL, MAX_CYCLISTS);
   private buses = new THREE.InstancedMesh(busGeometry, BAKED_MATERIAL, MAX_BUSES);
   private trains = new THREE.InstancedMesh(trainGeometry, BAKED_MATERIAL, MAX_TRAINS);
@@ -80,6 +82,7 @@ export class UrbanMobility {
       mesh.castShadow = false;
       this.group.add(mesh);
     }
+    this.group.add(this.crossings.group);
   }
 
   setCity(city: MobilityCity = {}): void {
@@ -101,16 +104,17 @@ export class UrbanMobility {
     const counts = this.simulation.counts();
     for (let i = 0; i < counts.cyclists; i++) {
       this.simulation.cyclistPose(i, this.pose);
-      this.setInstance(this.cyclists, i, 1);
+      this.setInstance(this.cyclists, i, this.simulation.cyclistPresence(i));
     }
     for (let i = 0; i < counts.buses; i++) {
       this.simulation.busPose(i, this.pose);
-      this.setInstance(this.buses, i, 1);
+      this.setInstance(this.buses, i, this.simulation.busPresence(i));
     }
     for (let i = 0; i < counts.trains; i++) {
       this.simulation.trainPose(this.pose);
-      this.setInstance(this.trains, i, 1);
+      this.setInstance(this.trains, i, this.simulation.trainPresence());
     }
+    this.crossings.update(this.simulation);
     this.cyclists.count = counts.cyclists;
     this.buses.count = counts.buses;
     this.trains.count = counts.trains;
@@ -122,7 +126,9 @@ export class UrbanMobility {
   private setInstance(mesh: THREE.InstancedMesh, index: number, scale: number): void {
     this.position.set(this.pose.x, this.pose.y, this.pose.z);
     this.quaternion.setFromAxisAngle(this.up, this.pose.heading);
-    this.scale.setScalar(scale);
+    // A zero scale makes a degenerate matrix, so a faded-out instance keeps a
+    // sliver of size instead.
+    this.scale.setScalar(Math.max(0.001, scale));
     this.matrix.compose(this.position, this.quaternion, this.scale);
     mesh.setMatrixAt(index, this.matrix);
   }

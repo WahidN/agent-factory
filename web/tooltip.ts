@@ -2,8 +2,13 @@ import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { shortTokens } from "./sign-text.ts";
 
-// Anything hoverable puts itself in `mesh.userData.hover`.
-type Hoverable = { state: SessionState; gone: boolean };
+// What an HQ shows: it has no session of its own, so it hands over a summary
+// of the user it belongs to.
+export type HqHover = { user: string; agents: number; tokens: number };
+
+// Anything hoverable puts itself in `mesh.userData.hover`. A lot hands over
+// the session it draws; an HQ hands over the summary above.
+type Hoverable = { gone: boolean } & ({ state: SessionState } | { hq: HqHover });
 
 // Shows details for the hall or warehouse under the pointer.
 export function createTooltip(
@@ -68,19 +73,11 @@ export function createTooltip(
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
-    const { user, project, status, model, machineTokens } = hovered.state;
-    // A machine still on protocol 2 sends no total, and then shows no token line.
-    const tokens = machineTokens === undefined ? "" : `${shortTokens(machineTokens)} tokens`;
-    const key = [user, project, status, model, tokens].join("\n");
+    const lines = "hq" in hovered ? hqLines(hovered.hq) : sessionLines(hovered.state);
+    const key = lines.map((element) => element.textContent).join("\n");
     if (key !== rendered) {
       rendered = key;
-      element.replaceChildren(
-        line("name", user),
-        line(status, status),
-        line("project", project),
-        ...(model ? [line("model", model)] : []), // no line until the transcript names a model
-        ...(tokens ? [line("tokens", tokens)] : []),
-      );
+      element.replaceChildren(...lines);
     }
 
     const x = Math.min(screen.x + 16, window.innerWidth - element.offsetWidth - 8);
@@ -90,6 +87,27 @@ export function createTooltip(
   }
 
   return { update };
+}
+
+function sessionLines({ user, project, status, model, machineTokens }: SessionState) {
+  // A machine still on protocol 2 sends no total, and then shows no token line.
+  const tokens = machineTokens === undefined ? "" : `${shortTokens(machineTokens)} tokens`;
+  return [
+    line("name", user),
+    line(status, status),
+    line("project", project),
+    ...(model ? [line("model", model)] : []), // no line until the transcript names a model
+    ...(tokens ? [line("tokens", tokens)] : []),
+  ];
+}
+
+function hqLines({ user, agents, tokens }: HqHover) {
+  return [
+    line("name", user),
+    line("hq", "head office"),
+    line("agents", `${agents} ${agents === 1 ? "agent" : "agents"}`),
+    line("tokens", `${shortTokens(tokens)} tokens`),
+  ];
 }
 
 function line(className: string, text: string) {

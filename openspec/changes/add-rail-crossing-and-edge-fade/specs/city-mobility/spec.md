@@ -52,14 +52,17 @@ SHALL vary so trains come from both directions.
 - **THEN** no train runs and the barriers stay open
 
 ### Requirement: Level crossings
-Every place where an east-west road crosses the railway SHALL show a level crossing: a post with a
-red and white boom on each side of the road. The booms SHALL be up while no train is coming. They
+Every place where an east-west road crosses the stretch of railway the train drives SHALL show a
+level crossing: a post with a red and white boom on each side of the road. The rails end on a road
+at each end of the track, half a train past the point where the train turns around, so that road
+SHALL NOT get barriers: no train ever reaches it. The booms SHALL be up while no train is coming.
+They
 SHALL lower before an approaching train reaches the crossing, stay down while the train passes, and
 rise once the train has cleared the crossing. The booms SHALL move over about a second, not snap
 between up and down.
 
-#### Scenario: Barriers at every crossing
-- **WHEN** the built park has three roads that cross the railway
+#### Scenario: Barriers at every crossing the train reaches
+- **WHEN** the built park has three roads that cross the stretch the train drives
 - **THEN** each of those three roads has barriers on both sides of the track
 
 #### Scenario: Train approaches

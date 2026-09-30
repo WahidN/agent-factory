@@ -258,6 +258,27 @@ describe("level crossings", () => {
     expect(spreadOut).toBeGreaterThan(0);
   });
 
+  it("only guards a crossing a visible train reaches", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: 0, buses: 0, train: true, seed: 1944 });
+    mobility.setRoads(Array.from({ length: 24 }, (_, rank) => rank));
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const count = mobility.crossingCount();
+    expect(count).toBeGreaterThan(1);
+    const closest = new Array(count).fill(Number.POSITIVE_INFINITY);
+
+    for (let frame = 0; frame < 54_000; frame++) {
+      mobility.tick(1 / 60);
+      if (mobility.trainPresence() < 0.5) continue;
+      const z = mobility.trainPose(pose).z;
+      for (let i = 0; i < count; i++) closest[i] = Math.min(closest[i], Math.abs(z - mobility.crossingZAt(i)));
+    }
+
+    // The rails end on a road, half a train past where the train turns around,
+    // so that road gets no barriers rather than booms for a train nobody sees.
+    for (const distance of closest) expect(distance).toBeLessThan(2);
+  });
+
   it("lets nobody onto the track while a barrier is down", () => {
     const mobility = new UrbanMobilitySimulation();
     mobility.setCity({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, train: true, seed: 7 });

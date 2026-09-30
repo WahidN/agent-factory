@@ -223,9 +223,15 @@ export class UrbanMobilitySimulation {
 
   // Keeps the boom progress of a crossing that is still there, so a park that
   // grows while a train runs does not throw its barriers back open.
+  //
+  // Only the stretch the train drives gets barriers. The rails end on the
+  // outermost road of the track, half a train past where the train turns
+  // around, so a crossing there would hold traffic and swing its booms for a
+  // train that never reaches it.
   private setCrossings(rows: readonly number[]): void {
     const held = new Map(this.crossingRows.map((row, i) => [row, this.booms[i]]));
-    this.crossingRows = rows.slice(0, MAX_CROSSINGS);
+    const driven = (row: number) => crossingZ(row) >= this.trainMinZ && crossingZ(row) <= this.trainMaxZ;
+    this.crossingRows = rows.filter(driven).slice(0, MAX_CROSSINGS);
     this.crossingZs = new Float32Array(this.crossingRows.map(crossingZ));
     this.booms = new Float32Array(this.crossingRows.map((row) => held.get(row) ?? 0));
     const crossingOfRow = new Map(this.crossingRows.map((row, i) => [row, i]));

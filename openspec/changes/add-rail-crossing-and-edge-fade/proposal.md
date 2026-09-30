@@ -18,9 +18,10 @@ the level crossings either, so cars and trains drive through each other on the t
 - The train becomes a service instead of a shuttle. One train enters at a random end, drives the
   whole track in one direction, fades out past the far end, and the rails then stay empty for 35 to
   60 seconds before the next train.
-- Every place where an east-west road crosses the track gets a level crossing: two barriers, a post
-  on each side of the road, and a red and white boom that lowers when a train approaches and rises
-  once it has passed.
+- Every place where an east-west road crosses the stretch the train drives gets a level crossing:
+  two barriers, a post on each side of the road, and a red and white boom that lowers when a train
+  approaches and rises once it has passed. The road the rails end on gets none: the train turns
+  around half a train short of it and never reaches it.
 - Cars, trucks, cyclists and buses stop before the track while a barrier is down and drive on when
   it opens. A vehicle already on the crossing keeps going and clears it.
 

@@ -2,8 +2,13 @@ import * as THREE from "three";
 import type { SessionState } from "../server/types.ts";
 import { shortTokens } from "./sign-text.ts";
 
-// Anything hoverable puts itself in `mesh.userData.hover`.
-type Hoverable = { state: SessionState; gone: boolean };
+// What an HQ shows: it has no session of its own, so it hands over a summary
+// of the user it belongs to.
+export type HqHover = { user: string; agents: number; tokens: number };
+
+// Anything hoverable puts itself in `mesh.userData.hover`. A lot hands over
+// the session it draws; an HQ hands over the summary above.
+type Hoverable = { gone: boolean } & ({ state: SessionState } | { hq: HqHover });
 
 // Shows details for the hall or warehouse under the pointer.
 export function createTooltip(
@@ -68,19 +73,14 @@ export function createTooltip(
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
-    const { user, project, status, model, machineTokens } = hovered.state;
-    // A machine still on protocol 2 sends no total, and then shows no token line.
-    const tokens = machineTokens === undefined ? "" : `${shortTokens(machineTokens)} tokens`;
-    const key = [user, project, status, model, tokens].join("\n");
+    // Lines are text until they change: update runs every frame the pointer
+    // is on something, and building the divs to compare them throws away four
+    // or five DOM nodes a frame.
+    const lines = "hq" in hovered ? hqLines(hovered.hq) : sessionLines(hovered.state);
+    const key = lines.map(([, text]) => text).join("\n");
     if (key !== rendered) {
       rendered = key;
-      element.replaceChildren(
-        line("name", user),
-        line(status, status),
-        line("project", project),
-        ...(model ? [line("model", model)] : []), // no line until the transcript names a model
-        ...(tokens ? [line("tokens", tokens)] : []),
-      );
+      element.replaceChildren(...lines.map(([className, text]) => line(className, text)));
     }
 
     const x = Math.min(screen.x + 16, window.innerWidth - element.offsetWidth - 8);
@@ -90,6 +90,29 @@ export function createTooltip(
   }
 
   return { update };
+}
+
+type Line = [className: string, text: string];
+
+function sessionLines({ user, project, status, model, machineTokens }: SessionState): Line[] {
+  const lines: Line[] = [
+    ["name", user],
+    [status, status],
+    ["project", project],
+  ];
+  if (model) lines.push(["model", model]); // no line until the transcript names a model
+  // A machine still on protocol 2 sends no total, and then shows no token line.
+  if (machineTokens !== undefined) lines.push(["tokens", `${shortTokens(machineTokens)} tokens`]);
+  return lines;
+}
+
+function hqLines({ user, agents, tokens }: HqHover): Line[] {
+  return [
+    ["name", user],
+    ["hq", "head office"],
+    ["agents", `${agents} ${agents === 1 ? "agent" : "agents"}`],
+    ["tokens", `${shortTokens(tokens)} tokens`],
+  ];
 }
 
 function line(className: string, text: string) {

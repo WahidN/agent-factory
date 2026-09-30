@@ -187,6 +187,8 @@ body {
 #tooltip .idle {
   color: #a9b1bb;
 }
+#tooltip .agents,
+#tooltip .hq,
 #tooltip .model,
 #tooltip .project,
 #tooltip .tokens {
@@ -399,6 +401,10 @@ body[data-style="ink"] #tooltip::before {
   font-weight: 900;
   letter-spacing: 0.12em;
 }
+/* An HQ is not a lot, so the kicker says what is under the pointer. */
+body[data-style="ink"] #tooltip:has(.hq)::before {
+  content: "HQ SIGNAL";
+}
 body[data-style="ink"] #tooltip .name {
   overflow: hidden;
   margin-bottom: 7px;
@@ -427,13 +433,13 @@ body[data-style="ink"] #tooltip :is(.busy, .idle)::before {
   background: currentColor;
   transform: rotate(45deg);
 }
-body[data-style="ink"] #tooltip :is(.model, .project, .tokens) {
+body[data-style="ink"] #tooltip :is(.agents, .hq, .model, .project, .tokens) {
   overflow: hidden;
   color: var(--paper-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-body[data-style="ink"] #tooltip .project {
+body[data-style="ink"] #tooltip :is(.hq, .project) {
   margin-top: 7px;
   padding-top: 7px;
   border-top: 1px solid rgba(243, 238, 223, 0.25);

@@ -1,9 +1,11 @@
-// Extras a lot earns as its machine's season token total grows: one builder
-// per row of the ladder in milestone-ladder.ts, placed as in the design's
-// placement table so nothing overlaps the hall, machines, warehouse slots or
-// worker routes on any tier. Everything is baked into the lot's static mesh,
-// except the wind turbine and the blimp, which move and come back as `Animated`.
-// The parked cars of rows 2 to 4 are added by the lot itself through addParkedCars.
+// Extras earned as a machine's season token total grows: one builder per row
+// of the ladder in milestone-ladder.ts. Six rows stand in the yard of every
+// lot, placed so nothing overlaps the hall, machines, warehouse slots or
+// worker routes on any tier. The four rows too big for a yard stand on the
+// user's HQ instead (see hq.ts). Everything is baked into a static mesh,
+// except the wind turbine and the blimp, which move and come back as
+// `Animated`. The parked cars of rows 2 to 4 are added by the lot itself
+// through addParkedCars.
 
 import * as THREE from "three";
 import { addTruckParts, CARGO_MATERIAL, mergedGroup, YARD_Y } from "./machines.ts";
@@ -12,9 +14,15 @@ import type { StaticBuilder } from "./static-builder.ts";
 
 export type Animated = { group: THREE.Group; tick(dt: number): void };
 
-export type MilestoneContext = {
-  accent: THREE.Material; // the lot's accent material, fades with the hall when idle
-  hall: { x0: number; z0: number; x1: number; z1: number; top: number };
+// What a yard row is given: only the lot's accent material, which fades with
+// the hall when the session is idle.
+export type LotContext = { accent: THREE.Material };
+
+// What an HQ row is given: the user's tint, and the box of the tower, whose
+// height depends on how many rows that user has earned.
+export type HqContext = {
+  accent: THREE.Material;
+  tower: { x0: number; z0: number; x1: number; z1: number; top: number };
 };
 
 const BIKE_PAINTS = [MATERIALS.cab, MATERIALS.white, MATERIALS.darkSteel];
@@ -35,17 +43,18 @@ function bikeRack(b: StaticBuilder) {
   });
 }
 
-// 100M: a flagpole by the gate, flag in the accent colour pointing into the yard.
-function flagpole(b: StaticBuilder, ctx: MilestoneContext) {
+// 100M: a flagpole on the HQ forecourt, flag in the user's tint.
+function flagpole(b: StaticBuilder, ctx: HqContext): Animated[] {
   const [x, z] = [18.3, 13.5];
   b.cylinder(MATERIALS.concrete, [x, YARD_Y + 0.15, z], [0.45, 0.3, 0.45]);
   b.cylinder(MATERIALS.steel, [x, YARD_Y + 4.5, z], [0.08, 9, 0.08]);
   b.cylinder(MATERIALS.yellow, [x, YARD_Y + 9.1, z], [0.14, 0.2, 0.14]);
   b.box(ctx.accent, [x - 1.06, YARD_Y + 8.2, z], [2.0, 1.2, 0.06]);
+  return [];
 }
 
 // 250M: a coffee cart and a picnic table with a parasol along the walkway.
-function coffeeCorner(b: StaticBuilder, ctx: MilestoneContext) {
+function coffeeCorner(b: StaticBuilder, ctx: LotContext) {
   const y = YARD_Y;
   b.box(MATERIALS.white, [11, y + 0.95, 7.3], [2.6, 1.1, 1.6]);
   b.box(MATERIALS.wood, [11, y + 1.52, 7.3], [2.7, 0.06, 1.7]); // counter top
@@ -88,16 +97,14 @@ function chargingBay(b: StaticBuilder) {
   }
 }
 
-// 1B: a helipad with a helicopter on the hall roof, in the back left corner.
-// That corner is free on every tier: the vents, skylights and AC boxes are
-// placed from the same corner and a smaller roof only loses the far ones. The
-// nose points to the back, so the rotor stays clear of the roof letters at the
-// front. Whatever part of the painted circle runs under the corner vent or the
-// skylight edge is hidden inside them.
-function helipad(b: StaticBuilder, ctx: MilestoneContext) {
-  const { hall } = ctx;
-  const roof = hall.top + 0.3; // top of the roof slab, where the vents stand
-  const [cx, cz] = [hall.x0 + 3.8, hall.z0 + 2.1];
+// 1B: a helipad with a helicopter in the middle of the HQ roof. The roof
+// carries nothing else, so the pad is centered and the rotor keeps its 6 units
+// of clearance in both directions, whatever the tower grew to.
+function helipad(b: StaticBuilder, ctx: HqContext): Animated[] {
+  const { tower } = ctx;
+  const roof = tower.top + 0.3; // top of the roof slab
+  const cx = (tower.x0 + tower.x1) / 2;
+  const cz = (tower.z0 + tower.z1) / 2;
   b.cylinder(MATERIALS.white, [cx, roof + 0.02, cz], [2.0, 0.04, 2.0]);
   b.cylinder(MATERIALS.darkSteel, [cx, roof + 0.045, cz], [1.75, 0.03, 1.75]);
   for (const x of [cx - 0.55, cx + 0.55]) b.box(MATERIALS.white, [x, roof + 0.07, cz], [0.28, 0.02, 1.6]);
@@ -118,11 +125,12 @@ function helipad(b: StaticBuilder, ctx: MilestoneContext) {
   b.cylinder(MATERIALS.darkSteel, [cx, g + 2.34, cz], [0.22, 0.14, 0.22]); // hub
   b.box(MATERIALS.darkSteel, [cx, g + 2.4, cz], [6.0, 0.05, 0.28]);
   b.box(MATERIALS.darkSteel, [cx, g + 2.4, cz], [0.28, 0.05, 6.0]);
+  return [];
 }
 
-// 2.5B: a wind turbine at the front left fence. The rotor faces +z, so the
-// blades sweep above the fence and the road, and turns whether busy or idle.
-function windTurbine(b: StaticBuilder): Animated {
+// 2.5B: a wind turbine at the front left of the HQ plot. The rotor faces +z,
+// so the blades sweep above the road, and turns whether busy or idle.
+function windTurbine(b: StaticBuilder): Animated[] {
   const [x, z] = [-18.3, 5.5];
   const hubY = YARD_Y + 12.3;
   b.cylinder(MATERIALS.concrete, [x, YARD_Y + 0.2, z], [0.8, 0.4, 0.8]);
@@ -136,21 +144,26 @@ function windTurbine(b: StaticBuilder): Animated {
     }
   });
   rotor.position.set(x, hubY, z + 1.05);
-  return {
-    group: rotor,
-    tick: (dt) => {
-      rotor.rotation.z -= dt * 0.9;
+  return [
+    {
+      group: rotor,
+      tick: (dt) => {
+        rotor.rotation.z -= dt * 0.9;
+      },
     },
-  };
+  ];
 }
 
-// 5B: a blimp in the accent colour tethered to the roof, bobbing 0.6 over 6 seconds.
-const BLIMP_Y = 30;
+// 5B: a blimp in the user's tint tethered to the HQ roof, bobbing 0.6 over 6
+// seconds. Its height is measured from the roof, not from the ground: the
+// tower grows a floor per row, so a fixed altitude would end up inside it.
+const BLIMP_RISE = 12;
 const hullGeometry = new THREE.SphereGeometry(1, 24, 14);
 
-function blimp(_b: StaticBuilder, ctx: MilestoneContext): Animated {
-  const { hall } = ctx;
-  const tether = BLIMP_Y - hall.top + 0.7; // long enough to stay in the roof at the top of the bob
+function blimp(_b: StaticBuilder, ctx: HqContext): Animated[] {
+  const { tower } = ctx;
+  const y = tower.top + BLIMP_RISE;
+  const tether = BLIMP_RISE + 0.7; // long enough to stay in the roof at the top of the bob
   const group = mergedGroup((g) => {
     g.add(hullGeometry, ctx.accent, [0, 0, 0], [5, 1.75, 1.75]);
     for (const [sy, sz] of [
@@ -164,40 +177,56 @@ function blimp(_b: StaticBuilder, ctx: MilestoneContext): Animated {
     g.box(MATERIALS.darkSteel, [0.4, -1.95, 0], [2.2, 0.55, 0.9]); // gondola
     g.cylinder(MATERIALS.darkSteel, [0.4, -2.2 - tether / 2, 0], [0.04, tether, 0.04]);
   });
-  group.position.set((hall.x0 + hall.x1) / 2, BLIMP_Y, (hall.z0 + hall.z1) / 2);
+  // Moored at the back left corner of the roof, so its tether misses the helipad.
+  group.position.set(tower.x0 + 2.5, y, tower.z0 + 2.5);
   let t = 0;
-  return {
-    group,
-    tick: (dt) => {
-      t += dt;
-      group.position.y = BLIMP_Y + Math.sin((t * 2 * Math.PI) / 6) * 0.6;
+  return [
+    {
+      group,
+      tick: (dt) => {
+        t += dt;
+        group.position.y = y + Math.sin((t * 2 * Math.PI) / 6) * 0.6;
+      },
     },
-  };
+  ];
 }
 
 function noExtra() {}
 
-// One entry per row of MILESTONES. Rows 2 and 3 only add a parked car.
-const ROWS = [
-  bikeRack,
-  noExtra,
-  noExtra,
-  flagpole,
-  coffeeCorner,
-  parkedTruck,
-  chargingBay,
-  helipad,
-  windTurbine,
-  blimp,
+// One entry per row of MILESTONES, in the same order, tagged with where its
+// extra stands. Keeping both kinds in one table is what makes a row that
+// lands in neither place, or in both, visible at a glance. Rows 2, 3 and 4
+// add a parked car that the lot adds itself through addParkedCars, so row 4
+// only builds its flagpole here.
+type Row =
+  | { at: "lot"; build: (b: StaticBuilder, ctx: LotContext) => void }
+  | { at: "hq"; build: (b: StaticBuilder, ctx: HqContext) => Animated[] }; // what the row adds that moves
+
+const ROWS: Row[] = [
+  { at: "lot", build: bikeRack },
+  { at: "lot", build: noExtra },
+  { at: "lot", build: noExtra },
+  { at: "hq", build: flagpole },
+  { at: "lot", build: coffeeCorner },
+  { at: "lot", build: parkedTruck },
+  { at: "lot", build: chargingBay },
+  { at: "hq", build: helipad },
+  { at: "hq", build: windTurbine },
+  { at: "hq", build: blimp },
 ];
 
-// Adds the first `count` rows to the builder. Moving extras come back to be
-// added to the structure and ticked.
-export function buildMilestones(builder: StaticBuilder, count: number, ctx: MilestoneContext): Animated[] {
+// Adds the first `count` rows that stand in a yard. None of them move, so a
+// lot has nothing to tick.
+export function buildLotMilestones(builder: StaticBuilder, count: number, ctx: LotContext) {
+  for (const row of ROWS.slice(0, count)) if (row.at === "lot") row.build(builder, ctx);
+}
+
+// Adds the first `count` rows that stand on the HQ. The turbine and the blimp
+// come back to be added to the structure and ticked.
+export function buildHqMilestones(builder: StaticBuilder, count: number, ctx: HqContext): Animated[] {
   const animated: Animated[] = [];
   for (const row of ROWS.slice(0, count)) {
-    const extra = row(builder, ctx);
-    if (extra !== undefined) animated.push(extra);
+    if (row.at === "hq") animated.push(...row.build(builder, ctx));
   }
   return animated;
 }

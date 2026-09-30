@@ -10,7 +10,7 @@ import { factoryStyleFor, factoryStyleIndex, resolveRoofMasses } from "./factory
 import { LightBox } from "./light-box.ts";
 import { CoolingTower, Forklift, Searchlight, Stacks, type StacksOptions, YARD_Y } from "./machines.ts";
 import { milestoneIndex, parkedCarCount } from "./milestone-ladder.ts";
-import { type Animated, buildMilestones } from "./milestones.ts";
+import { buildLotMilestones } from "./milestones.ts";
 import { type ModelTier, tierFor } from "./model-tier.ts";
 import {
   accentFor,
@@ -25,6 +25,7 @@ import {
 import { YARD_HALF } from "./park.ts";
 import { wallTintIndexFor } from "./park-layout.ts";
 import { RoofSign } from "./roof-sign.ts";
+import { modelLabel } from "./sign-text.ts";
 import { Sign } from "./sign.ts";
 import { StaticBuilder } from "./static-builder.ts";
 import { addParkedCars } from "./traffic.ts";
@@ -209,10 +210,10 @@ export class Lot {
   private roofSign!: RoofSign;
   private builtModel!: string;
   private hallPickables: THREE.Mesh[] = [];
-  // Extras for the machine's token total. Rebuilt with the structure when the
-  // total crosses a ladder row; the moving ones are ticked.
+  // Which row of the ladder the yard was built for. The structure is rebuilt
+  // when the total crosses a row. The four rows that stand on the user's HQ
+  // are not built here (see milestones.ts).
   private builtMilestone = 0;
-  private extras: Animated[] = [];
   private busy = new Activity();
 
   private accent: THREE.Color;
@@ -372,7 +373,6 @@ export class Lot {
     this.machines.searchlight.tick(dt, busy);
     this.machines.cooling.tick(dt, busy, busy);
     this.workers.tick(dt, this.workerBusyFlags());
-    for (const extra of this.extras) extra.tick(dt);
 
     for (const slot of [...this.warehouses.values(), ...this.leavingWarehouses]) {
       slot.warehouse.tick(dt, nowMs);
@@ -413,10 +413,7 @@ export class Lot {
 
     this.builtMilestone = milestoneIndex(this.state.machineTokens);
     addParkedCars(builder, this.state.id, parkedCarCount(this.builtMilestone));
-    this.extras = buildMilestones(builder, this.builtMilestone, {
-      accent: this.accentMaterial,
-      hall: hallShape(this.tier),
-    });
+    buildLotMilestones(builder, this.builtMilestone, { accent: this.accentMaterial });
 
     const statics = builder.build();
     const hallMaterials: THREE.Material[] = [this.wallMaterial, MATERIALS.roof, this.accentMaterial];
@@ -427,14 +424,7 @@ export class Lot {
 
     this.machines = { stacks, forklift, searchlight, cooling };
     this.structure = new THREE.Group();
-    this.structure.add(
-      statics,
-      stacks.group,
-      forklift.group,
-      searchlight.group,
-      cooling.group,
-      ...this.extras.map((e) => e.group),
-    );
+    this.structure.add(statics, stacks.group, forklift.group, searchlight.group, cooling.group);
 
     // Yard sign, standing along the front fence facing +z. It spans x 3 to 19
     // on z 18.8 (depth 0.12): the wall sits at z 20 (0.3 thick, inner face
@@ -467,7 +457,7 @@ export class Lot {
     // reaches back to HALL_Z1 - 0.4) and the front row of vents (whose faces
     // sit at HALL_Z1 - 1.52). The letters are 0.5 deep, so only this narrow
     // gap keeps them clear of both.
-    this.roofSign = new RoofSign(this.state.model, HALL_X1 - size.hall.x0);
+    this.roofSign = new RoofSign(modelLabel(this.state.model), HALL_X1 - size.hall.x0);
     this.roofSign.group.position.set((size.hall.x0 + HALL_X1) / 2, hallTop(size) + 0.3, HALL_Z1 - 1);
     this.roofSign.group.rotation.y = 0;
     this.structure.add(this.roofSign.group);

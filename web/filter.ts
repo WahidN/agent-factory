@@ -20,6 +20,12 @@ export function matchesFilter(session: Pick<SessionState, "user" | "project" | "
   return true;
 }
 
+// Whether the filter shows this user at all. An HQ belongs to a user and not
+// to a session, so it answers to the user part of the filter alone.
+export function matchesUserFilter(user: string, filter: Filter): boolean {
+  return filter.user === null || filter.user === user;
+}
+
 // Distinct users and projects across the current sessions, sorted for a
 // stable dropdown order.
 export function optionsFrom(sessions: readonly Pick<SessionState, "user" | "project">[]): {

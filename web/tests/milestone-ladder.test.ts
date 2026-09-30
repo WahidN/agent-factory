@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ladderRows, MILESTONE_LABELS, MILESTONES, milestoneIndex, parkedCarCount } from "../milestone-ladder.ts";
+import {
+  hqFloors,
+  ladderRows,
+  MILESTONE_LABELS,
+  MILESTONES,
+  milestoneIndex,
+  parkedCarCount,
+} from "../milestone-ladder.ts";
 
 describe("milestoneIndex", () => {
   it("is 0 below the first row", () => {
@@ -21,6 +28,26 @@ describe("milestoneIndex", () => {
 
   it("has the agreed ladder", () => {
     expect(MILESTONES).toEqual([10e6, 25e6, 50e6, 100e6, 250e6, 500e6, 750e6, 1e9, 2.5e9, 5e9]);
+  });
+});
+
+describe("hqFloors", () => {
+  it("is one floor while nothing is earned", () => {
+    expect(hqFloors(0)).toBe(1);
+    expect(hqFloors(undefined)).toBe(1);
+    expect(hqFloors(9_999_999)).toBe(1);
+  });
+
+  it("adds a floor for every row that is earned", () => {
+    expect(hqFloors(10e6)).toBe(2);
+    expect(hqFloors(99e6)).toBe(4);
+    expect(hqFloors(101e6)).toBe(5);
+    expect(hqFloors(600e6)).toBe(7);
+  });
+
+  it("tops out at eleven floors", () => {
+    expect(hqFloors(5e9)).toBe(11);
+    expect(hqFloors(1e12)).toBe(11);
   });
 });
 

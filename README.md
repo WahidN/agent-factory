@@ -130,22 +130,31 @@ Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, proj
 
 ### Token milestones
 
-Het erf begint leeg: alleen belijning, geen voertuigen. Het vult zich naarmate het tokentotaal van je Mac groeit, geteld vanaf het seizoensbegin op 16 september 2026. Elke rij tot en met je totaal staat op elk kavel van die machine. De gele knop rechtsboven opent de hele ladder, met per rij wat er nog te gaan is.
+Het erf begint leeg: alleen belijning, geen voertuigen. Het vult zich naarmate het tokentotaal van je Mac groeit, geteld vanaf het seizoensbegin op 16 september 2026. Elke rij tot en met je totaal staat op elk kavel van die machine. De vier grootste rijen staan op je HQ, niet op het erf. De gele knop rechtsboven opent de hele ladder, met per rij wat er nog te gaan is.
 
-![Een kavel op 5B tokens: fietsen, 3 auto's, vlaggenmast, koffiekar, vrachtwagen, sportauto met laadpalen, helikopter op een helipad, windmolen en een zeppelin boven de hal](docs/token-milestones.png)
+![Een gebruiker op 5B tokens: drie kavels met een vol erf, en daarachter het HQ met zijn naam op het dak, een helikopter op het dak, een vlaggenmast, een windmolen en een zeppelin erboven](docs/token-milestones.png)
 
-| Tokens | Extra op het erf |
-| --- | --- |
-| 10M | fietsenrek met 3 fietsen bij de personeelsdeur |
-| 25M | 1e geparkeerde auto |
-| 50M | 2e geparkeerde auto |
-| 100M | 3e geparkeerde auto, en een vlaggenmast met een vlag in de accentkleur bij de poort |
-| 250M | koffiekar en een picknicktafel langs het looppad |
-| 500M | de vrachtwagen bij het laaddok |
-| 750M | 2 laadpalen en een sportauto in de linkervoorhoek |
-| 1B | helipad met een helikopter op het hallendak |
-| 2.5B | windmolen aan het linkerhek, wieken draaien |
-| 5B | zeppelin in de accentkleur, getuid boven de hal |
+| Tokens | Extra | Waar |
+| --- | --- | --- |
+| 10M | fietsenrek met 3 fietsen bij de personeelsdeur | erf |
+| 25M | 1e geparkeerde auto | erf |
+| 50M | 2e geparkeerde auto | erf |
+| 100M | 3e geparkeerde auto | erf |
+| 100M | vlaggenmast met een vlag in je tint | HQ |
+| 250M | koffiekar en een picknicktafel langs het looppad | erf |
+| 500M | de vrachtwagen bij het laaddok | erf |
+| 750M | 2 laadpalen en een sportauto in de linkervoorhoek | erf |
+| 1B | helipad met een helikopter | HQ-dak |
+| 2.5B | windmolen, wieken draaien | HQ |
+| 5B | zeppelin in je tint, getuid boven de toren | HQ |
+
+### Je HQ
+
+Draait er een sessie van je, dan staat er een HQ voor je kavels. Dat is een kantoortoren in dezelfde tint als je hallen, met je naam in letters op het dak. De toren groeit een verdieping per rij van de ladder die je gehaald hebt: één verdieping onder de 10M, elf op 5B. De vlaggenmast, de helikopter, de windmolen en de zeppelin staan daar. Stopt je laatste sessie, dan zakt het HQ weg en komt de plek weer vrij voor de stad.
+
+Ga je met de muis over de toren, dan zie je van wie hij is, hoeveel sessies die gebruiker draait en het tokentotaal. Het plein en de grasvelden eromheen doen niets.
+
+Draai je twee Macs onder dezelfde naam, dan krijg je één HQ, op het hoogste van de twee totalen. Dat is dezelfde regel als in de ladder.
 
 Wat telt: de reporter telt van elk assistant-bericht op of na 16 september 2026 00:00 UTC de input, output, cache write en cache read bij elkaar op, uit elk transcript onder `~/.claude/projects/`, subagents en afgeronde sessies inbegrepen, en telt elk bericht één keer. Oudere berichten tellen niet mee, dus elke machine begint op dezelfde dag op 0. Het tellen zelf is hetzelfde als PokeTokenBar en ccusage, alleen vanaf die datum. Cache reads zijn het grootste deel, en daarom loopt de ladder in de honderden miljoenen tot miljarden. Een nieuw seizoen is één datum in `server/usage-ledger.ts`.
 

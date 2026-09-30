@@ -3,24 +3,31 @@
 
 export const MILESTONES: readonly number[] = [10e6, 25e6, 50e6, 100e6, 250e6, 500e6, 750e6, 1e9, 2.5e9, 5e9];
 
-// What each row adds, for the overview dialog. Same order as MILESTONES.
+// What each row adds, for the overview dialog. Same order as MILESTONES. The
+// four rows too big for a yard say where they stand instead: on the HQ.
 export const MILESTONE_LABELS: readonly string[] = [
   "bike rack with 3 bikes",
   "1st parked car",
   "2nd parked car",
-  "3rd parked car and a flagpole",
+  "3rd parked car, flagpole at the HQ",
   "coffee cart and picnic table",
   "truck at the dock bay",
   "EV chargers and a sports car",
-  "helipad with a helicopter",
-  "wind turbine",
-  "blimp above the hall",
+  "helipad with a helicopter at the HQ",
+  "wind turbine at the HQ",
+  "blimp above the HQ",
 ];
 
 // How many rows of the ladder a total has reached, 0 to 10. A machine still on
 // protocol 2 sends no total, and then nothing is unlocked.
 export function milestoneIndex(tokens: number | undefined): number {
   return MILESTONES.filter((threshold) => (tokens ?? 0) >= threshold).length;
+}
+
+// How many floors a user's HQ stands: a ground floor, and one more for every
+// row the total has earned. 1 below 10M, 11 at 5B.
+export function hqFloors(tokens: number | undefined): number {
+  return milestoneIndex(tokens) + 1;
 }
 
 // Rows 2, 3 and 4 each add one parked car.

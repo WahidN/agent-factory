@@ -8,11 +8,13 @@ import {
   EMPTY_FILTER,
   jumpTarget,
   matchesFilter,
+  matchesUserFilter,
   optionsFrom,
   pruneFilter,
   type Filter,
   type FilterPanel,
 } from "./filter.ts";
+import { Hq } from "./hq.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
 import { createLadderDialog, type UserTotal } from "./ladder-dialog.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
@@ -84,14 +86,22 @@ const places = new Map<string, { x: number; z: number }>();
 // the shared instanced meshes, so 150 lots cost the same per frame as 20.
 const lots = new Map<string, Lot>();
 const leaving = new Set<Lot>();
+// One head office per user with a session, on the plot in front of that
+// user's lots. There are a handful of users, so every HQ is built in full and
+// none of them take part in the detail cap below.
+const hqs = new Map<string, Hq>();
+const leavingHqs = new Set<Hq>();
 // Rebuilt only when the detailed set changes, not once per frame: the
 // tooltip only needs a fresh list right before it raycasts against it.
 let pickablesCache: THREE.Object3D[] | null = null;
 function pickables(): THREE.Object3D[] {
   if (!pickablesCache) {
-    pickablesCache = [...lots.values()]
-      .filter((lot) => lot.group.visible) // a filter-hidden lot is not under the pointer
-      .flatMap((lot) => lot.pickables());
+    pickablesCache = [
+      ...[...lots.values()]
+        .filter((lot) => lot.group.visible) // a filter-hidden lot is not under the pointer
+        .flatMap((lot) => lot.pickables()),
+      ...[...hqs.values()].filter((hq) => hq.group.visible).flatMap((hq) => hq.pickables()),
+    ];
   }
   return pickablesCache;
 }
@@ -180,6 +190,10 @@ function handle(message: ParkMessage) {
   // The ladder reads from `sessions`, not from `lots`: past the detail cap a
   // session has no Lot, and its user would drop out of the dialog.
   ladder.setTotals(userTotals(sessions.values()));
+  // A total that grew without the session set changing repacks nothing, so
+  // refocus() below does not run and syncPlaces() never gets to this. The
+  // HQs still have to hear about it: a crossed row is a floor.
+  syncHqs();
 
   if (fitNow)
     refocus(true); // zoom to fit once, after the first snapshot's lots all exist
@@ -235,6 +249,7 @@ function syncPlaces() {
     lot?.relocate(place.x, place.z);
     lot?.setPlot(index, rankCount);
   }
+  syncHqs(); // a repack moves the HQ plots too
 }
 
 function refocus(fit = false) {
@@ -408,6 +423,54 @@ function userTotals(sessions: Iterable<SessionState>): UserTotal[] {
   return [...totals].map(([user, tokens]) => ({ user, tokens })).sort((a, b) => a.user.localeCompare(b.user));
 }
 
+// ---------- Head offices ----------
+
+// One HQ per user with a session, standing on the plot the allocator keeps in
+// front of that user's lots. Where it stands, how tall it is and whether the
+// filter shows it are all settled here, so an HQ is never half configured:
+// nothing else in the scene builds or moves one.
+function syncHqs() {
+  const totals = new Map(userTotals(sessions.values()).map(({ user, tokens }) => [user, tokens]));
+  // The tooltip names how many sessions the user is running, whatever the
+  // filter shows: the HQ belongs to the user, not to the current view.
+  const agents = new Map<string, number>();
+  for (const session of sessions.values()) agents.set(session.user, (agents.get(session.user) ?? 0) + 1);
+
+  for (const [user, tokens] of totals) {
+    const index = plots.hqIndexOf(user);
+    if (index === undefined) continue;
+    const running = agents.get(user) ?? 0;
+    let hq = hqs.get(user);
+    if (!hq) {
+      hq = new Hq(user, tokens, running);
+      hqs.set(user, hq);
+      view.scene.add(hq.group);
+      view.invalidateShadows();
+      pickablesCache = null;
+    }
+    const place = plotPosition(index);
+    hq.relocate(place.x, place.z);
+    hq.update(tokens, running);
+    hq.group.visible = matchesUserFilter(user, filter);
+  }
+
+  // The user's last session ended. The HQ leaves the map right away, so a
+  // user who comes back inside the sink gets a fresh one and this callback
+  // only ever touches the HQ it captured.
+  for (const [user, hq] of [...hqs]) {
+    if (totals.has(user)) continue;
+    hqs.delete(user);
+    leavingHqs.add(hq);
+    pickablesCache = null; // a leaving HQ stops answering the pointer right away
+    hq.remove(() => {
+      leavingHqs.delete(hq);
+      view.scene.remove(hq.group);
+      hq.dispose();
+      view.invalidateShadows();
+    });
+  }
+}
+
 // ---------- Filter panel ----------
 
 let filter: Filter = EMPTY_FILTER;
@@ -420,6 +483,13 @@ function applyDetailVisibility() {
     const visible = matchesFilter(lot.state, filter);
     if (lot.group.visible !== visible) {
       lot.group.visible = visible;
+      anyFlipped = true;
+    }
+  }
+  for (const [user, hq] of hqs) {
+    const visible = matchesUserFilter(user, filter);
+    if (hq.group.visible !== visible) {
+      hq.group.visible = visible;
       anyFlipped = true;
     }
   }
@@ -513,6 +583,11 @@ view.onFrame((dt, now) => {
     lot.tick(dt, now);
     if (lot.consumeShadowDirty()) view.invalidateShadows();
     if (lot.consumePickablesDirty()) pickablesCache = null;
+  }
+  for (const hq of [...hqs.values(), ...leavingHqs]) {
+    hq.tick(dt);
+    if (hq.consumeShadowDirty()) view.invalidateShadows();
+    if (hq.consumePickablesDirty()) pickablesCache = null;
   }
   far.tick(dt, now);
   if (now - decidedAtMs >= REDISTRIBUTE_INTERVAL_MS && shouldRedistribute(decidedAt, groundCenter())) redistribute();

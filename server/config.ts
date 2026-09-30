@@ -86,7 +86,7 @@ function requireHubUrl(raw: string | undefined): string {
   try {
     url = new URL(value);
   } catch {
-    throw new ConfigError(`HUB must be a URL like ws://agentfactory.local:${DEFAULT_PORT}, got "${value}".`);
+    throw new ConfigError(`HUB must be a URL like ws://raspberrypi.local:${DEFAULT_PORT}, got "${value}".`);
   }
   if (url.protocol !== "ws:" && url.protocol !== "wss:") {
     throw new ConfigError(`HUB must start with ws:// or wss://, got "${value}".`);

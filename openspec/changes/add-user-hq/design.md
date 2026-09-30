@@ -20,7 +20,6 @@ See proposal.md for why. The requirements are in `specs/factory-scene/spec.md`.
 **Non-Goals:**
 - A far level for the HQ. There are a handful of users, not 150, so every HQ is built in full.
 - Workers, parked cars or traffic of its own.
-- A tooltip. City landmarks are not hoverable either, and the ladder dialog already names every user's total.
 
 ## Decisions
 

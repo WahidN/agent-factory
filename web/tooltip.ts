@@ -73,11 +73,14 @@ export function createTooltip(
     element.hidden = !hovered;
     if (!hovered || !screen) return;
 
+    // Lines are text until they change: update runs every frame the pointer
+    // is on something, and building the divs to compare them throws away four
+    // or five DOM nodes a frame.
     const lines = "hq" in hovered ? hqLines(hovered.hq) : sessionLines(hovered.state);
-    const key = lines.map((element) => element.textContent).join("\n");
+    const key = lines.map(([, text]) => text).join("\n");
     if (key !== rendered) {
       rendered = key;
-      element.replaceChildren(...lines);
+      element.replaceChildren(...lines.map(([className, text]) => line(className, text)));
     }
 
     const x = Math.min(screen.x + 16, window.innerWidth - element.offsetWidth - 8);
@@ -89,24 +92,26 @@ export function createTooltip(
   return { update };
 }
 
-function sessionLines({ user, project, status, model, machineTokens }: SessionState) {
-  // A machine still on protocol 2 sends no total, and then shows no token line.
-  const tokens = machineTokens === undefined ? "" : `${shortTokens(machineTokens)} tokens`;
-  return [
-    line("name", user),
-    line(status, status),
-    line("project", project),
-    ...(model ? [line("model", model)] : []), // no line until the transcript names a model
-    ...(tokens ? [line("tokens", tokens)] : []),
+type Line = [className: string, text: string];
+
+function sessionLines({ user, project, status, model, machineTokens }: SessionState): Line[] {
+  const lines: Line[] = [
+    ["name", user],
+    [status, status],
+    ["project", project],
   ];
+  if (model) lines.push(["model", model]); // no line until the transcript names a model
+  // A machine still on protocol 2 sends no total, and then shows no token line.
+  if (machineTokens !== undefined) lines.push(["tokens", `${shortTokens(machineTokens)} tokens`]);
+  return lines;
 }
 
-function hqLines({ user, agents, tokens }: HqHover) {
+function hqLines({ user, agents, tokens }: HqHover): Line[] {
   return [
-    line("name", user),
-    line("hq", "head office"),
-    line("agents", `${agents} ${agents === 1 ? "agent" : "agents"}`),
-    line("tokens", `${shortTokens(tokens)} tokens`),
+    ["name", user],
+    ["hq", "head office"],
+    ["agents", `${agents} ${agents === 1 ? "agent" : "agents"}`],
+    ["tokens", `${shortTokens(tokens)} tokens`],
   ];
 }
 

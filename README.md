@@ -152,7 +152,7 @@ Het erf begint leeg: alleen belijning, geen voertuigen. Het vult zich naarmate h
 
 Draait er een sessie van je, dan staat er een HQ voor je kavels. Dat is een kantoortoren in dezelfde tint als je hallen, met je naam in letters op het dak. De toren groeit een verdieping per rij van de ladder die je gehaald hebt: één verdieping onder de 10M, elf op 5B. De vlaggenmast, de helikopter, de windmolen en de zeppelin staan daar. Stopt je laatste sessie, dan zakt het HQ weg en komt de plek weer vrij voor de stad.
 
-Ga je met de muis over de toren, dan zie je van wie hij is, hoeveel sessies die gebruiker draait en zijn tokentotaal. Het plein en de grasvelden eromheen doen niets.
+Ga je met de muis over de toren, dan zie je van wie hij is, hoeveel sessies die gebruiker draait en het tokentotaal. Het plein en de grasvelden eromheen doen niets.
 
 Draai je twee Macs onder dezelfde naam, dan krijg je één HQ, op het hoogste van de twee totalen. Dat is dezelfde regel als in de ladder.
 

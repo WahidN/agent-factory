@@ -53,19 +53,38 @@ export function railSafeX(x: number): number {
   return RAIL_X + (distance < 0 ? -RAIL_PEDESTRIAN_CLEARANCE : RAIL_PEDESTRIAN_CLEARANCE);
 }
 
-// Every east-west road on a row boundary crosses the track on the level, so
-// the bed and fence stop for the road width there. Only the rails run through.
-function bedBetweenCrossings({ from, to }: RailSegment): RailSegment[] {
-  const pieces: RailSegment[] = [];
-  let start = from;
+// The rows whose east-west road crosses this stretch of track on the level.
+// The road on row boundary `row` runs at z = (row - 0.5) * PLOT_SIZE. The water
+// edge has no road there, the bridge carries the track over it.
+function crossingRowsIn({ from, to }: RailSegment): number[] {
+  const rows: number[] = [];
   for (let row = Math.floor(from / PLOT_SIZE); row <= Math.ceil(to / PLOT_SIZE) + 1; row++) {
     if (isWaterEdge(row)) continue;
     const roadZ = (row - 0.5) * PLOT_SIZE;
-    if (roadZ + ROAD_WIDTH / 2 <= start || roadZ - ROAD_WIDTH / 2 >= to) continue;
-    pieces.push({ from: start, to: roadZ - ROAD_WIDTH / 2 });
-    start = roadZ + ROAD_WIDTH / 2;
+    if (roadZ + ROAD_WIDTH / 2 <= from || roadZ - ROAD_WIDTH / 2 >= to) continue;
+    rows.push(row);
   }
-  pieces.push({ from: start, to });
+  return rows;
+}
+
+/** Every level crossing on the track, as the row of the road that crosses it. */
+export function levelCrossingRows(cells: readonly Cell[]): number[] {
+  return railSegmentsForCells(cells).flatMap(crossingRowsIn);
+}
+
+/** The z of the road on a row boundary, so the barriers land in the gap. */
+export const crossingZ = (row: number): number => (row - 0.5) * PLOT_SIZE;
+
+// The bed and fence stop for the road width at every crossing. Only the rails
+// run through.
+function bedBetweenCrossings(segment: RailSegment): RailSegment[] {
+  const pieces: RailSegment[] = [];
+  let start = segment.from;
+  for (const row of crossingRowsIn(segment)) {
+    pieces.push({ from: start, to: crossingZ(row) - ROAD_WIDTH / 2 });
+    start = crossingZ(row) + ROAD_WIDTH / 2;
+  }
+  pieces.push({ from: start, to: segment.to });
   return pieces.filter((piece) => piece.to - piece.from > 0.1);
 }
 

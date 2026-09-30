@@ -7,7 +7,9 @@ import { DECALS, standard } from "./palette.ts";
 import { MAX_MOVING_CARS } from "./park-layout.ts";
 import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
 import {
+  isFinished,
   pickNext,
+  railCrossingLanes,
   roadGraph,
   spawnVehicle,
   stepVehicles,
@@ -105,7 +107,18 @@ const TRUCK_LENGTH = 12;
 // What one lot sends onto the roads. `index` is its plot.
 export type TrafficSource = { id: string; index: number; cars: number; truck: boolean };
 
-type Traveler = { key: string; truck: boolean; color: string; presence: number; vehicle: Vehicle };
+const NO_CROSSINGS: ReadonlySet<number> = new Set();
+
+// `retiring` is set once the vehicle has run out of road. It then fades out
+// whatever its lot wants, and the lot fills the slot again after it is gone.
+type Traveler = {
+  key: string;
+  truck: boolean;
+  color: string;
+  presence: number;
+  retiring: boolean;
+  vehicle: Vehicle;
+};
 
 // Every lot's cars and every busy lot's truck, driving all park roads. They appear on the
 // roads around their own lot, then wander. Three instanced meshes draw them
@@ -114,6 +127,8 @@ export class ParkTraffic {
   readonly group = new THREE.Group();
   private roads: Roads = roadGraph([]);
   private travelers: Traveler[] = [];
+  private railLanes = new Map<string, number>(); // lane key -> level crossing row
+  private blocked = new Set<string>();
   private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_VEHICLES);
   private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_VEHICLES);
   private trucks = new THREE.InstancedMesh(truckGeometry, BAKED_MATERIAL, MAX_VEHICLES);
@@ -139,20 +154,28 @@ export class ParkTraffic {
   // Call when the used cells change. Vehicles on roads that are gone disappear.
   setRoads(indexes: number[]) {
     this.roads = roadGraph(indexes);
+    this.railLanes = railCrossingLanes(this.roads);
     this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
     for (const t of this.travelers) {
-      if (!this.roads.lanes.has(t.vehicle.next))
+      // A null next was a dead end under the old graph, and the new one may
+      // run on from here. One that already stopped there keeps it and fades.
+      if (t.retiring || isFinished(t.vehicle)) continue;
+      if (t.vehicle.next === null || !this.roads.lanes.has(t.vehicle.next))
         t.vehicle = { ...t.vehicle, next: pickNext(this.roads, t.vehicle.lane, Math.random) };
     }
   }
 
-  tick(dt: number, sources: TrafficSource[]) {
+  // `closedCrossings` holds the rows whose barriers are down.
+  tick(dt: number, sources: TrafficSource[], closedCrossings: ReadonlySet<number> = NO_CROSSINGS) {
     this.updateTravelers(dt, sources);
+    this.blocked.clear();
+    for (const [key, row] of this.railLanes) if (closedCrossings.has(row)) this.blocked.add(key);
     const moved = stepVehicles(
       this.roads,
       this.travelers.map((t) => t.vehicle),
       dt,
       Math.random,
+      this.blocked,
     );
     this.travelers.forEach((t, i) => {
       t.vehicle = moved[i];
@@ -172,7 +195,9 @@ export class ParkTraffic {
     }
     const step = dt / 0.5;
     for (const t of this.travelers) {
-      t.presence = wanted.has(t.key) ? Math.min(1, t.presence + step) : t.presence - step;
+      t.retiring ||= isFinished(t.vehicle);
+      const keep = wanted.has(t.key) && !t.retiring;
+      t.presence = keep ? Math.min(1, t.presence + step) : t.presence - step;
     }
     this.travelers = this.travelers.filter((t) => t.presence > 0);
   }
@@ -183,7 +208,7 @@ export class ParkTraffic {
     const speed = truck ? 7 : 8 + Math.random() * 3;
     const vehicles = this.travelers.map((t) => t.vehicle);
     const vehicle = spawnVehicle(this.roads, vehicles, index, speed, truck ? TRUCK_LENGTH : CAR_LENGTH, Math.random);
-    if (vehicle) this.travelers.push({ key, truck, color, presence: 0, vehicle });
+    if (vehicle) this.travelers.push({ key, truck, color, presence: 0, retiring: false, vehicle });
   }
 
   private draw() {

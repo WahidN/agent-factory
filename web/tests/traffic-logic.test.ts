@@ -4,13 +4,16 @@ import { PLOT_SIZE, plotCell } from "../plots.ts";
 import {
   advance,
   gapAhead,
+  isFinished,
   laneLength,
   lotLanes,
   pickNext,
+  railCrossingLanes,
   roadGraph,
   spawnVehicle,
   stepVehicles,
   vehiclePose,
+  type Roads,
   type Vehicle,
 } from "../traffic-logic.ts";
 
@@ -36,6 +39,14 @@ const car = (lane: string, s: number, roads = roadGraph([0])): Vehicle => ({
 const EAST = "1:0>2:0"; // its south road, heading +x
 const WEST = "2:0>1:0";
 const FIRST = plotCell(0);
+
+// The lane running onto the river bank crossing that has no road on from it.
+const deadEndLane = (roads: Roads) => [...roads.lanes.keys()].find((key) => rowOf(key.split(">")[1]) === WAAL_EDGE)!;
+
+// A car that ran out of road stands still, so the park sends a new one. Tests
+// that follow a route over thousands of steps do the same.
+const respawn = (roads: Roads, v: Vehicle, random: () => number) =>
+  spawnVehicle(roads, [], 0, v.speed, v.length, random)!;
 
 // Two ranks that land side by side, away from the river.
 const NEIGHBOURS = [2, 3];
@@ -129,41 +140,29 @@ describe("the Waal in the road graph", () => {
     for (const col of [8, 13]) expect(columns).toContain(col);
   });
 
-  it("turns a car around at a crossing the water left without a way on", () => {
+  it("reports no way on at a crossing the water left without one", () => {
     // Driving onto a bridge that has no bank road on the far side: the only
-    // lane out of that crossing is the one back, so the car makes a U-turn
-    // instead of the graph handing it a lane that does not exist.
+    // lane out of that crossing is the one back, and turning around there in
+    // the middle of an empty road reads as a bug.
     const deadEnd = roadGraph([1]); // a bank cell, its north side is river
-    const onto = [...deadEnd.lanes.keys()].find((key) => rowOf(key.split(">")[1]) === WAAL_EDGE)!;
+    const onto = deadEndLane(deadEnd);
     const back = `${deadEnd.lanes.get(onto)!.to}>${deadEnd.lanes.get(onto)!.from}`;
-    expect(pickNext(deadEnd, onto, () => 0.5)).toBe(back);
-    expect(deadEnd.lanes.has(back)).toBe(true);
+    expect(pickNext(deadEnd, onto, () => 0.5)).toBeNull();
+    expect(deadEnd.lanes.has(back)).toBe(true); // the lane back exists, it is just not taken
   });
 
-  it("keeps heading continuous through a dead-end U-turn, no 180 degree snap", () => {
-    const deadEnd = roadGraph([0]); // rank 0's own dead end: 1:0>2:0 into 2:0>1:0
-    const v: Vehicle = { lane: EAST, next: WEST, s: 0, speed: 10, length: 3.8 };
+  it("parks a car at the end of a dead-end lane, facing the way it drove", () => {
+    const deadEnd = roadGraph([1]);
+    const onto = deadEndLane(deadEnd);
+    const v: Vehicle = { lane: onto, next: null, s: 0, speed: 10, length: 3.8 };
     const length = laneLength(deadEnd, v);
-    let previous = vehiclePose(deadEnd, { ...v, s: 0 });
-    for (let s = 0.1; s <= length; s += 0.1) {
-      const pose = vehiclePose(deadEnd, { ...v, s });
-      const jump = Math.abs(
-        Math.atan2(Math.sin(pose.heading - previous.heading), Math.cos(pose.heading - previous.heading)),
-      );
-      expect(jump).toBeLessThan(0.2);
-      previous = pose;
-    }
-    // Right at the end of the turn, the heading must already match the back
-    // lane it is about to drive onto, not swing around after arriving.
-    const justBeforeCrossing = vehiclePose(deadEnd, { ...v, s: length - 1e-6 });
-    const backLaneStart = vehiclePose(deadEnd, { lane: WEST, next: WEST, s: 0, speed: 10, length: 3.8 });
-    const arrivalJump = Math.abs(
-      Math.atan2(
-        Math.sin(justBeforeCrossing.heading - backLaneStart.heading),
-        Math.cos(justBeforeCrossing.heading - backLaneStart.heading),
-      ),
-    );
-    expect(arrivalJump).toBeLessThan(0.2);
+    expect(isFinished(v)).toBe(false);
+
+    const driven = advance(deadEnd, v, length + 50, () => 0);
+    expect(driven.lane).toBe(onto);
+    expect(driven.s).toBe(length);
+    expect(isFinished(driven)).toBe(true);
+    expect(vehiclePose(deadEnd, driven).heading).toBeCloseTo(vehiclePose(deadEnd, v).heading);
   });
 });
 
@@ -191,6 +190,7 @@ describe("vehiclePose", () => {
     let v = car(EAST, 0, roads);
     const random = seeded(3);
     for (let i = 0; i < 2000; i++) {
+      if (isFinished(v)) v = respawn(roads, v, random);
       const a = vehiclePose(roads, v);
       v = advance(roads, v, 0.05, random);
       const b = vehiclePose(roads, v);
@@ -208,6 +208,11 @@ describe("advance", () => {
     let v = car(EAST, 0, roads);
     let previous = vehiclePose(roads, v);
     for (let i = 0; i < 5000; i++) {
+      if (isFinished(v)) {
+        v = respawn(roads, v, random);
+        previous = vehiclePose(roads, v);
+        continue;
+      }
       v = advance(roads, v, 0.2, random);
       const point = vehiclePose(roads, v);
       expect(Math.hypot(point.x - previous.x, point.z - previous.z)).toBeLessThan(0.4);
@@ -220,14 +225,16 @@ describe("advance", () => {
     const random = seeded(11);
     let v = car(EAST, 0, roads);
     for (let i = 0; i < 3000; i++) {
+      if (isFinished(v)) {
+        v = respawn(roads, v, random);
+        continue;
+      }
       const lane = v.lane;
       v = advance(roads, v, 1, random);
       expect(roads.lanes.has(v.lane)).toBe(true);
       if (v.lane !== lane) {
         const from = roads.lanes.get(lane)!;
-        const back = `${from.to}>${from.from}`;
-        // Turning back is only allowed where the river left no other way on.
-        if (v.lane === back) expect((roads.exits.get(from.to) ?? []).filter((key) => key !== back)).toEqual([]);
+        expect(v.lane).not.toBe(`${from.to}>${from.from}`);
       }
     }
   });
@@ -238,6 +245,7 @@ describe("advance", () => {
     let v = car(EAST, 0, roads);
     const seen = new Set<string>();
     for (let i = 0; i < 3000; i++) {
+      if (isFinished(v)) v = respawn(roads, v, random);
       v = advance(roads, v, 1, random);
       seen.add(v.lane);
     }
@@ -255,10 +263,11 @@ describe("stepVehicles", () => {
   });
 
   it("sees a car in the lane it turns into", () => {
+    // WEST, not EAST: east of rank 0 is the rail corridor, so that lane ends.
     const roads = roadGraph([0]);
-    const v = car(EAST, 0);
+    const v = car(WEST, 0);
     const length = laneLength(roads, v);
-    const vehicles = [{ ...v, s: length - 2 }, car(v.next, 3)];
+    const vehicles = [{ ...v, s: length - 2 }, car(v.next!, 3)];
     expect(gapAhead(roads, vehicles, 0)).toBeCloseTo(5 - 3.8);
   });
 
@@ -282,7 +291,58 @@ describe("spawnVehicle", () => {
 
   it("does not spawn on top of another vehicle", () => {
     const roads = roadGraph([0]);
-    const blocker = car(lotLanes(0)[0], 0);
-    expect(spawnVehicle(roads, [blocker], 0, 10, 3.8, () => 0)).toBeNull();
+    const blockers = lotLanes(0)
+      .filter((key) => roads.lanes.has(key))
+      .map((key) => car(key, 0, roads));
+    expect(spawnVehicle(roads, blockers, 0, 10, 3.8, () => 0)).toBeNull();
+  });
+
+  it("prefers a lot lane that leads on somewhere", () => {
+    // Rank 0 borders the rail corridor, so one of its four lanes is a dead end.
+    const roads = roadGraph([0]);
+    expect(lotLanes(0).filter((key) => roads.lanes.has(key) && pickNext(roads, key, () => 0) === null)).not.toEqual([]);
+    const random = seeded(4);
+    for (let i = 0; i < 20; i++) expect(spawnVehicle(roads, [], 0, 10, 3.8, random)!.next).not.toBeNull();
+  });
+});
+
+describe("level crossings", () => {
+  // Rank 0's east road runs into the rail column, so EAST is the lane over the
+  // track. The stop line is 7 short of the crossing center, minus half a car.
+  const STOP = PLOT_SIZE - 5 - 7 - 3.8 / 2;
+  const shut = new Set([EAST]);
+
+  it("names the lanes that run into the railway", () => {
+    const roads = roadGraph([0]);
+    const rail = railCrossingLanes(roads);
+    expect(rail.get(EAST)).toBe(0); // the crossing on row boundary 0
+    expect(rail.has(WEST)).toBe(false); // driving away from the track
+  });
+
+  it("stops a car clear of the track and lets it go once the barrier opens", () => {
+    const roads = roadGraph([0]);
+    let [v] = [car(EAST, 0)];
+    for (let i = 0; i < 600; i++) [v] = stepVehicles(roads, [v], 1 / 30, () => 0, shut);
+    expect(v.s).toBeCloseTo(STOP);
+
+    for (let i = 0; i < 600; i++) [v] = stepVehicles(roads, [v], 1 / 30, () => 0);
+    expect(v.s).toBe(laneLength(roads, v)); // drove on to the end of the road
+  });
+
+  it("lets a car that is already on the crossing clear the track", () => {
+    const roads = roadGraph([0]);
+    const onTrack = car(EAST, STOP + 2);
+    const [moved] = stepVehicles(roads, [onTrack], 1 / 30, () => 0, shut);
+    expect(moved.s).toBeGreaterThan(onTrack.s);
+  });
+
+  it("queues cars behind each other at a shut crossing", () => {
+    const roads = roadGraph([0]);
+    let vehicles = [car(EAST, 0), car(EAST, 6), car(EAST, 12)];
+    for (let i = 0; i < 900; i++) vehicles = stepVehicles(roads, vehicles, 1 / 30, () => 0, shut);
+    const queue = vehicles.map((v) => v.s).sort((a, b) => a - b);
+    expect(queue[2]).toBeCloseTo(STOP);
+    expect(queue[2] - queue[1]).toBeGreaterThan(3.8);
+    expect(queue[1] - queue[0]).toBeGreaterThan(3.8);
   });
 });

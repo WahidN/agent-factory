@@ -257,6 +257,34 @@ describe("level crossings", () => {
     expect(waited).toBeGreaterThan(0);
     expect(spreadOut).toBeGreaterThan(0);
   });
+
+  it("lets nobody onto the track while a barrier is down", () => {
+    const mobility = new UrbanMobilitySimulation();
+    mobility.setCity({ cyclists: MAX_CYCLISTS, buses: MAX_BUSES, train: true, seed: 7 });
+    mobility.setRoads(Array.from({ length: 24 }, (_, rank) => rank));
+    const pose: MobilityPose = { x: 0, y: 0, z: 0, heading: 0 };
+    const railX = (RAIL_BRIDGE.col - 0.5) * PLOT_SIZE;
+    let closed = 0;
+
+    for (let frame = 0; frame < 36_000; frame++) {
+      mobility.tick(1 / 60);
+      const counts = mobility.counts();
+      for (let i = 0; i < mobility.crossingCount(); i++) {
+        if (mobility.boomAt(i) < 1) continue;
+        closed++;
+        const z = mobility.crossingZAt(i);
+        const onTrack = (p: MobilityPose) => Math.abs(p.x - railX) < 5 && Math.abs(p.z - z) < 6;
+        for (let c = 0; c < counts.cyclists; c++) {
+          if (mobility.cyclistPresence(c) > 0.5) expect(onTrack(mobility.cyclistPose(c, pose))).toBe(false);
+        }
+        for (let b = 0; b < counts.buses; b++) {
+          if (mobility.busPresence(b) > 0.5) expect(onTrack(mobility.busPose(b, pose))).toBe(false);
+        }
+      }
+    }
+
+    expect(closed).toBeGreaterThan(0);
+  });
 });
 
 describe("UrbanMobility", () => {

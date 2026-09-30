@@ -307,11 +307,13 @@ export class UrbanMobilitySimulation {
       const stop = stopBase - (i % 5) * WAIT_SPREAD;
       const crossing = this.laneCrossing[lane];
       const shut = crossing >= 0 && this.booms[crossing] > BOOM_SHUT;
-      // A rider already past the stop line clears the track rather than
-      // standing on it. The test is `<=`, so one that has reached the line
-      // stays on it instead of rolling over the track on the next frame.
-      if (shut && fleet.distance[i] <= stop) {
-        fleet.distance[i] = Math.min(fleet.distance[i] + fleet.speed[i] * dt, stop);
+      // The barrier stands at stopBase, so that is the line that decides who
+      // still has to hold; `stop` only says where in the queue a rider waits.
+      // One that is already past its own spot holds there instead of rolling
+      // back, and one past the barrier itself clears the track.
+      if (shut && fleet.distance[i] <= stopBase) {
+        const hold = Math.max(stop, fleet.distance[i]);
+        fleet.distance[i] = Math.min(fleet.distance[i] + fleet.speed[i] * dt, hold);
         continue;
       }
       let distance = fleet.distance[i] + fleet.speed[i] * dt;

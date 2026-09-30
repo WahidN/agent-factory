@@ -55,8 +55,10 @@ export class Hq {
   // How many sessions of this user are on the park. Shown in the tooltip, so
   // it is kept current without rebuilding anything.
   private agents = 0;
-  // Deep enough to take the whole tower under the ground. A lot sinks a fixed
-  // 12, which would leave the upper floors of an eleven floor tower hanging.
+  // Deep enough to take everything the HQ holds under the ground: the roof
+  // letters stand over the tower and the blimp floats well over those, so it
+  // is measured off the built structure. A lot sinks a fixed 12, which would
+  // leave the upper floors of an eleven floor tower hanging.
   private sinkDepth = 0;
 
   private wallMaterial: THREE.MeshStandardMaterial;
@@ -166,7 +168,6 @@ export class Hq {
     this.builtRow = milestoneIndex(this.tokens);
     this.buildBlock(builder);
     const top = this.buildTower(builder, hqFloors(this.tokens));
-    this.sinkDepth = top + 2;
     this.extras = buildHqMilestones(builder, this.builtRow, {
       accent: this.accentMaterial,
       tower: { ...TOWER, top },
@@ -190,6 +191,9 @@ export class Hq {
 
     this.structure = new THREE.Group();
     this.structure.add(statics, this.roofSign.group, ...this.extras.map((extra) => extra.group));
+    // Measured before it is parented, so the box is in the body's own space.
+    // The 2 covers the blimp's bob.
+    this.sinkDepth = new THREE.Box3().setFromObject(this.structure).max.y + 2;
     this.body.add(this.structure);
   }
 

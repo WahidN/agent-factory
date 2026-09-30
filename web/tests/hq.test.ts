@@ -50,6 +50,17 @@ describe("Hq", () => {
     expect(highestPoint(settled("noor", 5e9))).toBeGreaterThan(roof + 10);
   });
 
+  it("sinks everything it holds under the ground, blimp included", () => {
+    const hq = settled("noor", 5e9);
+    let gone = false;
+    hq.remove(() => {
+      gone = true;
+    });
+    for (let frame = 0; frame < 200 && !gone; frame++) hq.tick(1 / 30);
+    expect(gone).toBe(true);
+    expect(highestPoint(hq)).toBeLessThan(0);
+  });
+
   it("answers the pointer with the user, its agents and its total", () => {
     const hq = settled("noor", 4.43e9, 3);
     expect(hq.hq).toEqual({ user: "noor", agents: 3, tokens: 4.43e9 });

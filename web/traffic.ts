@@ -157,7 +157,10 @@ export class ParkTraffic {
     this.railLanes = railCrossingLanes(this.roads);
     this.travelers = this.travelers.filter((t) => this.roads.lanes.has(t.vehicle.lane));
     for (const t of this.travelers) {
-      if (t.vehicle.next !== null && !this.roads.lanes.has(t.vehicle.next))
+      // A null next was a dead end under the old graph, and the new one may
+      // run on from here. One that already stopped there keeps it and fades.
+      if (t.retiring || isFinished(t.vehicle)) continue;
+      if (t.vehicle.next === null || !this.roads.lanes.has(t.vehicle.next))
         t.vehicle = { ...t.vehicle, next: pickNext(this.roads, t.vehicle.lane, Math.random) };
     }
   }

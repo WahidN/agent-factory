@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { RAIL_BRIDGE, WAAL_EDGE, crossingAt } from "../city-plan.ts";
 import { PLOT_SIZE } from "../plots.ts";
@@ -319,5 +320,27 @@ describe("UrbanMobility", () => {
     for (let i = 0; i < 600; i++) mobility.tick(1 / 60);
     expect(mobility.group.children).toEqual(children);
     expect(meshes.every((child) => "isInstancedMesh" in child)).toBe(true);
+  });
+
+  it("fades the train in at its own size instead of growing it", () => {
+    const mobility = new UrbanMobility();
+    mobility.setCity({ cyclists: 0, buses: 0, train: true, seed: 1944 });
+    mobility.setRoads(RANKS);
+    const trains = mobility.group.children[2] as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    const scale = new THREE.Vector3();
+    let fading = 0;
+
+    for (let frame = 0; frame < 600; frame++) {
+      mobility.tick(1 / 60);
+      if (trains.count === 0) continue;
+      const fade = trains.geometry.getAttribute("aFade").getX(0);
+      expect(fade).toBeCloseTo(mobility.simulation.trainPresence());
+      if (fade < 1) fading++;
+      trains.getMatrixAt(0, matrix);
+      expect(scale.setFromMatrixScale(matrix).x).toBeCloseTo(1);
+    }
+
+    expect(fading).toBeGreaterThan(0);
   });
 });

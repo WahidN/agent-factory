@@ -2,10 +2,11 @@
 // all park roads, joined by the truck of each busy lot.
 
 import * as THREE from "three";
+import { fadeAttribute, FADING_MATERIAL } from "./instance-fade.ts";
 import { createTruck, YARD_Y } from "./machines.ts";
 import { DECALS, standard } from "./palette.ts";
 import { MAX_MOVING_CARS } from "./park-layout.ts";
-import { BAKED_MATERIAL, StaticBuilder } from "./static-builder.ts";
+import { StaticBuilder } from "./static-builder.ts";
 import {
   isFinished,
   pickNext,
@@ -129,13 +130,16 @@ export class ParkTraffic {
   private travelers: Traveler[] = [];
   private railLanes = new Map<string, number>(); // lane key -> level crossing row
   private blocked = new Set<string>();
-  private bodies = new THREE.InstancedMesh(carBodyGeometry, BAKED_MATERIAL, MAX_VEHICLES);
-  private details = new THREE.InstancedMesh(carDetailGeometry, BAKED_MATERIAL, MAX_VEHICLES);
-  private trucks = new THREE.InstancedMesh(truckGeometry, BAKED_MATERIAL, MAX_VEHICLES);
+  private bodies = new THREE.InstancedMesh(carBodyGeometry, FADING_MATERIAL, MAX_VEHICLES);
+  private details = new THREE.InstancedMesh(carDetailGeometry, FADING_MATERIAL, MAX_VEHICLES);
+  private trucks = new THREE.InstancedMesh(truckGeometry, FADING_MATERIAL, MAX_VEHICLES);
+  private bodyFade = fadeAttribute(this.bodies);
+  private detailFade = fadeAttribute(this.details);
+  private truckFade = fadeAttribute(this.trucks);
   private matrix = new THREE.Matrix4();
   private quaternion = new THREE.Quaternion();
   private position = new THREE.Vector3();
-  private scale = new THREE.Vector3();
+  private scale = new THREE.Vector3(1, 1, 1);
   private color = new THREE.Color();
   private up = new THREE.Vector3(0, 1, 0);
 
@@ -183,7 +187,7 @@ export class ParkTraffic {
     this.draw();
   }
 
-  // Spawns wanted vehicles, and grows or shrinks each one over 0.5 s.
+  // Spawns wanted vehicles, and fades each one in or out over 0.5 s.
   private updateTravelers(dt: number, sources: TrafficSource[]) {
     const wanted = new Set<string>();
     for (const source of sources) {
@@ -217,22 +221,22 @@ export class ParkTraffic {
     for (const t of this.travelers) {
       const pose = vehiclePose(this.roads, t.vehicle);
       this.quaternion.setFromAxisAngle(this.up, pose.heading);
-      this.matrix.compose(
-        this.position.set(pose.x, 0.05, pose.z),
-        this.quaternion,
-        this.scale.setScalar(Math.max(0.001, t.presence)),
-      );
+      this.matrix.compose(this.position.set(pose.x, 0.05, pose.z), this.quaternion, this.scale);
       if (t.truck) {
+        this.truckFade.setX(trucks, t.presence);
         this.trucks.setMatrixAt(trucks++, this.matrix);
       } else {
         this.bodies.setMatrixAt(cars, this.matrix);
         this.details.setMatrixAt(cars, this.matrix);
+        this.bodyFade.setX(cars, t.presence);
+        this.detailFade.setX(cars, t.presence);
         this.bodies.setColorAt(cars++, this.color.set(t.color));
       }
     }
     this.bodies.count = this.details.count = cars;
     this.trucks.count = trucks;
     for (const mesh of [this.bodies, this.details, this.trucks]) mesh.instanceMatrix.needsUpdate = true;
+    for (const fade of [this.bodyFade, this.detailFade, this.truckFade]) fade.needsUpdate = true;
     this.bodies.instanceColor!.needsUpdate = true;
   }
 }

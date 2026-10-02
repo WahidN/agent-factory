@@ -38,7 +38,7 @@ export type MobilityCity = {
 export type MobilityCounts = { cyclists: number; buses: number; trains: number };
 export type MobilityPose = { x: number; y: number; z: number; heading: number };
 
-// `presence` scales the drawn instance, so a member fades in when it is seeded
+// `presence` is the drawn instance's opacity, so a member fades in when it is seeded
 // and out once `leaving` is set. `generation` counts how often it has been
 // reseeded and goes into the hash, so a replacement lands on another lane
 // instead of looping over the same two roads.
@@ -360,7 +360,7 @@ export class UrbanMobilitySimulation {
     const track = this.trainMaxZ - this.trainMinZ;
     const driven = this.trainDirection > 0 ? this.trainZ - this.trainMinZ : this.trainMaxZ - this.trainZ;
     // Fade over the first and last stretch of the run, and over a third of a
-    // short track, so a train never pops in at full size.
+    // short track, so a train never pops in at full opacity.
     const fade = Math.min(TRAIN_FADE, track / 3);
     this.trainShown = Math.max(0, Math.min(1, Math.min(driven, track - driven) / fade));
     this.countSnapshot.trains = this.trainShown > 0 ? 1 : 0;

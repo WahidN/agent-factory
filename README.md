@@ -27,7 +27,7 @@ Elke Mac draait een kleine reporter die de eigen sessies leest en doorstuurt. De
 
 | Je wilt | Wat je doet |
 | --- | --- |
-| **Meekijken** | Open http://agentfactory.local:4317 op het kantoornetwerk. Installeren hoeft niet. |
+| **Meekijken** | Open http://raspberrypi.local:4317 op het kantoornetwerk. Installeren hoeft niet. |
 | **Meedoen met je Mac** | Kloon de repo, `pnpm install`, `scripts/install.sh`. Zie [Meedoen met je Mac](#meedoen-met-je-mac). |
 | **De centrale beheren** | Volg [`deploy/pi.md`](deploy/pi.md): installatie, token, bijwerken, logs en storingen op de Pi. |
 
@@ -47,7 +47,7 @@ Het script stelt vier vragen:
 | Vraag | Wat je invult |
 | --- | --- |
 | `Machinenaam (leeg = hostname)` | De naam waaronder je Mac in `/metrics` staat. Leeg laten geeft de korte hostnaam. |
-| `Centrale, bijvoorbeeld ws://agentfactory.local:4317` | Het adres van de Pi. Het moet met `ws://` of `wss://` beginnen, anders stopt het script. |
+| `Centrale, bijvoorbeeld ws://raspberrypi.local:4317` | Het adres van de Pi. Het moet met `ws://` of `wss://` beginnen, anders stopt het script. |
 | `Token (leeg als de centrale er geen vraagt)` | Hetzelfde token dat op de Pi staat. Je typt het blind. |
 | `Nu laden en starten? [y/N]` | `y` start de agent meteen. |
 
@@ -85,7 +85,7 @@ launchctl unload -w ~/Library/LaunchAgents/com.agentfactory.reporter.plist
 | --- | --- | --- |
 | Agent stopt meteen, `reporter.err.log` groeit elke paar seconden | `node_modules` ontbreekt na een pull, of het node-pad uit nvm/fnm bestaat niet meer | `pnpm install`, en draai `scripts/install.sh` opnieuw zodat de plist het huidige node-pad krijgt |
 | `HUB must start with ws:// or wss://` in `reporter.err.log` | Typefout in het adres | `scripts/install.sh` opnieuw draaien |
-| Je machine verschijnt nooit | Verkeerde centrale, of je zit op een ander netwerk (gastennetwerk, VPN) | Kijk in `reporter.out.log` of er `relay: hub gone (...)` staat, en controleer op de centrale met `curl http://agentfactory.local:4317/metrics` of je machinenaam in `machines` staat |
+| Je machine verschijnt nooit | Verkeerde centrale, of je zit op een ander netwerk (gastennetwerk, VPN) | Kijk in `reporter.out.log` of er `relay: hub gone (...)` staat, en controleer op de centrale met `curl http://raspberrypi.local:4317/metrics` of je machinenaam in `machines` staat |
 | `relay: hub gone (1008 bad token)` bij jou, `refused <machine>: bad token` in het log van de centrale | Je token wijkt af van dat op de Pi | `scripts/install.sh` opnieuw draaien met het juiste token |
 | `relay: hub gone (1002 protocol 2-3 expected)` | Je Mac spreekt een andere protocolversie dan de centrale | Werk je checkout bij (zie hierboven); de centrale meldt `refused <machine>: protocol N` |
 
@@ -126,7 +126,7 @@ Het model komt uit het transcript. Een verse sessie begint daarom op Sonnet-form
 | busy | ramen gloeien, rook en stoom komen op gang, werkers lopen, verkeer rijdt |
 | idle | donkere ramen, machines uit, geen rook |
 
-Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Op de centrale zit die knop niet, daar staat het paneel uit. De centrale zelf open je op http://agentfactory.local:4317. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
+Linksboven opent de knop "filters" het paneel. Daar filter je op gebruiker, project en status. Vul onder "Vind je district" je gebruikersnaam in en "spring naar mij" stuurt de camera naar je eigen kavels. Op de centrale zit die knop niet, daar staat het paneel uit. De centrale zelf open je op http://raspberrypi.local:4317. Slepen draait de camera, rechts slepen schuift, scrollen zoomt.
 
 ### Token milestones
 
@@ -215,7 +215,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` start de server op `127.0.0.1:4317` en Vite op http://localhost:5173. Vite proxyt `/ws` naar de server; met `HUB=ws://agentfactory.local:4317 pnpm dev:web` kijk je naar het park van de centrale in plaats van je eigen. `pnpm hub` doet hetzelfde als `pnpm dev` maar start de server als centrale.
+`pnpm dev` start de server op `127.0.0.1:4317` en Vite op http://localhost:5173. Vite proxyt `/ws` naar de server; met `HUB=ws://raspberrypi.local:4317 pnpm dev:web` kijk je naar het park van de centrale in plaats van je eigen. `pnpm hub` doet hetzelfde als `pnpm dev` maar start de server als centrale.
 
 | Script | Wat het doet |
 | --- | --- |

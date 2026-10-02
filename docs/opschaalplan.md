@@ -165,11 +165,11 @@ De server krijgt een echte `http.Server`, serveert de gebouwde pagina en mount d
 
 Meevaller: `web/main.ts:77` bouwt de socket-URL al uit `location.host`, dus same-origin serveren vraagt geen wijziging aan de client.
 
-Pi-details: Pi 4 met 2 GB of Pi 5, 64-bits Raspberry Pi OS, bedraad. Avahi geeft `http://agentfactory.local:8080` zonder DNS-werk. Logs op `Storage=volatile` of begrensd, anders is een goedkope SD-kaart binnen een jaar stuk; een USB-SSD is beter als de Pi er permanent staat.
+Pi-details: Pi 4 met 2 GB of Pi 5, 64-bits Raspberry Pi OS, bedraad. Avahi geeft `http://raspberrypi.local:8080` zonder DNS-werk. Logs op `Storage=volatile` of begrensd, anders is een goedkope SD-kaart binnen een jaar stuk; een USB-SSD is beter als de Pi er permanent staat.
 
 De healthcheck moet iets meten dat echt kan stukgaan: een Pi waar geen enkele reporter meer binnenkomt.
 
-Klaar wanneer de Pi na een stroomstoring vanzelf opkomt met een werkend park op `agentfactory.local`, en `/healthz` `reporters: 0` meldt als je alle reporters stopt.
+Klaar wanneer de Pi na een stroomstoring vanzelf opkomt met een werkend park op `raspberrypi.local`, en `/healthz` `reporters: 0` meldt als je alle reporters stopt.
 
 ### 02 Minimaal wire-formaat
 

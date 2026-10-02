@@ -64,14 +64,26 @@ Raspberry Pi OS heeft Avahi meestal al aan boord. Controleer dat:
 systemctl status avahi-daemon
 ```
 
-Staat hij aan, dan is de Pi bereikbaar op `http://<hostnaam>.local:4317`. Zet de hostnaam expliciet zodat iedereen dezelfde naam gebruikt:
+Staat hij aan, dan is de Pi bereikbaar op `http://<hostnaam>.local:4317`. Raspberry Pi OS heet standaard `raspberrypi`, dus de centrale staat op `http://raspberrypi.local:4317`, zonder DNS-invoer en zonder dat iemand een IP-adres hoeft op te zoeken. Controleer de naam:
 
 ```
-sudo raspi-config nonint do_hostname agentfactory
+hostname
+```
+
+Staat er al een Pi met die naam op het netwerk, dan krijgt de laatste die zich meldt `raspberrypi-2.local`. `hostname` blijft dan `raspberrypi` zeggen, dus kijk in het log van Avahi of er `Host name conflict` staat:
+
+```
+journalctl -u avahi-daemon | grep "Host name conflict"
+```
+
+Staat die regel er, geef de Pi dan een eigen naam en herstart hem:
+
+```
+sudo raspi-config nonint do_hostname <naam>
 sudo reboot
 ```
 
-Na de herstart is de centrale te vinden op `http://agentfactory.local:4317`, zonder DNS-invoer en zonder dat iemand een IP-adres hoeft op te zoeken.
+Gebruik daarna `<naam>.local` overal waar hier `raspberrypi.local` staat, ook bij de vraag `Centrale` van `scripts/install.sh`.
 
 ## Logs begrenzen
 
@@ -102,7 +114,7 @@ systemctl status agent-factory
 curl http://localhost:4317/healthz
 ```
 
-`systemctl status` moet `active (running)` tonen. De curl hoort een 200 terug te geven. Werkt dat, open dan `http://agentfactory.local:4317` vanaf een Mac op hetzelfde netwerk en controleer of de pagina laadt.
+`systemctl status` moet `active (running)` tonen. De curl hoort een 200 terug te geven. Werkt dat, open dan `http://raspberrypi.local:4317` vanaf een Mac op hetzelfde netwerk en controleer of de pagina laadt.
 
 De Pi heeft geen Claude Code nodig. Staat er toch een `~/.claude/` op, dan toont de centrale die sessies ook; zonder die map start hij gewoon en kijkt hij elke 5 seconden of hij alsnog verschijnt.
 
@@ -153,13 +165,13 @@ Verhoogt een wijziging het protocol, kijk dan naar `MIN_PROTOCOL` in de nieuwe v
 ## Wie er verbonden is
 
 ```
-curl http://agentfactory.local:4317/metrics
+curl http://raspberrypi.local:4317/metrics
 ```
 
 `/metrics` geeft `connected` (aantal reporters), `messagesPerSecond` (gemiddeld over de laatste 10 seconden) en per machine in `machines` de `machine`, de `protocol`-versie en `lastMessageAt` (tijdstempel in milliseconden).
 
 ```
-curl http://agentfactory.local:4317/healthz
+curl http://raspberrypi.local:4317/healthz
 ```
 
 `/healthz` antwoordt altijd 200 zolang het proces draait, met drie velden: `mode` (hoort `central` te zijn), `reporters` en `lastUpdateAgeMs`, de milliseconden sinds de laatste sessiewijziging (`null` als er nog geen was). Een stil park en een vastgelopen park zien er in `lastUpdateAgeMs` hetzelfde uit, dus wie deze check gebruikt voor alarm beslist zelf wat te lang is.
@@ -178,7 +190,7 @@ Per reporter zie je `joined <machine> (protocol 3) from <ip>`, `left <machine>` 
 | --- | --- | --- |
 | `systemctl status` toont een herstartlus | `node_modules` ontbreekt, of `/usr/bin/node` bestaat niet | `pnpm install` in de checkout; controleer `which node` tegen `ExecStart` in de unit |
 | Pagina toont "Not built yet" | `web/dist` ontbreekt | `pnpm build` en herstart de service |
-| `agentfactory.local` is onbereikbaar, het IP-adres werkt wel | Avahi draait niet, of de hostnaam is anders | `systemctl status avahi-daemon`, en zet de hostnaam zoals hierboven |
+| `raspberrypi.local` is onbereikbaar, het IP-adres werkt wel | Avahi draait niet, of de hostnaam is anders | `systemctl status avahi-daemon`, en controleer de naam met `hostname` |
 | `mode` in `/healthz` is `local` | `--hub` ontbreekt in `ExecStart` | Vergelijk de unit met `deploy/agent-factory.service` |
 | Een Mac verschijnt niet, er staat niets over hem in het log | De Mac bereikt de Pi niet: ander netwerk, gastennetwerk of verkeerd adres | Laat de eigenaar `reporter.out.log` op zijn Mac bekijken (zie de README) |
 | `refused <machine>: bad token` | Token op de Mac wijkt af | De eigenaar draait `scripts/install.sh` opnieuw met het juiste token |

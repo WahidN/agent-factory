@@ -48,7 +48,7 @@ RUN_USER="${USER:-$(id -un)}"
 read -rp "Machinenaam (leeg = hostname): " MACHINE
 MACHINE="${MACHINE:-$(hostname -s)}"
 
-read -rp "Centrale, bijvoorbeeld ws://agentfactory.local:4317: " HUB
+read -rp "Centrale, bijvoorbeeld ws://raspberrypi.local:4317: " HUB
 if [[ -z "$HUB" ]]; then
   echo "Een centrale is verplicht." >&2
   exit 1

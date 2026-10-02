@@ -70,6 +70,21 @@ Staat hij aan, dan is de Pi bereikbaar op `http://<hostnaam>.local:4317`. Raspbe
 hostname
 ```
 
+Staat er al een Pi met die naam op het netwerk, dan krijgt de laatste die zich meldt `raspberrypi-2.local`. `hostname` blijft dan `raspberrypi` zeggen, dus kijk in het log van Avahi of er `Host name conflict` staat:
+
+```
+journalctl -u avahi-daemon | grep "Host name conflict"
+```
+
+Staat die regel er, geef de Pi dan een eigen naam en herstart hem:
+
+```
+sudo raspi-config nonint do_hostname <naam>
+sudo reboot
+```
+
+Gebruik daarna `<naam>.local` overal waar hier `raspberrypi.local` staat, ook bij de vraag `Centrale` van `scripts/install.sh`.
+
 ## Logs begrenzen
 
 Een SD-kaart gaat kapot van te veel schrijfacties. journald schrijft standaard alles weg zonder limiet, dus zet een grens in `/etc/systemd/journald.conf`:

@@ -5,6 +5,9 @@ import type { SessionState } from "../server/types.ts";
 // so the assets remain large enough to inspect in a single overview.
 export const SHOWCASE_SESSION_COUNT = 13;
 
+// Session ages are counted back from when the page loaded, not from 1970.
+const BOOTED_AT = Date.now();
+
 const USERS = ["dennis", "wahid", "sara", "noor"];
 const PROJECTS = ["agent-factory", "webshop", "api", "mobility", "culture", "waal", "station", "waalsprong"];
 const MODELS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5", "claude-fable-5-1"];
@@ -25,7 +28,7 @@ export function showcaseSessions(count = SHOWCASE_SESSION_COUNT): SessionState[]
     model: MODELS[index % MODELS.length],
     status: index % 3 === 0 ? "idle" : "busy",
     subagents: index % 4,
-    startedAt: index * 60_000,
+    startedAt: BOOTED_AT - (count - index) * 60_000,
     machineTokens: TOKENS[index % USERS.length],
   }));
 }

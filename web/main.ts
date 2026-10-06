@@ -125,6 +125,10 @@ let scoreboardAt = Number.NEGATIVE_INFINITY;
 
 // The camera visits the roofs of events and, in between, the busy lots. A touch
 // on the camera pauses it (scene.ts also stops recentring on layout changes).
+// Not under ?view=all: that mode promises the whole park in view, and a pan
+// at whole-park zoom only pushes half the city off the screen. The showcase
+// also fits the park, but it is where the tour gets looked at, so it keeps it.
+const TOUR_ENABLED = new URLSearchParams(location.search).get("view") !== "all";
 const tour = new Tour(
   view.panTo,
   (event: CityEvent) => {
@@ -135,7 +139,7 @@ const tour = new Tour(
   },
   busyLots,
 );
-sinks.push(tour);
+if (TOUR_ENABLED) sinks.push(tour);
 view.onUserInput(() => tour.pauseForUser());
 
 // The places of the busy sessions the filter shows. The pool of targets is
@@ -752,7 +756,7 @@ view.onFrame((dt, now) => {
   }
   scoreboard.tick(now);
   collabLinks.tick(dt);
-  tour.tick(dt);
+  if (TOUR_ENABLED) tour.tick(dt);
   labels.update();
   tooltip.update();
 });

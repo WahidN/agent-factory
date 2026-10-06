@@ -172,9 +172,9 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
 
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     // A layout change after a manual pan only resizes shadows and zoom; the
-    // first fit still glides the camera to the town. The camera belongs to
-    // the tour: only the first fit recentres it.
-    if (fit) {
+    // first fit and ?view=all still glide the camera to the town. Otherwise
+    // the camera belongs to the tour: only the first fit recentres it.
+    if (fit || options.autoFit) {
       focusTarget.set(x, 0, z);
       focusActive = true;
     }

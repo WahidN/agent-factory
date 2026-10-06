@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: City events
-The page SHALL derive events from the sessions it receives: a user whose highest machine total reaches a new row of the token ladder, a session id it has not seen before, and a project that goes from fewer than two distinct users to two or more. The first set of sessions after the page connects or reconnects SHALL be a baseline that produces no events. A milestone SHALL fire at most once per user and row for as long as the page is open, also when that user leaves and comes back, and also when two machines run under the same name.
+The page SHALL derive events from the sessions it receives: a user whose highest machine total reaches a new row of the token ladder, a session id it has not seen before, and a project that goes from fewer than two distinct users to two or more. The first set of sessions after the page connects or reconnects SHALL be a baseline that produces no events. A milestone SHALL fire at most once per user and row for as long as the page is open, also when that user leaves and comes back, and also when two machines run under the same name. A user who first appears after the baseline SHALL start from the row they already have, without a milestone for it; only their session start produces an event.
 
 #### Scenario: Reconnect
 - **WHEN** the socket reconnects and the server sends a snapshot
@@ -11,6 +11,10 @@ The page SHALL derive events from the sessions it receives: a user whose highest
 - **WHEN** a user's highest total crosses 1B while the page is open
 - **THEN** one milestone event fires for that user
 
+#### Scenario: User appears with tokens
+- **WHEN** a user with a machine total on the 1B row first shows up after the baseline
+- **THEN** only a session start fires, no milestone
+
 ### Requirement: Milestone ceremony
 A milestone event SHALL set off fireworks above the user's HQ that end within about 4 seconds. At most three ceremonies SHALL play at once; a fourth replaces the oldest. A ceremony SHALL cost no draw calls once it has ended.
 
@@ -19,7 +23,7 @@ A milestone event SHALL set off fireworks above the user's HQ that end within ab
 - **THEN** fireworks rise above that HQ and are gone within 5 seconds
 
 ### Requirement: Ticker
-A LED ticker next to Station Nijmegen SHALL scroll the last five events as short Dutch lines, newest first. Without events it SHALL show a fixed line. The ticker SHALL only stand while the station is built.
+A LED ticker next to Station Nijmegen SHALL rotate through the last five events, one every 4 seconds, as short Dutch lines, newest first. Without events it SHALL show a fixed line. The ticker SHALL only stand while the station is built.
 
 #### Scenario: Milestone line
 - **WHEN** `noor` reaches the 1B row

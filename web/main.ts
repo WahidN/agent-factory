@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
+import { CityFeed, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
 import { CityEvents } from "./city-events.ts";
+import { demoEvent } from "./demo-events.ts";
 import {
   createFilterPanel,
   EMPTY_FILTER,
@@ -32,12 +34,19 @@ import { createScene } from "./scene.ts";
 import { showcaseRequested, showcaseSessions } from "./showcase.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
 import { StreetLife } from "./street-life.ts";
+import { landmarkPosition } from "./text-board.ts";
+import { Ticker } from "./ticker.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
 import { UrbanMobility } from "./urban-mobility.ts";
 import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
+const DEMO_EVENT_MS = 4000;
+// The news ticker stands on the station plot, in front of the bus apron and
+// turned to face the default camera (azimuth PI/4, see scene.ts).
+const TICKER_OFFSET = { x: 0, z: 24 };
+const TICKER_YAW = Math.PI / 4;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
 // The city's activity follows the hour where the park actually stands, not
@@ -66,7 +75,8 @@ const ladder = createLadderDialog(
 // Grab the renderer scene.ts is about to build, only when asked, so a normal
 // visit never touches this path.
 const rendererCapture = statsRequested(location.search) ? interceptNextRenderer(THREE.WebGLRenderer) : undefined;
-const view = createScene(canvas, viewOptionsFrom(location.search));
+const viewOptions = viewOptionsFrom(location.search);
+const view = createScene(canvas, viewOptions);
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
 const traffic = new ParkTraffic();
@@ -76,6 +86,22 @@ const cityEvents = new CityEvents();
 const streetLife = new StreetLife();
 const labels = new LandmarkLabels(canvas, view.camera);
 view.scene.add(traffic.group, boats.group, mobility.group, cityEvents.group, streetLife.group);
+
+// ---------- City feed ----------
+
+// What just happened in the city, derived from successive session maps. Every
+// sink hears every event; the ticker is the first.
+const feed = new CityFeed();
+const sinks: CityEventSink[] = [];
+const ticker = new Ticker();
+ticker.group.rotation.y = TICKER_YAW;
+ticker.group.visible = false; // until the station is built
+view.scene.add(ticker.group);
+sinks.push(ticker);
+
+function publishEvents() {
+  for (const event of feed.observe(sessions)) for (const sink of sinks) sink.push(event);
+}
 
 // Every session on the park, whether it is drawn in full or as an instance.
 const sessions = new Map<string, SessionState>();
@@ -219,6 +245,7 @@ function handle(message: ParkMessage) {
   if (filterChanged) view.invalidateShadows();
   applyDetailVisibility();
   syncTraffic();
+  publishEvents();
 }
 
 function applyPlain(message: PlainMessage) {
@@ -272,6 +299,9 @@ function refocus(fit = false) {
   mobility.setRoads(indexes);
   cityEvents.setCity(claims, parkBounds(indexes, true), activity);
   streetLife.setCity(claims, activity);
+  const station = landmarkPosition("station", rankCount);
+  ticker.group.visible = station !== null;
+  if (station) ticker.place(station.x + TICKER_OFFSET.x, station.z + TICKER_OFFSET.z);
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
 }
@@ -543,6 +573,7 @@ function setLive(live: boolean) {
 }
 
 function connect() {
+  feed.reset(); // the first message of this connection is a baseline again
   const protocol = location.protocol === "https:" ? "wss" : "ws";
   const socket = new WebSocket(`${protocol}://${location.host}/ws`);
   socket.onopen = () => setLive(true);
@@ -605,6 +636,7 @@ view.onFrame((dt, now) => {
       refreshActivity();
     }
   }
+  ticker.tick(dt, now);
   labels.update();
   tooltip.update();
 });
@@ -614,6 +646,13 @@ if (showcase) {
   pill.classList.add("live");
   pill.textContent = "showcase";
   hint.hidden = true;
+  if (viewOptions.demoEvents) {
+    let step = 0;
+    setInterval(() => {
+      const event = demoEvent([...sessions.values()], step++);
+      if (event) for (const sink of sinks) sink.push(event);
+    }, DEMO_EVENT_MS);
+  }
 } else {
   refocus();
   setLive(false);

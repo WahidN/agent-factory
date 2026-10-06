@@ -8,7 +8,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { INK_OUTLINE_SHADER } from "./ink-outline.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { clampToPark, fitZoom, fogRange, MAX_ZOOM, MIN_ZOOM, zoomFloor } from "./park-layout.ts";
-import type { ViewOptions } from "./view-options.ts";
+import { type ViewOptions, viewOptionsFrom } from "./view-options.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
@@ -22,7 +22,7 @@ export const CAMERA_DISTANCE = 5000;
 export const AZIMUTH = Math.PI / 4;
 export const ELEVATION = Math.atan(1 / Math.SQRT2); // about 35°, the classic isometric angle
 
-export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = { autoFit: false, fitScale: 1 }) {
+export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = viewOptionsFrom("")) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.shadowMap.enabled = true;

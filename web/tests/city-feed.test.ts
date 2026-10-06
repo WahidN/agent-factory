@@ -82,4 +82,25 @@ describe("CityFeed", () => {
     );
     expect(events.filter((e) => e.kind === "collab-start")).toEqual([]);
   });
+
+  it("does not fire collab-start again when a reporter reconnect drops and restores one of the users", () => {
+    const feed = new CityFeed();
+    feed.observe(map(session("a", "zed", "proj")));
+    feed.observe(map(session("a", "zed", "proj"), session("b", "ann", "proj")));
+    // The hub drops ann's sessions when her Mac's socket dies, and re-adds them when it reconnects.
+    feed.observe(map(session("a", "zed", "proj")));
+    const events = feed.observe(map(session("a", "zed", "proj"), session("b", "ann", "proj")));
+    expect(events.filter((e) => e.kind === "collab-start")).toEqual([]);
+  });
+
+  it("fires collab-start again when a user new to the project joins", () => {
+    const feed = new CityFeed();
+    feed.observe(map(session("a", "zed", "proj")));
+    feed.observe(map(session("a", "zed", "proj"), session("b", "ann", "proj")));
+    feed.observe(map(session("a", "zed", "proj")));
+    const events = feed.observe(map(session("a", "zed", "proj"), session("c", "bob", "proj")));
+    expect(events.filter((e) => e.kind === "collab-start")).toEqual([
+      { kind: "collab-start", project: "proj", users: ["bob", "zed"] },
+    ]);
+  });
 });

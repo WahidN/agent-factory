@@ -37,17 +37,17 @@ Two or more distinct users with a session in the same project SHALL be joined by
 - **THEN** a pipeline joins their lots
 
 ### Requirement: Day rhythm
-The sky colour, the sun, the hemisphere light and the glow of the street lamps SHALL follow the time of day in Europe/Amsterdam, with dusk between day and night. Daytime SHALL look as the scene did before this requirement. On Friday from 16:00 to 20:00 the terraces SHALL hold more tables and visitors, within their existing caps. `?clock=HH:MM` and `?weekday=1..7` SHALL fix the clock for review.
+The sky colour, the sun, the hemisphere light and the glow of the street lamps SHALL follow the time of day in Europe/Amsterdam, with dusk between day and night. Daytime SHALL look as the scene did before this requirement. On Friday from 16:00 to 20:00 the terraces SHALL hold more tables and visitors, within their existing caps.
 
 #### Scenario: Night
-- **WHEN** the page opens with `?clock=23:00`
+- **WHEN** it is 23:00 in Amsterdam
 - **THEN** the sky is dark and the street lamps glow brighter than at noon
 
 ### Requirement: Tour
-With `?tour` the camera SHALL move by itself: to the location of the latest event, held for 8 seconds, or else to the next busy lot every 12 seconds. Any pointer input on the canvas SHALL pause the tour for 60 seconds.
+The camera SHALL move by itself: to the location of the latest event, held for 8 seconds, or else to the next busy lot every 12 seconds. Any pointer input on the canvas SHALL pause the tour for 60 seconds.
 
 #### Scenario: Hands off
-- **WHEN** the page opens with `?tour` and three lots are busy
+- **WHEN** the page opens and three lots are busy
 - **THEN** the camera moves to one of them within 12 seconds
 
 ### Requirement: Scoreboard

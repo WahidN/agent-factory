@@ -3,7 +3,7 @@ import type { CityEvent } from "./city-feed.ts";
 import { MILESTONES, milestoneIndex } from "./milestone-ladder.ts";
 
 /**
- * A made-up event for `?demo=events`: step 0, 1, 2, ... walks over the four
+ * A made-up event for the showcase: step 0, 1, 2, ... walks over the four
  * kinds and over the sessions, so the same input always gives the same show.
  * Null while there are no sessions to borrow names from.
  */

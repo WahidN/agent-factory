@@ -160,6 +160,20 @@ Wat telt: de reporter telt van elk assistant-bericht op of na 16 september 2026 
 
 Het totaal staat op 0 tot de reporter elk transcript één keer gelezen heeft. Dat duurt een paar seconden per gigabyte, en het erf vult zich zodra dat klaar is. Een Mac op protocol 2 stuurt nog geen totaal; zijn kavels tonen dan geen tokenregel.
 
+### Momenten in de stad
+
+De pagina leidt gebeurtenissen af uit de sessies die ze al krijgt. De eerste stand na het laden of herverbinden is een nulmeting en laat niets afgaan; alleen wat daarna verandert telt.
+
+| Moment | Wat je ziet |
+| --- | --- |
+| Een gebruiker haalt een nieuwe rij van de ladder | Ongeveer 4 seconden vuurwerk boven zijn HQ. Maximaal drie tegelijk; een vierde vervangt het oudste. Per gebruiker en rij gebeurt het één keer zolang de pagina openstaat. |
+| Lichtkrant bij Station Nijmegen | De laatste vijf gebeurtenissen, nieuwste eerst, bijvoorbeeld `noor haalt 1B tokens`. Zonder gebeurtenissen staat er een vaste regel. |
+| Twee of meer gebruikers in hetzelfde project | Een pijpleiding op palen tussen hun kavels, in de accentkleur van het project. Hij stroomt zolang één van de twee sessies busy is. Maximaal 8 pijpleidingen. |
+| Dag en nacht | Lucht, zon en straatlantaarns volgen de tijd in Amsterdam, met schemering ertussen. Overdag ziet de stad eruit als altijd. Op vrijdag van 16:00 tot 20:00 staan er meer tafels en bezoekers op de terrassen (de vrijdagmiddagborrel). |
+| Scorebord in de Goffert | Drie records van dit moment: de langst lopende sessie, de meeste subagents in één sessie en het drukste project. Er wordt niets opgeslagen; zonder sessies staat er `Nog geen wedstrijd`. |
+| Kudos | Klik op een HQ en op elke open pagina valt confetti op die toren, met een regel op de lichtkrant. Slepen om te draaien telt niet als klik. |
+| Rondrijdende camera | De camera beweegt zelf: naar de plek van de laatste gebeurtenis (8 seconden vast), anders elke 12 seconden naar het volgende drukke kavel. Aanraken van de camera pauzeert 60 seconden. |
+
 ## Hoe het werkt
 
 **Wat over de lijn gaat.** Een reporter leest `~/.claude/sessions/` en tailt de transcripts in `~/.claude/projects/`. Per sessie stuurt hij zeven velden: `id`, `user`, `project`, `model`, `status`, `subagents` (een aantal) en `startedAt`, samen 121 tot 180 bytes. Daar komt `machineTokens` bij, het seizoenstotaal van de machine. Toolnaam en tooldoel leest hij wel, want daaruit leidt hij `busy` af, maar die blijven op de Mac. Prompts, antwoorden en bestandsinhoud verlaten de machine nooit, en de server schrijft nergens onder `~/.claude/`. Zeven velden houdt het bericht klein genoeg voor een Pi met dertig Macs en maakt het simpel om na te gaan wat er gedeeld wordt.
@@ -180,6 +194,8 @@ De centrale serveert dezelfde pagina als een lokale server, dus de pagina kan de
 
 **Veiligheid op het netwerk.** De centrale weigert websocket-upgrades met een `Origin` van een andere host, zodat een willekeurige website geen verbinding met de Pi kan openen via jouw browser. Het token geldt alleen voor `/relay` en is een vangrail tegen een verkeerd ingestelde reporter, geen authenticatie. Het netwerk zelf is de toegangscontrole.
 
+Van een kijker accepteert de centrale precies één bericht: kudos, `{ "type": "kudos", "user": ... }`. Het mag maximaal 256 bytes zijn (een frame boven 1 KB sluit de socket meteen), geldt alleen voor een gebruiker met een actieve sessie en wordt toegelaten tot 1 per 2 seconden per socket. Elk ander bericht sluit de socket. Er gaat geen nieuwe informatie over de lijn: het wire-formaat van de reporters en het protocol (3) blijven gelijk.
+
 **Tekenen op 60 fps.** De pagina in `web/` tekent de stad met Three.js. Alleen de 40 kavels het dichtst bij de camera krijgen volledig detail; de rest is een terrein met een hal en een gekleurd dakbaken. Statische delen van een kavel zijn samengevoegd tot één mesh, herhaalde delen als bomen en ramen zijn instanced. De standaardstijl heet Inkshift, met een eigen palet en een outline-pass over het hele beeld. `?style=classic` zet die uit.
 
 Claude Code bepaalt het formaat van de bestanden in `~/.claude/`, dus een update van Claude Code kan de reporter breken.
@@ -188,7 +204,7 @@ Claude Code bepaalt het formaat van de bestanden in `~/.claude/`, dus een update
 
 | URL of commando | Wat je krijgt |
 | --- | --- |
-| `?mode=showcase&view=all` | Een vaste stad van 13 nepsessies over alle modellen en statussen, met de camera op het hele park. Zo zijn de screenshots hierboven gemaakt. |
+| `?mode=showcase&view=all` | Een vaste stad van 13 nepsessies over alle modellen en statussen, met de camera op het hele park. Elke 4 seconden verzint de showcase een gebeurtenis. Zo zijn de screenshots hierboven gemaakt. |
 | `?view=all` | Camera op het hele park, met echte sessies |
 | `?stats` | Overlay met draw calls, driehoeken, frametijd (gemiddeld en p95) en kavels gedetailleerd tegenover totaal |
 | `?detail=N` | Ander plafond voor volledig getekende kavels dan 40 |

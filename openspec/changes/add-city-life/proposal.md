@@ -6,13 +6,13 @@ The city shows how things stand, but nothing marks the moment they change. A use
 
 - The page detects events from the session stream it already gets: a user reaching a new ladder row, a new session, a project that two or more users now work in. The first snapshot after a (re)connect is a baseline and fires nothing.
 - A milestone sets off fireworks above the user's HQ for about 4 seconds.
-- A LED ticker next to Station Nijmegen scrolls the last five events in Dutch.
+- A LED ticker next to Station Nijmegen rotates through the last five events in Dutch.
 - Two or more users in the same project get a pipeline on posts between their lots, with flow when one of them is busy.
 - The sky, the sun and the street lamps follow the time of day in Europe/Amsterdam. On Friday from 16:00 to 20:00 the terraces fill up.
-- `?tour` flies the camera to the latest event, or else from busy lot to busy lot, and pauses for 60 seconds when someone touches the camera.
+- The camera flies to the latest event, or else from busy lot to busy lot, and pauses for 60 seconds when someone touches the camera.
 - A scoreboard at the Goffert shows three records of right now: the longest running session, the most subagents and the busiest project.
 - Clicking an HQ sends kudos: confetti on that HQ on every open page and a line on the ticker. The server accepts one message type from a viewer, validates it and rate limits it per socket.
-- Review modes: `?demo=events` makes the showcase emit an event every few seconds, `?clock=HH:MM` and `?weekday=1..7` fix the clock.
+- Review modes: the showcase emits an event every 4 seconds.
 
 Not in this change: anything stored on the central, records of the whole day, per lamp behaviour, changes to the reporter wire format.
 

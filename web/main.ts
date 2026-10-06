@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
+import type { ParkMessage, PlainMessage, SessionState } from "../server/types.ts";
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { CityFeed, type CityEvent, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
@@ -26,7 +26,7 @@ import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { LandmarkLabels } from "./landmark-labels.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
 import { Lot } from "./lot.ts";
-import { flattenBatch } from "./message-logic.ts";
+import { flattenBatch, parseServerMessage } from "./message-logic.ts";
 import { tierFor } from "./model-tier.ts";
 import { accentFor, setLampGlow, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
@@ -48,6 +48,7 @@ import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
 const DEMO_EVENT_MS = 4000;
+const KUDOS_COOLDOWN_MS = 2000; // the server limits per sender at the same rate
 const SCOREBOARD_REFRESH_MS = 5000;
 // The records board stands at the back corner of the stadium cell, behind the
 // tribunes (bowl about +-14 by +-18 around the cell centre) so it does not hide
@@ -655,13 +656,17 @@ function setLive(live: boolean) {
   hint.hidden = live || everReceived;
 }
 
+let socket: WebSocket | null = null;
+
 function connect() {
   feed.reset(); // the first message of this connection is a baseline again
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${location.host}/ws`);
-  socket.onopen = () => setLive(true);
-  socket.onmessage = (event) => {
-    const message: ServerMessage = JSON.parse(event.data);
+  const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+  socket = ws;
+  ws.onopen = () => setLive(true);
+  ws.onmessage = (event) => {
+    const message = parseServerMessage(event.data);
+    if (!message) return; // broken JSON or a type this page does not know
     // Taken off here and not in handle(): flattenBatch() maps a ServerMessage
     // to PlainMessage[], and this one is deliberately not a PlainMessage.
     if (message.type === "server-mode") {
@@ -670,9 +675,14 @@ function connect() {
       else showFilterPanel();
       return;
     }
+    if (message.type === "kudos") {
+      for (const sink of sinks) sink.push({ kind: "kudos", user: message.user });
+      return;
+    }
     handle(message);
   };
-  socket.onclose = () => {
+  ws.onclose = () => {
+    if (socket === ws) socket = null;
     setLive(false);
     showFilterPanel(); // nothing will ever tell us, so fall back to showing it
     setTimeout(connect, RECONNECT_MS);
@@ -688,6 +698,21 @@ const tooltip = createTooltip(
   pickables,
   view.onCameraChange,
 );
+// A click on a head office sends kudos. The show comes back as the server's
+// echo, so every screen sees it together; only the showcase has no server and
+// plays it locally.
+let kudosAt = Number.NEGATIVE_INFINITY;
+tooltip.onPick((hq) => {
+  const now = performance.now();
+  if (now - kudosAt < KUDOS_COOLDOWN_MS) return;
+  if (showcase) {
+    kudosAt = now;
+    for (const sink of sinks) sink.push({ kind: "kudos", user: hq.user });
+  } else if (socket?.readyState === WebSocket.OPEN) {
+    kudosAt = now;
+    socket.send(JSON.stringify({ type: "kudos", user: hq.user }));
+  }
+});
 // Sky, light and lamps for the time of day. The light levels leave the shadow
 // map alone; only a terrace rebuilt for the Friday boost casts new shadows.
 function applyDaylight() {

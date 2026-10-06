@@ -24,6 +24,7 @@ import { ConfigError, loadConfig } from "./config.ts";
 import { health } from "./health.ts";
 import { createHeartbeat } from "./heartbeat.ts";
 import { Hub, MIN_PROTOCOL, parseRelayMessage, PROTOCOL, protocolSupported } from "./hub.ts";
+import { createKudosLimiter, parseViewerMessage } from "./kudos.ts";
 import { createMetrics } from "./metrics.ts";
 import { startRelay } from "./relay.ts";
 import { SessionTracker, SUBAGENT_REMOVE_MS } from "./session-tracker.ts";
@@ -65,6 +66,10 @@ const httpServer = createServer((request, response) =>
   }),
 );
 const wss = new WebSocketServer({ noServer: true });
+// Browsers only ever send a tiny kudos, so their server refuses a bigger frame
+// while it is still being read (close 1009), not after 100 MiB sit in memory.
+// Its connections go through the same handler below.
+const browserWss = new WebSocketServer({ noServer: true, maxPayload: 1024 });
 
 // Every connected socket, browsers on /ws and reporters on /relay alike, is
 // pinged every HEARTBEAT_MS. A socket that misses two pings in a row is
@@ -74,7 +79,7 @@ const heartbeat = createHeartbeat<WebSocket>();
 
 setInterval(() => {
   for (const dead of heartbeat.onTick()) dead.terminate();
-  for (const client of wss.clients) {
+  for (const client of [...wss.clients, ...browserWss.clients]) {
     if (client.readyState === WebSocket.OPEN) client.ping();
   }
 }, HEARTBEAT_MS);
@@ -166,7 +171,7 @@ httpServer.on("upgrade", (request, socket, head) => {
   }
   const path = socketPath(request);
   if (path === "/ws") {
-    wss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
+    browserWss.handleUpgrade(request, socket, head, (ws) => wss.emit("connection", ws, request));
     return;
   }
   if (path === "/relay") {
@@ -195,6 +200,16 @@ wss.on("connection", (socket, request) => {
   }
   browsers.add(socket);
   socket.on("close", () => browsers.delete(socket));
+  const allowKudos = createKudosLimiter();
+  socket.on("message", (data, isBinary) => {
+    if (isBinary) return socket.close(1008, "text only");
+    const message = parseViewerMessage(data.toString());
+    if (!message) return socket.close(1008, "invalid message");
+    if (!allowKudos()) return;
+    // Own sessions plus those of every reporter: the same list a new browser gets.
+    const known = [...tracker.snapshot(Date.now()), ...hub.remote()].some((s) => s.user === message.user);
+    if (known) sendToBrowsers({ type: "kudos", user: message.user });
+  });
   // Before the first lots, so the page never draws its panel and takes it away
   // again a moment later.
   socket.send(JSON.stringify({ type: "server-mode", hub: IS_HUB } satisfies ServerMessage));

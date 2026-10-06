@@ -42,4 +42,10 @@ export type PlainMessage =
 // built from these alone.
 export type ParkMessage = PlainMessage | { type: "batch"; messages: PlainMessage[] };
 
-export type ServerMessage = ParkMessage | { type: "server-mode"; hub: boolean };
+// `kudos` is a browser's cheer for a user, passed on to every browser. Like
+// server-mode it is not a PlainMessage: it is not park state, never batched,
+// never relayed, so PROTOCOL stays as it is.
+export type ServerMessage = ParkMessage | { type: "server-mode"; hub: boolean } | { type: "kudos"; user: string };
+
+// The only thing a browser sends on /ws (see kudos.ts for the limits).
+export type ViewerMessage = { type: "kudos"; user: string };

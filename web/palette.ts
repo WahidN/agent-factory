@@ -99,6 +99,11 @@ export const MATERIALS = {
   lampHead: standard("#fff4d6", { emissive: "#fff1c9", emissiveIntensity: 0.6 }),
 };
 
+/** One shared material, so this lights every lantaarn head at once. */
+export function setLampGlow(intensity: number) {
+  MATERIALS.lampHead.emissiveIntensity = intensity;
+}
+
 // ---------- Canvas textures ----------
 
 function canvasTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void, color = true) {

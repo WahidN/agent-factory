@@ -44,6 +44,44 @@ describe("StreetLife", () => {
     expect(life.snapshot()).toMatchObject({ tables: 0, parasols: 0, visitors: 0, instances: 0 });
   });
 
+  it("seats more guests with a terrace boost, within the caps", () => {
+    const life = new StreetLife();
+    life.setCity(claims, { hour: 17, busyRatio: 0.2 });
+    const normal = life.snapshot();
+
+    life.setTerraceBoost(2);
+    const boosted = life.snapshot();
+    expect(boosted.tables).toBeGreaterThan(normal.tables);
+    expect(boosted.visitors).toBeGreaterThan(normal.visitors);
+
+    life.setActivity({ hour: 17, busyRatio: 1 });
+    life.setTerraceBoost(1);
+    const full = life.snapshot();
+    life.setTerraceBoost(2);
+    expect(life.snapshot().tables).toBeLessThanOrEqual(30);
+    expect(life.snapshot().tables).toBeGreaterThan(full.tables);
+
+    life.setTerraceBoost(1);
+    life.setActivity({ hour: 17, busyRatio: 0.2 });
+    expect(life.snapshot()).toEqual(normal);
+  });
+
+  it("keeps boosted terrace tables inside the plot and reports whether the boost changed", () => {
+    const life = new StreetLife();
+    const single = [{ cell: { col: 2, row: 0 }, amenity: "shops" as const }];
+    life.setCity(single, { hour: 17, busyRatio: 1 });
+    expect(life.setTerraceBoost(2)).toBe(true);
+    expect(life.setTerraceBoost(2)).toBe(false);
+    const matrix = new THREE.Matrix4();
+    const tables = life.group.children.find((child) => child.name === "streetlife-tables") as THREE.InstancedMesh;
+    expect(tables.count).toBeGreaterThan(5);
+    for (let i = 0; i < tables.count; i++) {
+      tables.getMatrixAt(i, matrix);
+      // Cell is 60 wide with the road at the edge, so tables stay within 25 of the centre (row 0 centre is z = 0).
+      expect(matrix.elements[14]).toBeLessThanOrEqual(25);
+    }
+  });
+
   it("reuses five bounded instanced meshes across activity modes", () => {
     const life = new StreetLife();
     const children = [...life.group.children];

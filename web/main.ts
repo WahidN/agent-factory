@@ -625,7 +625,9 @@ function showFilterPanel() {
         .map(([id, place]) => ({ user: sessions.get(id)?.user, ...place }))
         .filter((p): p is { user: string; x: number; z: number } => p.user !== undefined);
       const target = jumpTarget(user, points);
-      if (target) view.panTo(target.x, target.z);
+      if (!target) return;
+      view.panTo(target.x, target.z);
+      tour.pauseForUser(); // a click in the panel is no camera input, so scene.ts does not report it
     },
   );
 }

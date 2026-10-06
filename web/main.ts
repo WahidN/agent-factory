@@ -3,6 +3,7 @@ import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { CityFeed, type CityEvent, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
+import { CollabLinks } from "./collab-links.ts";
 import { amsterdamClock, daylightAt } from "./daylight.ts";
 import { Ceremony } from "./ceremony.ts";
 import { CityEvents } from "./city-events.ts";
@@ -92,6 +93,8 @@ const cityEvents = new CityEvents();
 const streetLife = new StreetLife();
 const labels = new LandmarkLabels(canvas, view.camera);
 view.scene.add(traffic.group, boats.group, mobility.group, cityEvents.group, streetLife.group);
+const collabLinks = new CollabLinks();
+view.scene.add(collabLinks.group);
 
 // ---------- City feed ----------
 
@@ -246,6 +249,7 @@ function remove(id: string) {
     // re-selects the detailed set and covers syncFar() for the rest.
     redistribute();
     syncTraffic();
+    syncLinks();
   });
 }
 
@@ -298,6 +302,7 @@ function handle(message: ParkMessage) {
   if (filterChanged) view.invalidateShadows();
   applyDetailVisibility();
   syncTraffic();
+  syncLinks();
   publishEvents();
 }
 
@@ -479,6 +484,15 @@ function syncFar() {
 type TrafficInput = { id: string; index: number; cars: number; truck: boolean };
 let trafficInputs: TrafficInput[] = [];
 
+// Pipes between lots of the same project run by different users. Rebuilt where
+// the session set, the layout or the filter changes, never per frame.
+function syncLinks() {
+  collabLinks.update([...sessions.values()], (id) => {
+    const session = sessions.get(id);
+    return session && matchesFilter(session, filter) ? (places.get(id) ?? null) : null;
+  });
+}
+
 // A session the filter hides sends nothing either, so its vehicles shrink away
 // instead of driving around an empty plot.
 function syncTraffic() {
@@ -600,6 +614,7 @@ function showFilterPanel() {
       filter = next;
       redistribute(); // also applies visibility and ends in syncFar()
       syncTraffic();
+      syncLinks();
       view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
     },
     (user) => {
@@ -702,6 +717,7 @@ view.onFrame((dt, now) => {
   }
   ticker.tick(dt, now);
   ceremony.tick(dt);
+  collabLinks.tick(dt);
   tour?.tick(dt);
   labels.update();
   tooltip.update();

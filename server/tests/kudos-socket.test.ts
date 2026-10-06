@@ -5,6 +5,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { PROTOCOL } from "../hub.ts";
+import { freePort } from "./free-port.ts";
 
 let child: ChildProcessWithoutNullStreams | undefined;
 
@@ -82,11 +83,9 @@ async function reporterWith(port: number, user: string) {
 
 const closeCode = (ws: WebSocket) => new Promise<number>((resolve) => ws.on("close", (code) => resolve(code)));
 
-const randomPort = () => 39000 + Math.floor(Math.random() * 5000);
-
 describe("kudos from a browser", () => {
   it("reaches every browser when the user has a session", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const reporter = await reporterWith(port, "dennis");
     const sender = await browser(port);
@@ -101,7 +100,7 @@ describe("kudos from a browser", () => {
   }, 15_000);
 
   it("is ignored quietly for a user without a session", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const sender = await browser(port);
     const other = await browser(port);
@@ -116,7 +115,7 @@ describe("kudos from a browser", () => {
   }, 15_000);
 
   it("is sent on once per 2 seconds per socket, without closing the sender", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const reporter = await reporterWith(port, "dennis");
     const sender = await browser(port);
@@ -136,7 +135,7 @@ describe("kudos from a browser", () => {
   }, 15_000);
 
   it("closes the socket with 1008 on an invalid message", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const sender = await browser(port);
     const closed = closeCode(sender.ws);
@@ -145,7 +144,7 @@ describe("kudos from a browser", () => {
   }, 15_000);
 
   it("closes the socket with 1008 on a binary frame", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const sender = await browser(port);
     const closed = closeCode(sender.ws);
@@ -154,7 +153,7 @@ describe("kudos from a browser", () => {
   }, 15_000);
 
   it("closes the socket on a 2 KB frame and keeps serving other browsers", async () => {
-    const port = randomPort();
+    const port = await freePort();
     await startCentral(port);
     const sender = await browser(port);
     const bystander = await browser(port);

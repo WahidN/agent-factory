@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import { PROTOCOL } from "../hub.ts";
+import { freePort } from "./free-port.ts";
 
 let child: ChildProcessWithoutNullStreams | undefined;
 
@@ -16,10 +17,6 @@ afterEach(() => {
   child?.kill();
   child = undefined;
 });
-
-function nextPort() {
-  return 39000 + Math.floor(Math.random() * 5000);
-}
 
 function startCentral(port: number, token: string, home?: string): Promise<void> {
   return start(port, ["--hub"], token, home);
@@ -85,7 +82,7 @@ function browserMessage(port: number, type: string, origin?: string): Promise<{ 
 
 describe("central token guard rail", () => {
   it("closes the connection on a token mismatch", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "secret");
     const ws = await connect(port);
     const closed = new Promise<number>((resolve) => ws.on("close", (code) => resolve(code)));
@@ -94,7 +91,7 @@ describe("central token guard rail", () => {
   }, 15_000);
 
   it("accepts a reporter with the right token", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "secret");
     const ws = await connect(port);
     const closedEarly: number[] = [];
@@ -107,7 +104,7 @@ describe("central token guard rail", () => {
   }, 15_000);
 
   it("accepts every token when the central has none configured", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     const ws = await connect(port);
     const closedEarly: number[] = [];
@@ -121,7 +118,7 @@ describe("central token guard rail", () => {
 
 describe("a reporter sending malformed messages", () => {
   it("does not take the central down", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     const ws = await connect(port);
     ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, user: "someone", machine: "broken" }));
@@ -135,7 +132,7 @@ describe("a reporter sending malformed messages", () => {
 
 describe("a reporter sending an invalid frame", () => {
   it("does not take the central down", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     const ws = await connect(port);
     // An unmasked client frame breaks the protocol, so the server socket emits 'error'.
@@ -147,13 +144,13 @@ describe("a reporter sending an invalid frame", () => {
 
 describe("the origin check on the upgrade", () => {
   it("refuses a browser from a foreign origin", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     await expect(browserMessage(port, "snapshot", "http://evil.example")).rejects.toThrow(/403/);
   }, 15_000);
 
   it("accepts a browser whose origin matches the host", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     expect(await browserMessage(port, "snapshot", `http://127.0.0.1:${port}`)).toMatchObject({
       type: "snapshot",
@@ -167,7 +164,7 @@ describe("the origin check on the upgrade", () => {
 describe("a machine with no ~/.claude", () => {
   it("still starts and serves", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-factory-empty-home-"));
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "", home);
     const response = await fetch(`http://127.0.0.1:${port}/healthz`);
     expect(response.status).toBe(200);
@@ -180,14 +177,14 @@ describe("a machine with no ~/.claude", () => {
 // and the filter panel is built on it.
 describe("the server mode a browser is told", () => {
   it("is the hub when started with --hub", async () => {
-    const port = nextPort();
+    const port = await freePort();
     await startCentral(port, "");
     expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: true });
   }, 15_000);
 
   it("is not the hub for a plain local server", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-factory-local-home-"));
-    const port = nextPort();
+    const port = await freePort();
     await startLocal(port, home);
     expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: false });
     await rm(home, { recursive: true, force: true });

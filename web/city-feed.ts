@@ -33,13 +33,19 @@ export interface CityEventSink {
  *   machineTokens over that user's sessions, so two Macs under one name fire once,
  *   and a user who leaves and comes back does not fire again for the same row.
  * - session-start fires once per new session id after the baseline.
- * - collab-start fires when a project crosses from <2 to >=2 distinct users.
+ * - collab-start fires when a project crosses from <2 to >=2 distinct users and one of
+ *   them was never announced for that project before. A user whose sessions drop and
+ *   come back (the hub does this on every reporter reconnect) does not fire again.
  */
 export class CityFeed {
   private baselined = false;
   private readonly seenIds = new Set<string>();
   private readonly highestRow = new Map<string, number>();
   private collabProjects = new Set<string>();
+  // Per project, the users ever announced as working together. Kept when the
+  // project dips below two users: a reporter reconnect drops and re-adds a
+  // user's sessions within seconds, and that is no new collaboration.
+  private readonly collabUsers = new Map<string, Set<string>>();
 
   observe(sessions: ReadonlyMap<string, SessionState>): CityEvent[] {
     const events: CityEvent[] = [];
@@ -76,7 +82,11 @@ export class CityFeed {
     for (const [project, users] of usersByProject) {
       if (users.size < 2) continue;
       collabProjects.add(project);
-      if (announce && !this.collabProjects.has(project)) {
+      const announced = this.collabUsers.get(project) ?? new Set<string>();
+      const fresh = [...users].some((user) => !announced.has(user));
+      for (const user of users) announced.add(user);
+      this.collabUsers.set(project, announced);
+      if (announce && fresh && !this.collabProjects.has(project)) {
         events.push({ kind: "collab-start", project, users: [...users].sort() });
       }
     }

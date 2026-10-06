@@ -36,6 +36,7 @@ import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
 import { showcaseRequested, showcaseSessions } from "./showcase.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
+import { Scoreboard } from "./scoreboard.ts";
 import { StreetLife } from "./street-life.ts";
 import { landmarkPosition } from "./text-board.ts";
 import { Ticker } from "./ticker.ts";
@@ -47,6 +48,11 @@ import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
 const DEMO_EVENT_MS = 4000;
+const SCOREBOARD_REFRESH_MS = 5000;
+// The records board stands at the back corner of the stadium cell, behind the
+// tribunes (bowl about +-14 by +-18 around the cell centre) so it does not hide
+// the pitch from the default camera, and faces that camera like the ticker.
+const SCOREBOARD_OFFSET = { x: -20, z: -22 };
 // The news ticker stands on the station plot, in front of the bus apron and
 // turned to face the default camera (azimuth PI/4, see scene.ts).
 const TICKER_OFFSET = { x: 0, z: 24 };
@@ -117,6 +123,12 @@ const ceremony = new Ceremony((user) => {
 });
 view.scene.add(ceremony.group);
 sinks.push(ticker, ceremony);
+
+const scoreboard = new Scoreboard();
+scoreboard.group.rotation.y = TICKER_YAW;
+scoreboard.group.visible = false; // until the stadium is built
+view.scene.add(scoreboard.group);
+let scoreboardAt = Number.NEGATIVE_INFINITY;
 
 // ?tour: the camera visits the roofs of events and, in between, the busy lots.
 // A touch on the camera pauses it (scene.ts also stops recentring on layout
@@ -360,6 +372,9 @@ function refocus(fit = false) {
   const station = landmarkPosition("station", rankCount);
   ticker.group.visible = station !== null;
   if (station) ticker.place(station.x + TICKER_OFFSET.x, station.z + TICKER_OFFSET.z);
+  const stadium = landmarkPosition("goffert", rankCount);
+  scoreboard.group.visible = stadium !== null;
+  if (stadium) scoreboard.place(stadium.x + SCOREBOARD_OFFSET.x, stadium.z + SCOREBOARD_OFFSET.z);
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
 }
@@ -717,6 +732,11 @@ view.onFrame((dt, now) => {
   }
   ticker.tick(dt, now);
   ceremony.tick(dt);
+  if (now - scoreboardAt >= SCOREBOARD_REFRESH_MS) {
+    scoreboardAt = now;
+    scoreboard.update([...sessions.values()], Date.now());
+  }
+  scoreboard.tick(now);
   collabLinks.tick(dt);
   tour?.tick(dt);
   labels.update();

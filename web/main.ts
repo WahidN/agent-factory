@@ -61,17 +61,9 @@ const TICKER_YAW = Math.PI / 4;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
 // The one clock the whole city follows: the time where the park actually
-// stands (Europe/Amsterdam, not the browser's zone or UTC), unless ?clock or
-// ?weekday pin it for a screenshot.
-function cityClock(date: Date): { minutes: number; weekday: number } {
-  const real = amsterdamClock(date);
-  return {
-    minutes: viewOptions.clockMinutes ?? real.minutes,
-    weekday: viewOptions.weekday ?? real.weekday,
-  };
-}
+// stands (Europe/Amsterdam, not the browser's zone or UTC).
 function cityHour(date: Date): number {
-  return Math.floor(cityClock(date).minutes / 60);
+  return Math.floor(amsterdamClock(date).minutes / 60);
 }
 
 if (INK_STYLE_ENABLED) document.body.dataset.style = "ink";
@@ -131,25 +123,20 @@ scoreboard.group.visible = false; // until the stadium is built
 view.scene.add(scoreboard.group);
 let scoreboardAt = Number.NEGATIVE_INFINITY;
 
-// ?tour: the camera visits the roofs of events and, in between, the busy lots.
-// A touch on the camera pauses it (scene.ts also stops recentring on layout
-// changes while a tour runs).
-const tour = viewOptions.tour
-  ? new Tour(
-      view.panTo,
-      (event: CityEvent) => {
-        const hq = hqs.get(event.kind === "collab-start" ? event.users[0] : event.user);
-        if (!hq?.group.visible) return null;
-        const roof = hq.roof;
-        return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z };
-      },
-      busyLots,
-    )
-  : null;
-if (tour) {
-  sinks.push(tour);
-  view.onUserInput(() => tour.pauseForUser());
-}
+// The camera visits the roofs of events and, in between, the busy lots. A touch
+// on the camera pauses it (scene.ts also stops recentring on layout changes).
+const tour = new Tour(
+  view.panTo,
+  (event: CityEvent) => {
+    const hq = hqs.get(event.kind === "collab-start" ? event.users[0] : event.user);
+    if (!hq?.group.visible) return null;
+    const roof = hq.roof;
+    return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z };
+  },
+  busyLots,
+);
+sinks.push(tour);
+view.onUserInput(() => tour.pauseForUser());
 
 // The places of the busy sessions the filter shows. The pool of targets is
 // reused: the tour asks for it on every cycle and copies the lot it shows.
@@ -716,7 +703,7 @@ tooltip.onPick((hq) => {
 // Sky, light and lamps for the time of day. The light levels leave the shadow
 // map alone; only a terrace rebuilt for the Friday boost casts new shadows.
 function applyDaylight() {
-  const { minutes, weekday } = cityClock(new Date());
+  const { minutes, weekday } = amsterdamClock(new Date());
   const daylight = daylightAt(minutes, weekday, INK_STYLE_ENABLED);
   view.setDaylight(daylight);
   setLampGlow(daylight.lampGlow);
@@ -763,7 +750,7 @@ view.onFrame((dt, now) => {
   }
   scoreboard.tick(now);
   collabLinks.tick(dt);
-  tour?.tick(dt);
+  tour.tick(dt);
   labels.update();
   tooltip.update();
 });
@@ -773,13 +760,11 @@ if (showcase) {
   pill.classList.add("live");
   pill.textContent = "showcase";
   hint.hidden = true;
-  if (viewOptions.demoEvents) {
-    let step = 0;
-    setInterval(() => {
-      const event = demoEvent([...sessions.values()], step++);
-      if (event) for (const sink of sinks) sink.push(event);
-    }, DEMO_EVENT_MS);
-  }
+  let step = 0;
+  setInterval(() => {
+    const event = demoEvent([...sessions.values()], step++);
+    if (event) for (const sink of sinks) sink.push(event);
+  }, DEMO_EVENT_MS);
 } else {
   refocus();
   setLive(false);

@@ -117,7 +117,6 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
 
   const focusTarget = new THREE.Vector3();
   let focusActive = false;
-  let userOwnsCamera = false;
   let focusedHalfExtent: number | null = null;
   // The park the orbit target is held over, set by focus().
   let parkArea: { x: number; z: number; half: number } | null = null;
@@ -128,7 +127,6 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   const userInputCallbacks = new Set<() => void>();
   controls.addEventListener("start", () => {
     focusActive = false;
-    userOwnsCamera = true;
     for (const callback of userInputCallbacks) callback();
     canvas.style.cursor = "grabbing";
   });
@@ -174,11 +172,11 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
 
   function focus(x: number, z: number, halfExtent: number, fit = false) {
     // A layout change after a manual pan only resizes shadows and zoom; the
-    // first fit and ?view=all still glide the camera to the town. During a
-    // tour the camera belongs to the tour: only the first fit recentres it.
-    if (!options.tour || fit) {
+    // first fit still glides the camera to the town. The camera belongs to
+    // the tour: only the first fit recentres it.
+    if (fit) {
       focusTarget.set(x, 0, z);
-      if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
+      focusActive = true;
     }
     focusedHalfExtent = halfExtent;
     parkArea = { x, z, half: halfExtent };

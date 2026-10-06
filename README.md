@@ -27,7 +27,7 @@ Elke Mac draait een kleine reporter die de eigen sessies leest en doorstuurt. De
 
 | Je wilt | Wat je doet |
 | --- | --- |
-| **Meekijken** | Open http://raspberrypi.local:4317 op het kantoornetwerk. Installeren hoeft niet. Voor het scherm aan de muur: voeg `?tour` toe, dan beweegt de camera zelf. |
+| **Meekijken** | Open http://raspberrypi.local:4317 op het kantoornetwerk. Installeren hoeft niet. |
 | **Meedoen met je Mac** | Kloon de repo, `pnpm install`, `scripts/install.sh`. Zie [Meedoen met je Mac](#meedoen-met-je-mac). |
 | **De centrale beheren** | Volg [`deploy/pi.md`](deploy/pi.md): installatie, token, bijwerken, logs en storingen op de Pi. |
 
@@ -172,6 +172,7 @@ De pagina leidt gebeurtenissen af uit de sessies die ze al krijgt. De eerste sta
 | Dag en nacht | Lucht, zon en straatlantaarns volgen de tijd in Amsterdam, met schemering ertussen. Overdag ziet de stad eruit als altijd. Op vrijdag van 16:00 tot 20:00 staan er meer tafels en bezoekers op de terrassen (de vrijdagmiddagborrel). |
 | Scorebord in de Goffert | Drie records van dit moment: de langst lopende sessie, de meeste subagents in één sessie en het drukste project. Er wordt niets opgeslagen; zonder sessies staat er `Nog geen wedstrijd`. |
 | Kudos | Klik op een HQ en op elke open pagina valt confetti op die toren, met een regel op de lichtkrant. Slepen om te draaien telt niet als klik. |
+| Rondrijdende camera | De camera beweegt zelf: naar de plek van de laatste gebeurtenis (8 seconden vast), anders elke 12 seconden naar het volgende drukke kavel. Aanraken van de camera pauzeert 60 seconden. |
 
 ## Hoe het werkt
 
@@ -203,15 +204,11 @@ Claude Code bepaalt het formaat van de bestanden in `~/.claude/`, dus een update
 
 | URL of commando | Wat je krijgt |
 | --- | --- |
-| `?mode=showcase&view=all` | Een vaste stad van 13 nepsessies over alle modellen en statussen, met de camera op het hele park. Zo zijn de screenshots hierboven gemaakt. |
+| `?mode=showcase&view=all` | Een vaste stad van 13 nepsessies over alle modellen en statussen, met de camera op het hele park. Elke 4 seconden verzint de showcase een gebeurtenis. Zo zijn de screenshots hierboven gemaakt. |
 | `?view=all` | Camera op het hele park, met echte sessies |
 | `?stats` | Overlay met draw calls, driehoeken, frametijd (gemiddeld en p95) en kavels gedetailleerd tegenover totaal |
 | `?detail=N` | Ander plafond voor volledig getekende kavels dan 40 |
 | `?style=classic` | Zonder de Inkshift-stijl |
-| `?tour` | De camera beweegt zelf: naar de plek van de laatste gebeurtenis (8 seconden vast), anders elke 12 seconden naar het volgende drukke kavel. Aanraken van de camera pauzeert 60 seconden. |
-| `?mode=showcase&demo=events` | De showcase verzint elke 4 seconden een gebeurtenis, voor een screenshot of een demo |
-| `?clock=HH:MM` | Zet de klok vast, bijvoorbeeld `?clock=23:00` voor de nacht |
-| `?weekday=1..7` | Zet de weekdag vast; 5 is vrijdag, samen met `?clock=17:00` zie je de borrel |
 
 Een stad op schaal zonder dertig echte Macs: start een centrale met `pnpm hub` en zet er nepmachines tegen.
 

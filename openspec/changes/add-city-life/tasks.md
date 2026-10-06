@@ -2,9 +2,8 @@
 
 - [x] 1.1 `web/city-feed.ts`: detect milestone, session-start and collab-start, with a baseline after every (re)connect
 - [x] 1.2 `web/text-board.ts`: canvas board with throttled repaint, and `landmarkPosition`
-- [x] 1.3 `web/view-options.ts`: parse `tour`, `demo=events`, `clock` and `weekday`
-- [x] 1.4 `web/demo-events.ts` and the showcase demo timer
-- [x] 1.5 `web/ticker.ts` at Station Nijmegen, wired in `web/main.ts`
+- [x] 1.3 `web/demo-events.ts` and the showcase demo timer, always on in the showcase
+- [x] 1.4 `web/ticker.ts` at Station Nijmegen, wired in `web/main.ts`
 
 ## 2. Milestone ceremony
 
@@ -15,12 +14,12 @@
 
 - [x] 3.1 `web/daylight.ts`: Amsterdam clock, sky, light, lamp glow and the Friday terrace boost
 - [x] 3.2 `web/scene.ts` `setDaylight`, `web/palette.ts` `setLampGlow`, `web/street-life.ts` `setTerraceBoost`
-- [x] 3.3 One clock source in `web/main.ts` that honours `?clock` and `?weekday`
+- [x] 3.3 One clock source in `web/main.ts`: the real time in Amsterdam
 
 ## 4. Tour
 
 - [x] 4.1 `web/tour.ts`: explicit tour state, event first, busy lots round robin, pause on input
-- [x] 4.2 `web/scene.ts` `onUserInput`, and no snap back to the park centre during a tour
+- [x] 4.2 `web/scene.ts` `onUserInput`, and no snap back to the park centre after the first fit; the tour is always on
 
 ## 5. Collaboration links
 
@@ -39,4 +38,4 @@
 
 ## 8. Docs
 
-- [x] 8.1 README: what the city shows, the viewer message, and the new review modes
+- [x] 8.1 README: what the city shows, the viewer message, and the showcase that emits events

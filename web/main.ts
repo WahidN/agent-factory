@@ -3,6 +3,7 @@ import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { CityFeed, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
+import { amsterdamClock, daylightAt } from "./daylight.ts";
 import { Ceremony } from "./ceremony.ts";
 import { CityEvents } from "./city-events.ts";
 import { demoEvent } from "./demo-events.ts";
@@ -26,7 +27,7 @@ import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistri
 import { Lot } from "./lot.ts";
 import { flattenBatch } from "./message-logic.ts";
 import { tierFor } from "./model-tier.ts";
-import { accentFor, WALL_TINTS } from "./palette.ts";
+import { accentFor, setLampGlow, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
 import { movingCarCount, parkBounds, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
@@ -50,15 +51,18 @@ const TICKER_OFFSET = { x: 0, z: 24 };
 const TICKER_YAW = Math.PI / 4;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
-// The city's activity follows the hour where the park actually stands, not
-// the browser's own time zone or UTC.
-const hourFormatter = new Intl.DateTimeFormat("nl-NL", {
-  hour: "numeric",
-  hourCycle: "h23",
-  timeZone: "Europe/Amsterdam",
-});
-function amsterdamHour(date: Date): number {
-  return Number(hourFormatter.format(date));
+// The one clock the whole city follows: the time where the park actually
+// stands (Europe/Amsterdam, not the browser's zone or UTC), unless ?clock or
+// ?weekday pin it for a screenshot.
+function cityClock(date: Date): { minutes: number; weekday: number } {
+  const real = amsterdamClock(date);
+  return {
+    minutes: viewOptions.clockMinutes ?? real.minutes,
+    weekday: viewOptions.weekday ?? real.weekday,
+  };
+}
+function cityHour(date: Date): number {
+  return Math.floor(cityClock(date).minutes / 60);
 }
 
 if (INK_STYLE_ENABLED) document.body.dataset.style = "ink";
@@ -319,7 +323,7 @@ function refocus(fit = false) {
 
 function currentActivity() {
   const now = new Date();
-  return cityActivity(sessions.values(), amsterdamHour(now), eventModeForTime(now));
+  return cityActivity(sessions.values(), cityHour(now), eventModeForTime(now));
 }
 
 function refreshActivity() {
@@ -616,8 +620,18 @@ const tooltip = createTooltip(
   pickables,
   view.onCameraChange,
 );
+// Sky, light and lamps for the time of day. The light levels leave the shadow
+// map alone; only a terrace rebuilt for the Friday boost casts new shadows.
+function applyDaylight() {
+  const { minutes, weekday } = cityClock(new Date());
+  const daylight = daylightAt(minutes, weekday, INK_STYLE_ENABLED);
+  view.setDaylight(daylight);
+  setLampGlow(daylight.lampGlow);
+  if (streetLife.setTerraceBoost(daylight.terraceBoost)) view.invalidateShadows();
+}
+applyDaylight();
 let activityClockCheckedAt = 0;
-let activeClockHour = amsterdamHour(new Date());
+let activeClockHour = cityHour(new Date());
 
 view.onFrame((dt, now) => {
   stats?.recordFrame(now);
@@ -641,7 +655,8 @@ view.onFrame((dt, now) => {
   boats.tick(dt);
   if (now - activityClockCheckedAt >= ACTIVITY_CLOCK_CHECK_MS) {
     activityClockCheckedAt = now;
-    const clockHour = amsterdamHour(new Date());
+    const clockHour = cityHour(new Date());
+    applyDaylight();
     if (clockHour !== activeClockHour) {
       activeClockHour = clockHour;
       refreshActivity();

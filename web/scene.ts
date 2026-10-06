@@ -5,6 +5,7 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import type { Daylight } from "./daylight.ts";
 import { INK_OUTLINE_SHADER } from "./ink-outline.ts";
 import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { clampToPark, fitZoom, fogRange, MAX_ZOOM, MIN_ZOOM, zoomFloor } from "./park-layout.ts";
@@ -86,11 +87,10 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   controls.minPolarAngle = 0.15;
   controls.maxPolarAngle = Math.PI * 0.42; // stays above the ground
 
-  scene.add(
-    INK_STYLE_ENABLED
-      ? new THREE.HemisphereLight("#e7e7ff", "#35374f", 1.45)
-      : new THREE.HemisphereLight("#effaff", "#62794b", 1.55),
-  );
+  const hemi = INK_STYLE_ENABLED
+    ? new THREE.HemisphereLight("#e7e7ff", "#35374f", 1.45)
+    : new THREE.HemisphereLight("#effaff", "#62794b", 1.55);
+  scene.add(hemi);
   const sun = INK_STYLE_ENABLED
     ? new THREE.DirectionalLight("#ffd9ad", 2.65)
     : new THREE.DirectionalLight("#fff2d1", 2.75);
@@ -251,6 +251,13 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
     camera,
     focus,
     panTo,
+    // Sky, fog and light levels for the time of day. Not a per-frame call.
+    setDaylight: (daylight: Daylight) => {
+      (scene.background as THREE.Color).copy(daylight.sky);
+      fog.color.copy(daylight.sky);
+      sun.intensity = daylight.sunIntensity;
+      hemi.intensity = daylight.hemiIntensity;
+    },
     onFrame: (callback: FrameCallback) => callbacks.add(callback),
     // The shadow map only redraws when this flag is set (autoUpdate is off
     // above), so anything that moves or rebuilds a shadow caster outside the

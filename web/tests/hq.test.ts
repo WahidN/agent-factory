@@ -30,6 +30,14 @@ describe("Hq", () => {
     expect(highestPoint(settled("dennis", 600e6)) - highestPoint(settled("dennis", 0))).toBeCloseTo(6 * FLOOR);
   });
 
+  it("reports the settled roof height and the user's tint, even before it has risen", () => {
+    const risen = settled("dennis", 600e6);
+    const rising = new Hq("dennis", 600e6);
+    expect(risen.roof.y).toBeCloseTo(0.2 + 1 + 7 * FLOOR); // yard, plinth, seven floors
+    expect(rising.roof.y).toBe(risen.roof.y);
+    expect(risen.tint).toBeInstanceOf(THREE.Color);
+  });
+
   it("rebuilds in place when the total crosses a row", () => {
     const hq = settled("dennis", 99e6);
     const before = highestPoint(hq);

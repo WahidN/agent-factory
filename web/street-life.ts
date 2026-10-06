@@ -9,6 +9,7 @@ import { PLOT_SIZE } from "./plots.ts";
 import { railSafeX } from "./rail-corridor.ts";
 
 const MAX_TABLES = 30;
+const MAX_TABLES_PER_TERRACE = 9;
 const MAX_PARASOLS = 24;
 const MAX_VISITORS = 72;
 
@@ -49,6 +50,7 @@ export class StreetLife {
   private readonly heads = instancedMesh("streetlife-heads", visitorHeadGeometry, skinMaterial, MAX_VISITORS);
   private claims: CityClaim[] = [];
   private activity: CityActivity = { hour: 12, busyRatio: 0, event: "ordinary" };
+  private terraceBoost = 1;
   private readonly writer = new InstanceWriter();
 
   constructor() {
@@ -65,6 +67,14 @@ export class StreetLife {
   setActivity(activity: CityActivity) {
     this.activity = this.normalise(activity);
     this.redraw();
+  }
+
+  /** Multiplies terrace tables (and so parasols and guests); the MAX_* caps still apply. */
+  setTerraceBoost(boost: number): boolean {
+    if (boost === this.terraceBoost) return false;
+    this.terraceBoost = boost;
+    this.redraw();
+    return true;
   }
 
   snapshot(): StreetLifeSnapshot {
@@ -94,8 +104,12 @@ export class StreetLife {
     for (const claim of this.claims) {
       if (terraceOpen && TERRACE_AMENITIES.has(claim.amenity) && tableIndex < MAX_TABLES) {
         const random = randomFor(claim, "terrace");
-        // busyRatio is already clamped to 0..1, so this never exceeds 5.
-        const count = 1 + Math.round(this.activity.busyRatio * 4);
+        // busyRatio is already clamped to 0..1, so this is at most 5 * boost.
+        // Three rows of three keep the last row at z = +24 from the cell centre, inside the terrace.
+        const count = Math.min(
+          MAX_TABLES_PER_TERRACE,
+          Math.round((1 + Math.round(this.activity.busyRatio * 4)) * this.terraceBoost),
+        );
         for (let i = 0; i < count && tableIndex < MAX_TABLES; i++) {
           const x = claim.cell.col * PLOT_SIZE - 12 + (i % 3) * 6 + (random() - 0.5);
           const z = claim.cell.row * PLOT_SIZE + 15 + Math.floor(i / 3) * 4.5;

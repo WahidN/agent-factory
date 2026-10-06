@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
-import { CityFeed, type CityEventSink } from "./city-feed.ts";
+import { CityFeed, type CityEvent, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
 import { amsterdamClock, daylightAt } from "./daylight.ts";
 import { Ceremony } from "./ceremony.ts";
@@ -38,6 +38,7 @@ import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./sta
 import { StreetLife } from "./street-life.ts";
 import { landmarkPosition } from "./text-board.ts";
 import { Ticker } from "./ticker.ts";
+import { Tour, type TourTarget } from "./tour.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
 import { UrbanMobility } from "./urban-mobility.ts";
@@ -113,6 +114,43 @@ const ceremony = new Ceremony((user) => {
 });
 view.scene.add(ceremony.group);
 sinks.push(ticker, ceremony);
+
+// ?tour: the camera visits the roofs of events and, in between, the busy lots.
+// A touch on the camera pauses it (scene.ts also stops recentring on layout
+// changes while a tour runs).
+const tour = viewOptions.tour
+  ? new Tour(
+      view.panTo,
+      (event: CityEvent) => {
+        const hq = hqs.get(event.kind === "collab-start" ? event.users[0] : event.user);
+        if (!hq?.group.visible) return null;
+        const roof = hq.roof;
+        return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z };
+      },
+      busyLots,
+    )
+  : null;
+if (tour) {
+  sinks.push(tour);
+  view.onUserInput(() => tour.pauseForUser());
+}
+
+// The places of the busy sessions the filter shows. The pool of targets is
+// reused: the tour asks for it on every cycle and copies the lot it shows.
+const busyTargets: TourTarget[] = [];
+function busyLots(): TourTarget[] {
+  let count = 0;
+  for (const [id, session] of sessions) {
+    const place = places.get(id);
+    if (session.status !== "busy" || !place || !matchesFilter(session, filter)) continue;
+    const target = busyTargets[count] ?? { x: 0, z: 0 };
+    target.x = place.x;
+    target.z = place.z;
+    busyTargets[count++] = target;
+  }
+  busyTargets.length = count;
+  return busyTargets;
+}
 
 function publishEvents() {
   for (const event of feed.observe(sessions)) for (const sink of sinks) sink.push(event);
@@ -664,6 +702,7 @@ view.onFrame((dt, now) => {
   }
   ticker.tick(dt, now);
   ceremony.tick(dt);
+  tour?.tick(dt);
   labels.update();
   tooltip.update();
 });

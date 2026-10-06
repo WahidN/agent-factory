@@ -125,9 +125,11 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   // A deliberate drag/rotate/zoom owns the camera from that moment onward.
   // Without this, a manual pan gets pulled back to the park centre every
   // frame, which reads as broken controls.
+  const userInputCallbacks = new Set<() => void>();
   controls.addEventListener("start", () => {
     focusActive = false;
     userOwnsCamera = true;
+    for (const callback of userInputCallbacks) callback();
     canvas.style.cursor = "grabbing";
   });
   controls.addEventListener("end", () => {
@@ -171,10 +173,13 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   }
 
   function focus(x: number, z: number, halfExtent: number, fit = false) {
-    focusTarget.set(x, 0, z);
     // A layout change after a manual pan only resizes shadows and zoom; the
-    // first fit and ?view=all still glide the camera to the town.
-    if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
+    // first fit and ?view=all still glide the camera to the town. During a
+    // tour the camera belongs to the tour: only the first fit recentres it.
+    if (!options.tour || fit) {
+      focusTarget.set(x, 0, z);
+      if (fit || options.autoFit || !userOwnsCamera) focusActive = true;
+    }
     focusedHalfExtent = halfExtent;
     parkArea = { x, z, half: halfExtent };
     fitFog(halfExtent);
@@ -251,6 +256,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
     camera,
     focus,
     panTo,
+    // Called when the user starts a drag, rotate or zoom.
+    onUserInput: (callback: () => void) => userInputCallbacks.add(callback),
     // Sky, fog and light levels for the time of day. Not a per-frame call.
     setDaylight: (daylight: Daylight) => {
       (scene.background as THREE.Color).copy(daylight.sky);

@@ -3,6 +3,7 @@ import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
 import { CityFeed, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
+import { Ceremony } from "./ceremony.ts";
 import { CityEvents } from "./city-events.ts";
 import { demoEvent } from "./demo-events.ts";
 import {
@@ -97,7 +98,17 @@ const ticker = new Ticker();
 ticker.group.rotation.y = TICKER_YAW;
 ticker.group.visible = false; // until the station is built
 view.scene.add(ticker.group);
-sinks.push(ticker);
+
+// A milestone or kudos sets off a show over that user's HQ roof. No HQ, or one
+// the filter hides, means no show.
+const ceremony = new Ceremony((user) => {
+  const hq = hqs.get(user);
+  if (!hq?.group.visible) return null;
+  const roof = hq.roof;
+  return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z, top: roof.y, tint: hq.tint };
+});
+view.scene.add(ceremony.group);
+sinks.push(ticker, ceremony);
 
 function publishEvents() {
   for (const event of feed.observe(sessions)) for (const sink of sinks) sink.push(event);
@@ -637,6 +648,7 @@ view.onFrame((dt, now) => {
     }
   }
   ticker.tick(dt, now);
+  ceremony.tick(dt);
   labels.update();
   tooltip.update();
 });

@@ -49,6 +49,18 @@ describe("CityFeed", () => {
     expect(next.filter((e) => e.kind === "milestone")).toHaveLength(1);
   });
 
+  it("does not take a total of 0 as a user's row: the reporter sends 0 until its scan is done", () => {
+    const feed = new CityFeed();
+    feed.observe(map(session("a", "ann", "p", 5e6)));
+    // bob's Mac just came online: its first updates carry no total yet.
+    const events = feed.observe(map(session("a", "ann", "p", 5e6), session("b", "bob", "q", 0)));
+    expect(events).toEqual([{ kind: "session-start", user: "bob", project: "q", model: "opus" }]);
+    // The scan finishes a few seconds later: that is where bob stands, not a feat.
+    expect(feed.observe(map(session("a", "ann", "p", 5e6), session("b", "bob", "q", 1e9)))).toEqual([]);
+    const next = feed.observe(map(session("a", "ann", "p", 5e6), session("b", "bob", "q", 2.5e9)));
+    expect(next).toEqual([{ kind: "milestone", user: "bob", row: 9 }]);
+  });
+
   it("fires one milestone for two machines under the same name", () => {
     const feed = new CityFeed();
     feed.observe(map(session("a", "ann", "p", 5e6), session("b", "ann", "p", 4e6)));

@@ -1,7 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: City events
-The page SHALL derive events from the sessions it receives: a user whose highest machine total reaches a new row of the token ladder, a session id it has not seen before, and a project that goes from fewer than two distinct users to two or more. The first set of sessions after the page connects or reconnects SHALL be a baseline that produces no events. A milestone SHALL fire at most once per user and row for as long as the page is open, also when that user leaves and comes back, and also when two machines run under the same name. A user who first appears after the baseline SHALL start from the row they already have, without a milestone for it; only their session start produces an event.
+The page SHALL derive events from the sessions it receives: a user whose highest machine total reaches a new row of the token ladder, a session id it has not seen before, and a project that goes from fewer than two distinct users to two or more. The first set of sessions after the page connects or reconnects SHALL be a baseline that produces no events. A milestone SHALL fire at most once per user and row for as long as the page is open, also when that user leaves and comes back, and also when two machines run under the same name. A user who first appears after the baseline SHALL start from the row they already have, without a milestone for it; only their session start produces an event. A machine total of 0 SHALL NOT count as that row: a reporter sends 0 until its scan is done, so the row is taken from the first total above 0.
+
+#### Scenario: User appears before the scan is done
+- **WHEN** a user first shows up after the baseline with a machine total of 0, and a few seconds later with a total on the 1B row
+- **THEN** only a session start fires, no milestone
 
 #### Scenario: Reconnect
 - **WHEN** the socket reconnects and the server sends a snapshot

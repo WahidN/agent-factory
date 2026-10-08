@@ -29,7 +29,9 @@ export interface CityEventSink {
  * - A milestone fires only when a user's row exceeds the highest row this page ever
  *   saw for that user (baseline included). A user who first appears after the
  *   baseline (say, their Mac just came online) takes their current row as that
- *   highest row without a milestone; their session-start still fires. The row is milestoneIndex of the highest
+ *   highest row without a milestone; their session-start still fires. A total of 0
+ *   does not count as a reading (a reporter sends 0 until its scan is done), so the
+ *   row is only taken from the first total above 0. The row is milestoneIndex of the highest
  *   machineTokens over that user's sessions, so two Macs under one name fire once,
  *   and a user who leaves and comes back does not fire again for the same row.
  * - session-start fires once per new session id after the baseline.
@@ -70,8 +72,10 @@ export class CityFeed {
       const row = milestoneIndex(tokens);
       const known = this.highestRow.get(user);
       if (known === undefined) {
-        // First sight of this user: their current row is where they stand, not a feat.
-        this.highestRow.set(user, row);
+        // First sight of this user: their current row is where they stand, not a
+        // feat. A total of 0 is not a reading yet: a reporter sends 0 until its
+        // scan of the transcripts is done, then the full total in one go.
+        if (tokens > 0) this.highestRow.set(user, row);
       } else if (row > known) {
         this.highestRow.set(user, row);
         if (announce) events.push({ kind: "milestone", user, row });

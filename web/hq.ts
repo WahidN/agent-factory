@@ -60,6 +60,9 @@ export class Hq {
   // is measured off the built structure. A lot sinks a fixed 12, which would
   // leave the upper floors of an eleven floor tower hanging.
   private sinkDepth = 0;
+  // Height of the roof slab above the ground once risen, set by buildStructure().
+  private roofY = 0;
+  private readonly wallTint: THREE.Color;
 
   private wallMaterial: THREE.MeshStandardMaterial;
   private accentMaterial: THREE.MeshStandardMaterial;
@@ -82,6 +85,7 @@ export class Hq {
     this.tokens = tokens;
     this.agents = agents;
     const tint = WALL_TINTS[wallTintIndexFor(user)];
+    this.wallTint = new THREE.Color(tint);
     this.wallMaterial = createWallMaterial(tint);
     // An HQ has no busy state to follow, so its windows keep one soft glow.
     // A tower with every window dark reads as derelict from across the park.
@@ -105,6 +109,17 @@ export class Hq {
 
   pickables(): THREE.Mesh[] {
     return this.pickableMeshes;
+  }
+
+  // Where the roof is, relative to the group and as it stands once risen (not
+  // as it is mid-rise): the centre of the slab, without the helipad or blimp.
+  get roof(): { x: number; y: number; z: number } {
+    return { x: (TOWER.x0 + TOWER.x1) / 2, y: this.roofY, z: (TOWER.z0 + TOWER.z1) / 2 };
+  }
+
+  // The wall tint of this user's buildings. Shared, so callers must not change it.
+  get tint(): THREE.Color {
+    return this.wallTint;
   }
 
   // Rebuilds in place when the total crosses a ladder row, which is the only
@@ -168,6 +183,7 @@ export class Hq {
     this.builtRow = milestoneIndex(this.tokens);
     this.buildBlock(builder);
     const top = this.buildTower(builder, hqFloors(this.tokens));
+    this.roofY = top;
     this.extras = buildHqMilestones(builder, this.builtRow, {
       accent: this.accentMaterial,
       tower: { ...TOWER, top },

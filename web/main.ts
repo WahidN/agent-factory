@@ -1,8 +1,13 @@
 import * as THREE from "three";
-import type { ParkMessage, PlainMessage, ServerMessage, SessionState } from "../server/types.ts";
+import type { ParkMessage, PlainMessage, SessionState } from "../server/types.ts";
 import { cityActivity, eventModeForTime } from "./city-activity.ts";
+import { CityFeed, type CityEvent, type CityEventSink } from "./city-feed.ts";
 import { claimedUpTo } from "./city-plan.ts";
+import { CollabLinks } from "./collab-links.ts";
+import { amsterdamClock, daylightAt } from "./daylight.ts";
+import { Ceremony } from "./ceremony.ts";
 import { CityEvents } from "./city-events.ts";
+import { demoEvent } from "./demo-events.ts";
 import {
   createFilterPanel,
   EMPTY_FILTER,
@@ -22,10 +27,10 @@ import { INK_STYLE_ENABLED } from "./ink-style.ts";
 import { LandmarkLabels } from "./landmark-labels.ts";
 import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistribute } from "./lod.ts";
 import { Lot } from "./lot.ts";
-import { flattenBatch } from "./message-logic.ts";
+import { flattenBatch, parseServerMessage } from "./message-logic.ts";
 import { tierFor } from "./model-tier.ts";
 import { Office } from "./office.ts";
-import { accentFor, WALL_TINTS } from "./palette.ts";
+import { accentFor, setLampGlow, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
 import { movingCarCount, parkBounds, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
@@ -33,24 +38,34 @@ import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
 import { SHOWCASE_USER, showcaseRequested, showcaseSessions } from "./showcase.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
+import { Scoreboard } from "./scoreboard.ts";
 import { StreetLife } from "./street-life.ts";
+import { landmarkPosition } from "./text-board.ts";
+import { Ticker } from "./ticker.ts";
+import { Tour, type TourTarget } from "./tour.ts";
 import { createTooltip } from "./tooltip.ts";
 import { ParkTraffic } from "./traffic.ts";
 import { UrbanMobility } from "./urban-mobility.ts";
 import { viewOptionsFrom } from "./view-options.ts";
 
 const RECONNECT_MS = 2000;
+const DEMO_EVENT_MS = 4000;
+const KUDOS_COOLDOWN_MS = 2000; // the server limits per sender at the same rate
+const SCOREBOARD_REFRESH_MS = 5000;
+// The records board stands at the back corner of the stadium cell, behind the
+// tribunes (bowl about +-14 by +-18 around the cell centre) so it does not hide
+// the pitch from the default camera, and faces that camera like the ticker.
+const SCOREBOARD_OFFSET = { x: -20, z: -22 };
+// The news ticker stands on the station plot, in front of the bus apron and
+// turned to face the default camera (azimuth PI/4, see scene.ts).
+const TICKER_OFFSET = { x: 0, z: 24 };
+const TICKER_YAW = Math.PI / 4;
 const ACTIVITY_CLOCK_CHECK_MS = 30_000;
 
-// The city's activity follows the hour where the park actually stands, not
-// the browser's own time zone or UTC.
-const hourFormatter = new Intl.DateTimeFormat("nl-NL", {
-  hour: "numeric",
-  hourCycle: "h23",
-  timeZone: "Europe/Amsterdam",
-});
-function amsterdamHour(date: Date): number {
-  return Number(hourFormatter.format(date));
+// The one clock the whole city follows: the time where the park actually
+// stands (Europe/Amsterdam, not the browser's zone or UTC).
+function cityHour(date: Date): number {
+  return Math.floor(amsterdamClock(date).minutes / 60);
 }
 
 if (INK_STYLE_ENABLED) document.body.dataset.style = "ink";
@@ -68,7 +83,8 @@ const ladder = createLadderDialog(
 // Grab the renderer scene.ts is about to build, only when asked, so a normal
 // visit never touches this path.
 const rendererCapture = statsRequested(location.search) ? interceptNextRenderer(THREE.WebGLRenderer) : undefined;
-const view = createScene(canvas, viewOptionsFrom(location.search));
+const viewOptions = viewOptionsFrom(location.search);
+const view = createScene(canvas, viewOptions);
 const plots = new PlotAllocator();
 const park = new Park(view.scene);
 const traffic = new ParkTraffic();
@@ -78,6 +94,76 @@ const cityEvents = new CityEvents();
 const streetLife = new StreetLife();
 const labels = new LandmarkLabels(canvas, view.camera);
 view.scene.add(traffic.group, boats.group, mobility.group, cityEvents.group, streetLife.group);
+const collabLinks = new CollabLinks();
+view.scene.add(collabLinks.group);
+
+// ---------- City feed ----------
+
+// What just happened in the city, derived from successive session maps. Every
+// sink hears every event; the ticker is the first.
+const feed = new CityFeed();
+const sinks: CityEventSink[] = [];
+const ticker = new Ticker();
+ticker.group.rotation.y = TICKER_YAW;
+ticker.group.visible = false; // until the station is built
+view.scene.add(ticker.group);
+
+// A milestone or kudos sets off a show over that user's HQ roof. No HQ, or one
+// the filter hides, means no show.
+const ceremony = new Ceremony((user) => {
+  const hq = hqs.get(user);
+  if (!hq?.group.visible) return null;
+  const roof = hq.roof;
+  return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z, top: roof.y, tint: hq.tint };
+});
+view.scene.add(ceremony.group);
+sinks.push(ticker, ceremony);
+
+const scoreboard = new Scoreboard();
+scoreboard.group.rotation.y = TICKER_YAW;
+scoreboard.group.visible = false; // until the stadium is built
+view.scene.add(scoreboard.group);
+let scoreboardAt = Number.NEGATIVE_INFINITY;
+
+// The camera visits the roofs of events and, in between, the busy lots. A touch
+// on the camera pauses it (scene.ts also stops recentring on layout changes).
+// Not under ?view=all: that mode promises the whole park in view, and a pan
+// at whole-park zoom only pushes half the city off the screen. The showcase
+// also fits the park, but it is where the tour gets looked at, so it keeps it.
+const TOUR_ENABLED = new URLSearchParams(location.search).get("view") !== "all";
+const tour = new Tour(
+  view.panTo,
+  (event: CityEvent) => {
+    const hq = hqs.get(event.kind === "collab-start" ? event.users[0] : event.user);
+    if (!hq?.group.visible) return null;
+    const roof = hq.roof;
+    return { x: hq.group.position.x + roof.x, z: hq.group.position.z + roof.z };
+  },
+  busyLots,
+);
+if (TOUR_ENABLED) sinks.push(tour);
+view.onUserInput(() => tour.pauseForUser());
+
+// The places of the busy sessions the filter shows. The pool of targets is
+// reused: the tour asks for it on every cycle and copies the lot it shows.
+const busyTargets: TourTarget[] = [];
+function busyLots(): TourTarget[] {
+  let count = 0;
+  for (const [id, session] of sessions) {
+    const place = places.get(id);
+    if (session.status !== "busy" || !place || !matchesFilter(session, filter)) continue;
+    const target = busyTargets[count] ?? { x: 0, z: 0 };
+    target.x = place.x;
+    target.z = place.z;
+    busyTargets[count++] = target;
+  }
+  busyTargets.length = count;
+  return busyTargets;
+}
+
+function publishEvents() {
+  for (const event of feed.observe(sessions)) for (const sink of sinks) sink.push(event);
+}
 
 // Every session on the park, whether it is drawn in full or as an instance.
 const sessions = new Map<string, SessionState>();
@@ -177,6 +263,7 @@ function remove(id: string) {
     // re-selects the detailed set and covers syncFar() for the rest.
     redistribute();
     syncTraffic();
+    syncLinks();
   });
 }
 
@@ -229,6 +316,8 @@ function handle(message: ParkMessage) {
   if (filterChanged) view.invalidateShadows();
   applyDetailVisibility();
   syncTraffic();
+  syncLinks();
+  publishEvents();
 }
 
 function applyPlain(message: PlainMessage) {
@@ -282,13 +371,19 @@ function refocus(fit = false) {
   mobility.setRoads(indexes);
   cityEvents.setCity(claims, parkBounds(indexes, true), activity);
   streetLife.setCity(claims, activity);
+  const station = landmarkPosition("station", rankCount);
+  ticker.group.visible = station !== null;
+  if (station) ticker.place(station.x + TICKER_OFFSET.x, station.z + TICKER_OFFSET.z);
+  const stadium = landmarkPosition("goffert", rankCount);
+  scoreboard.group.visible = stadium !== null;
+  if (stadium) scoreboard.place(stadium.x + SCOREBOARD_OFFSET.x, stadium.z + SCOREBOARD_OFFSET.z);
   const { x, z, half } = park.extent();
   view.focus(x, z, half, fit);
 }
 
 function currentActivity() {
   const now = new Date();
-  return cityActivity(sessions.values(), amsterdamHour(now), eventModeForTime(now));
+  return cityActivity(sessions.values(), cityHour(now), eventModeForTime(now));
 }
 
 function refreshActivity() {
@@ -405,6 +500,15 @@ function syncFar() {
 // the frame loop just replays this array instead of rebuilding it every tick.
 type TrafficInput = { id: string; index: number; cars: number; truck: boolean };
 let trafficInputs: TrafficInput[] = [];
+
+// Pipes between lots of the same project run by different users. Rebuilt where
+// the session set, the layout or the filter changes, never per frame.
+function syncLinks() {
+  collabLinks.update([...sessions.values()], (id) => {
+    const session = sessions.get(id);
+    return session && matchesFilter(session, filter) ? (places.get(id) ?? null) : null;
+  });
+}
 
 // A session the filter hides sends nothing either, so its vehicles shrink away
 // instead of driving around an empty plot.
@@ -528,6 +632,7 @@ function showFilterPanel() {
       filter = next;
       redistribute(); // also applies visibility and ends in syncFar()
       syncTraffic();
+      syncLinks();
       view.invalidateShadows(); // a hidden or revealed lot is a shadow caster switching on or off
     },
     (user) => {
@@ -535,7 +640,9 @@ function showFilterPanel() {
         .map(([id, place]) => ({ user: sessions.get(id)?.user, ...place }))
         .filter((p): p is { user: string; x: number; z: number } => p.user !== undefined);
       const target = jumpTarget(user, points);
-      if (target) view.panTo(target.x, target.z);
+      if (!target) return;
+      view.panTo(target.x, target.z);
+      tour.pauseForUser(); // a click in the panel is no camera input, so scene.ts does not report it
     },
   );
 }
@@ -553,12 +660,17 @@ function setLive(live: boolean) {
   hint.hidden = live || everReceived;
 }
 
+let socket: WebSocket | null = null;
+
 function connect() {
+  feed.reset(); // the first message of this connection is a baseline again
   const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${protocol}://${location.host}/ws`);
-  socket.onopen = () => setLive(true);
-  socket.onmessage = (event) => {
-    const message: ServerMessage = JSON.parse(event.data);
+  const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+  socket = ws;
+  ws.onopen = () => setLive(true);
+  ws.onmessage = (event) => {
+    const message = parseServerMessage(event.data);
+    if (!message) return; // broken JSON or a type this page does not know
     // Taken off here and not in handle(): flattenBatch() maps a ServerMessage
     // to PlainMessage[], and this one is deliberately not a PlainMessage.
     if (message.type === "server-mode") {
@@ -568,9 +680,14 @@ function connect() {
       else showFilterPanel();
       return;
     }
+    if (message.type === "kudos") {
+      for (const sink of sinks) sink.push({ kind: "kudos", user: message.user });
+      return;
+    }
     handle(message);
   };
-  socket.onclose = () => {
+  ws.onclose = () => {
+    if (socket === ws) socket = null;
     setLive(false);
     showFilterPanel(); // nothing will ever tell us, so fall back to showing it
     setTimeout(connect, RECONNECT_MS);
@@ -590,8 +707,6 @@ const tooltip = createTooltip(
 // ---------- Going into your own HQ ----------
 
 const FADE_MS = 350;
-const CLICK_MAX_PX = 4;
-const CLICK_MAX_MS = 400;
 const fade = document.querySelector<HTMLElement>("#fade")!;
 const leaveButton = document.querySelector<HTMLButtonElement>("#leave-office")!;
 const lookHint = document.querySelector<HTMLElement>("#look-hint")!;
@@ -655,22 +770,6 @@ canvas.addEventListener("click", () => {
 });
 view.onCameraChange(() => enterCard.close());
 
-// A press and a release that barely moved is a click; anything else is the
-// camera being dragged.
-let pressed: { x: number; y: number; at: number } | null = null;
-canvas.addEventListener("pointerdown", (event) => {
-  pressed = event.button === 0 ? { x: event.clientX, y: event.clientY, at: performance.now() } : null;
-});
-canvas.addEventListener("pointerup", (event) => {
-  const down = pressed;
-  pressed = null;
-  if (!down || office || !me) return;
-  const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
-  if (moved > CLICK_MAX_PX || performance.now() - down.at > CLICK_MAX_MS) return;
-  const hq = tooltip.hoveredHq();
-  if (hq?.user === me) enterCard.open(hq);
-});
-
 // One Escape does one thing: the milestone dialog and the locked pointer
 // close themselves, then the card, then the office.
 window.addEventListener("keydown", (event) => {
@@ -679,8 +778,38 @@ window.addEventListener("keydown", (event) => {
   else leaveOffice();
 });
 
+// A click on your own head office opens its card. A click on anyone else's
+// sends kudos. The show comes back as the server's echo, so every screen sees
+// it together; only the showcase has no server and plays it locally.
+let kudosAt = Number.NEGATIVE_INFINITY;
+tooltip.onPick((hq) => {
+  if (office) return;
+  if (hq.user === me) {
+    enterCard.open(hq);
+    return;
+  }
+  const now = performance.now();
+  if (now - kudosAt < KUDOS_COOLDOWN_MS) return;
+  if (showcase) {
+    kudosAt = now;
+    for (const sink of sinks) sink.push({ kind: "kudos", user: hq.user });
+  } else if (socket?.readyState === WebSocket.OPEN) {
+    kudosAt = now;
+    socket.send(JSON.stringify({ type: "kudos", user: hq.user }));
+  }
+});
+// Sky, light and lamps for the time of day. The light levels leave the shadow
+// map alone; only a terrace rebuilt for the Friday boost casts new shadows.
+function applyDaylight() {
+  const { minutes, weekday } = amsterdamClock(new Date());
+  const daylight = daylightAt(minutes, weekday, INK_STYLE_ENABLED);
+  view.setDaylight(daylight);
+  setLampGlow(daylight.lampGlow);
+  if (streetLife.setTerraceBoost(daylight.terraceBoost)) view.invalidateShadows();
+}
+applyDaylight();
 let activityClockCheckedAt = 0;
-let activeClockHour = amsterdamHour(new Date());
+let activeClockHour = cityHour(new Date());
 
 view.onFrame((dt, now) => {
   stats?.recordFrame(now);
@@ -707,12 +836,22 @@ view.onFrame((dt, now) => {
   boats.tick(dt);
   if (now - activityClockCheckedAt >= ACTIVITY_CLOCK_CHECK_MS) {
     activityClockCheckedAt = now;
-    const clockHour = amsterdamHour(new Date());
+    const clockHour = cityHour(new Date());
+    applyDaylight();
     if (clockHour !== activeClockHour) {
       activeClockHour = clockHour;
       refreshActivity();
     }
   }
+  ticker.tick(dt, now);
+  ceremony.tick(dt);
+  if (now - scoreboardAt >= SCOREBOARD_REFRESH_MS) {
+    scoreboardAt = now;
+    scoreboard.update([...sessions.values()], Date.now());
+  }
+  scoreboard.tick(now);
+  collabLinks.tick(dt);
+  if (TOUR_ENABLED) tour.tick(dt);
   labels.update();
   tooltip.update();
 });
@@ -722,6 +861,11 @@ if (showcase) {
   pill.classList.add("live");
   pill.textContent = "showcase";
   hint.hidden = true;
+  let step = 0;
+  setInterval(() => {
+    const event = demoEvent([...sessions.values()], step++);
+    if (event) for (const sink of sinks) sink.push(event);
+  }, DEMO_EVENT_MS);
 } else {
   refocus();
   setLive(false);

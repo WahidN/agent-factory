@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlainMessage, ServerMessage } from "../../server/types.ts";
-import { flattenBatch } from "../message-logic.ts";
+import { flattenBatch, parseServerMessage } from "../message-logic.ts";
 
 function update(id: string): PlainMessage {
   return {
@@ -25,5 +25,33 @@ describe("flattenBatch", () => {
     for (const plain of flattenBatch(message)) {
       expect(plain.type).not.toBe("batch");
     }
+  });
+});
+
+describe("parseServerMessage", () => {
+  it("returns null for broken JSON", () => {
+    expect(parseServerMessage("{nope")).toBeNull();
+  });
+
+  it("returns null for an unknown type, so the page never treats it as a removal", () => {
+    expect(parseServerMessage('{"type":"confetti","id":"a"}')).toBeNull();
+  });
+
+  it("returns null for JSON that is no object or has no type", () => {
+    expect(parseServerMessage("null")).toBeNull();
+    expect(parseServerMessage("5")).toBeNull();
+    expect(parseServerMessage('{"id":"a"}')).toBeNull();
+  });
+
+  it("returns the object for the known types", () => {
+    const messages: ServerMessage[] = [
+      { type: "snapshot", sessions: [] },
+      { type: "batch", messages: [update("a")] },
+      { type: "server-mode", hub: true },
+      { type: "kudos", user: "dennis" },
+      update("a"),
+      { type: "session-removed", id: "a" },
+    ];
+    for (const message of messages) expect(parseServerMessage(JSON.stringify(message))).toEqual(message);
   });
 });

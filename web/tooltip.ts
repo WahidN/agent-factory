@@ -41,6 +41,28 @@ export function createTooltip(
     );
     dirty = true;
   });
+  // A click is a press and release that hardly moved: OrbitControls rotates on
+  // a left drag, and a rotation must not count. The raycast runs on the
+  // release point itself, since a tap on touch has no pointermove before it.
+  let pickHandler: ((hover: HqHover) => void) | null = null;
+  let pressed: Press | null = null;
+  canvas.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return; // a right click is no kudos
+    pressed = { x: event.clientX, y: event.clientY, t: event.timeStamp };
+  });
+  canvas.addEventListener("pointerup", (event) => {
+    const down = pressed;
+    pressed = null;
+    if (!pickHandler || !down || !isClick(down, { x: event.clientX, y: event.clientY, t: event.timeStamp })) return;
+    const rect = canvas.getBoundingClientRect();
+    const at = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    raycaster.setFromCamera(at, camera);
+    const target = raycaster.intersectObjects(pickables(), false)[0]?.object.userData.hover as Hoverable | undefined;
+    if (target && !target.gone && "hq" in target) pickHandler(target.hq);
+  });
   canvas.addEventListener("pointerleave", () => {
     screen = null;
     dirty = true;
@@ -89,7 +111,23 @@ export function createTooltip(
     element.style.top = `${y}px`;
   }
 
-  return { update };
+  return {
+    update,
+    // One handler; fires for a click on a head office only.
+    onPick(handler: (hover: HqHover) => void) {
+      pickHandler = handler;
+    },
+  };
+}
+
+type Press = { x: number; y: number; t: number };
+
+const CLICK_MAX_PX = 5;
+const CLICK_MAX_MS = 500;
+
+// Whether a press and release together are a click and not a drag or a hold.
+export function isClick(down: Press, up: Press): boolean {
+  return Math.hypot(up.x - down.x, up.y - down.y) < CLICK_MAX_PX && up.t - down.t < CLICK_MAX_MS;
 }
 
 type Line = [className: string, text: string];

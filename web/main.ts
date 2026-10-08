@@ -14,6 +14,7 @@ import {
   type Filter,
   type FilterPanel,
 } from "./filter.ts";
+import { createEnterCard } from "./enter-card.ts";
 import { Hq } from "./hq.ts";
 import { InstancedLots, type FarLot } from "./instanced-lots.ts";
 import { createLadderDialog, type UserTotal } from "./ladder-dialog.ts";
@@ -23,13 +24,14 @@ import { detailCapFrom, REDISTRIBUTE_INTERVAL_MS, selectDetailed, shouldRedistri
 import { Lot } from "./lot.ts";
 import { flattenBatch } from "./message-logic.ts";
 import { tierFor } from "./model-tier.ts";
+import { Office } from "./office.ts";
 import { accentFor, WALL_TINTS } from "./palette.ts";
 import { Park } from "./park.ts";
 import { movingCarCount, parkBounds, wallTintIndexFor } from "./park-layout.ts";
 import { PlotAllocator, plotPosition } from "./plots.ts";
 import { RiverBoats } from "./river-boats.ts";
 import { createScene } from "./scene.ts";
-import { showcaseRequested, showcaseSessions } from "./showcase.ts";
+import { SHOWCASE_USER, showcaseRequested, showcaseSessions } from "./showcase.ts";
 import { createStatsOverlay, interceptNextRenderer, statsRequested } from "./stats.ts";
 import { StreetLife } from "./street-life.ts";
 import { createTooltip } from "./tooltip.ts";
@@ -91,10 +93,18 @@ const leaving = new Set<Lot>();
 // none of them take part in the detail cap below.
 const hqs = new Map<string, Hq>();
 const leavingHqs = new Set<Hq>();
+// Whose sessions this page is about: the user a local server names, or the
+// showcase user. Empty on a central, which has no HQ to enter.
+let me = showcase ? SHOWCASE_USER : "";
+// Built when you go in and dropped when you come out; the city is untouched
+// meanwhile.
+let office: Office | null = null;
+const NOTHING_PICKABLE: THREE.Object3D[] = [];
 // Rebuilt only when the detailed set changes, not once per frame: the
 // tooltip only needs a fresh list right before it raycasts against it.
 let pickablesCache: THREE.Object3D[] | null = null;
 function pickables(): THREE.Object3D[] {
+  if (office) return NOTHING_PICKABLE;
   if (!pickablesCache) {
     pickablesCache = [
       ...[...lots.values()]
@@ -453,6 +463,7 @@ function syncHqs() {
     hq.update(tokens, running);
     hq.group.visible = matchesUserFilter(user, filter);
   }
+  office?.setSessions([...sessions.values()].filter((session) => session.user === me));
 
   // The user's last session ended. The HQ leaves the map right away, so a
   // user who comes back inside the sink gets a fresh one and this callback
@@ -552,6 +563,7 @@ function connect() {
     // to PlainMessage[], and this one is deliberately not a PlainMessage.
     if (message.type === "server-mode") {
       toldHub = message.hub;
+      me = message.user ?? "";
       if (toldHub) removeFilterPanel();
       else showFilterPanel();
       return;
@@ -574,6 +586,99 @@ const tooltip = createTooltip(
   pickables,
   view.onCameraChange,
 );
+
+// ---------- Going into your own HQ ----------
+
+const FADE_MS = 350;
+const CLICK_MAX_PX = 4;
+const CLICK_MAX_MS = 400;
+const fade = document.querySelector<HTMLElement>("#fade")!;
+const leaveButton = document.querySelector<HTMLButtonElement>("#leave-office")!;
+const lookHint = document.querySelector<HTMLElement>("#look-hint")!;
+const ladderDialog = document.querySelector<HTMLDialogElement>("#ladder")!;
+const enterCard = createEnterCard(document.querySelector<HTMLElement>("#enter-card")!, enterOffice);
+let transitioning = false;
+
+// The swap happens while the screen is dark, so the city never visibly jumps.
+function fadeThrough(swap: () => void) {
+  transitioning = true;
+  fade.classList.add("on");
+  setTimeout(() => {
+    swap();
+    fade.classList.remove("on");
+    setTimeout(() => {
+      transitioning = false;
+    }, FADE_MS);
+  }, FADE_MS);
+}
+
+function showLookHint(locked: boolean) {
+  lookHint.textContent = locked ? "WASD lopen, Esc geeft de muis terug" : "klik om rond te kijken";
+}
+
+function enterOffice() {
+  if (office || transitioning || !me) return;
+  fadeThrough(() => {
+    const next = new Office(me, canvas);
+    next.setSessions([...sessions.values()].filter((session) => session.user === me));
+    next.controls.addEventListener("lock", () => showLookHint(true));
+    next.controls.addEventListener("unlock", () => showLookHint(false));
+    office = next;
+    pickablesCache = null;
+    view.setStage(next.scene, next.camera);
+    document.body.classList.add("in-office");
+    leaveButton.hidden = false;
+    lookHint.hidden = false;
+    showLookHint(false);
+    next.lock();
+  });
+}
+
+function leaveOffice() {
+  if (!office || transitioning) return;
+  fadeThrough(() => {
+    office?.unlock();
+    office?.dispose();
+    office = null;
+    pickablesCache = null;
+    view.setStage(view.scene, view.camera);
+    document.body.classList.remove("in-office");
+    leaveButton.hidden = true;
+    lookHint.hidden = true;
+  });
+}
+
+leaveButton.addEventListener("click", leaveOffice);
+// A lock the browser refused is never a dead end: a click asks again.
+canvas.addEventListener("click", () => {
+  if (office && !office.isLocked) office.lock();
+});
+view.onCameraChange(() => enterCard.close());
+
+// A press and a release that barely moved is a click; anything else is the
+// camera being dragged.
+let pressed: { x: number; y: number; at: number } | null = null;
+canvas.addEventListener("pointerdown", (event) => {
+  pressed = event.button === 0 ? { x: event.clientX, y: event.clientY, at: performance.now() } : null;
+});
+canvas.addEventListener("pointerup", (event) => {
+  const down = pressed;
+  pressed = null;
+  if (!down || office || !me) return;
+  const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
+  if (moved > CLICK_MAX_PX || performance.now() - down.at > CLICK_MAX_MS) return;
+  const hq = tooltip.hoveredHq();
+  if (hq?.user === me) enterCard.open(hq);
+});
+
+// One Escape does one thing: the milestone dialog and the locked pointer
+// close themselves, then the card, then the office.
+window.addEventListener("keydown", (event) => {
+  if (event.code !== "Escape" || ladderDialog.open || office?.isLocked) return;
+  if (enterCard.isOpen) enterCard.close();
+  else leaveOffice();
+});
+
 let activityClockCheckedAt = 0;
 let activeClockHour = amsterdamHour(new Date());
 
@@ -590,7 +695,10 @@ view.onFrame((dt, now) => {
     if (hq.consumePickablesDirty()) pickablesCache = null;
   }
   far.tick(dt, now);
-  if (now - decidedAtMs >= REDISTRIBUTE_INTERVAL_MS && shouldRedistribute(decidedAt, groundCenter())) redistribute();
+  office?.tick(dt, now);
+  if (!office && now - decidedAtMs >= REDISTRIBUTE_INTERVAL_MS && shouldRedistribute(decidedAt, groundCenter())) {
+    redistribute();
+  }
   // The city moves first, so the barrier state the cars read is from this
   // frame and not the last one.
   mobility.tick(dt);

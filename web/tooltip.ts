@@ -89,7 +89,10 @@ export function createTooltip(
     element.style.top = `${y}px`;
   }
 
-  return { update };
+  return {
+    update,
+    hoveredHq: (): HqHover | null => (hovered && "hq" in hovered ? hovered.hq : null),
+  };
 }
 
 type Line = [className: string, text: string];

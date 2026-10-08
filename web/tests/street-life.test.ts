@@ -82,6 +82,28 @@ describe("StreetLife", () => {
     }
   });
 
+  it("shares the table cap over every terrace on a boosted Friday instead of filling the first few", () => {
+    const life = new StreetLife();
+    // Seven terraces, one per row: more than the 30 tables can seat at nine each.
+    const terraces: CityClaim[] = Array.from({ length: 7 }, (_, row) => ({
+      cell: { col: 0, row },
+      amenity: "shops" as const,
+    }));
+    life.setCity(terraces, { hour: 17, busyRatio: 1 });
+    life.setTerraceBoost(2);
+    const matrix = new THREE.Matrix4();
+    const tables = life.group.children.find((child) => child.name === "streetlife-tables") as THREE.InstancedMesh;
+    const perTerrace = new Array<number>(terraces.length).fill(0);
+    for (let i = 0; i < tables.count; i++) {
+      tables.getMatrixAt(i, matrix);
+      // Tables sit 15 to 24 past the cell centre in z, so the row is the nearest cell.
+      perTerrace[Math.round((matrix.elements[14] - 15) / 60)]++;
+    }
+    expect(tables.count).toBeLessThanOrEqual(30);
+    expect(Math.min(...perTerrace)).toBeGreaterThan(0);
+    expect(Math.max(...perTerrace) - Math.min(...perTerrace)).toBeLessThanOrEqual(1);
+  });
+
   it("reuses five bounded instanced meshes across activity modes", () => {
     const life = new StreetLife();
     const children = [...life.group.children];

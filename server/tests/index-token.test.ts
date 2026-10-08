@@ -185,11 +185,21 @@ describe("the server mode a browser is told", () => {
     expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: true });
   }, 15_000);
 
+  it("names no user on a central", async () => {
+    const port = nextPort();
+    await startCentral(port, "");
+    expect(await browserMessage(port, "server-mode")).not.toHaveProperty("user");
+  }, 15_000);
+
   it("is not the hub for a plain local server", async () => {
     const home = await mkdtemp(join(tmpdir(), "agent-factory-local-home-"));
     const port = nextPort();
     await startLocal(port, home);
-    expect(await browserMessage(port, "server-mode")).toMatchObject({ type: "server-mode", hub: false });
+    expect(await browserMessage(port, "server-mode")).toMatchObject({
+      type: "server-mode",
+      hub: false,
+      user: "tester",
+    });
     await rm(home, { recursive: true, force: true });
   }, 15_000);
 });

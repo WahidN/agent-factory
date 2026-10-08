@@ -42,4 +42,6 @@ export type PlainMessage =
 // built from these alone.
 export type ParkMessage = PlainMessage | { type: "batch"; messages: PlainMessage[] };
 
-export type ServerMessage = ParkMessage | { type: "server-mode"; hub: boolean };
+// `user` is whose machine a local server lists. A central serves many people
+// and belongs to none of them, so it leaves the field out.
+export type ServerMessage = ParkMessage | { type: "server-mode"; hub: boolean; user?: string };

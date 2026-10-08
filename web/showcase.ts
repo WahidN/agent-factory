@@ -12,6 +12,9 @@ const MODELS = ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-5", "claude-
 // an empty yard next to a fully earned one.
 const TOKENS = [0, 40e6, 600e6, 5e9];
 
+// The user a showcase page counts as yours: the one with the full ladder.
+export const SHOWCASE_USER = "noor";
+
 export function showcaseRequested(search: string): boolean {
   return new URLSearchParams(search).get("mode") === "showcase";
 }

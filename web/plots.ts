@@ -45,14 +45,33 @@ function sortedByHash(keys: string[]): string[] {
     .map(({ key }) => key);
 }
 
+// The plot of a run whose cell lies nearest the middle of the run's cells.
+// Ties go to the lower plot, so the answer never depends on iteration order.
+function middlePlot(first: number, length: number): number {
+  const cells = Array.from({ length }, (_, i) => plotCell(first + i));
+  const midCol = cells.reduce((sum, cell) => sum + cell.col, 0) / length;
+  const midRow = cells.reduce((sum, cell) => sum + cell.row, 0) / length;
+  let best = 0;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [i, cell] of cells.entries()) {
+    const distance = (cell.col - midCol) ** 2 + (cell.row - midRow) ** 2;
+    if (distance < bestDistance) {
+      best = i;
+      bestDistance = distance;
+    }
+  }
+  return first + best;
+}
+
 // Assigns every session and every HQ a plot index, packed into 0..n-1 with no
 // gaps, where n is the number of sessions plus one for each user that has
-// one. Users are sorted deterministically and each user's sessions (also
-// sorted deterministically) form one contiguous run of indexes behind that
-// user's HQ, so a user's plots stay next to each other. Because the packing
-// is exact, removing a session shifts the ranks (and so the positions) of
-// whichever plots came after it in this order; that is expected, not a bug,
-// it is what keeps the park compact.
+// one. Users are sorted deterministically and each user gets one contiguous
+// run of indexes: the HQ takes the plot nearest the middle of the run and the
+// user's sessions (also sorted deterministically) take the rest, so the halls
+// stand around the HQ. Because the packing is exact, removing a session
+// shifts the ranks (and so the positions) of whichever plots came after it in
+// this order, and moves the middle of its own user's run; that is expected,
+// not a bug, it is what keeps the park compact.
 export function assignPlots(sessions: PlotSession[]): Plots {
   const byUser = new Map<string, string[]>();
   for (const { id, user } of sessions) {
@@ -64,15 +83,16 @@ export function assignPlots(sessions: PlotSession[]): Plots {
   const result: Plots = { sessions: new Map(), hqs: new Map() };
   let index = 0;
   for (const user of sortedByHash([...byUser.keys()])) {
-    // The HQ takes the first plot of its user's run. The sessions behind it
-    // are sorted by hash, so one of them starting or stopping shifts the rest
-    // of that run and leaves the HQ where it stands.
-    result.hqs.set(user, index);
-    index++;
-    for (const id of sortedByHash(byUser.get(user)!)) {
-      result.sessions.set(id, index);
-      index++;
+    const ids = sortedByHash(byUser.get(user)!);
+    const hq = middlePlot(index, ids.length + 1);
+    result.hqs.set(user, hq);
+    let next = index;
+    for (const id of ids) {
+      if (next === hq) next++;
+      result.sessions.set(id, next);
+      next++;
     }
+    index += ids.length + 1;
   }
   return result;
 }

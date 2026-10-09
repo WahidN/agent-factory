@@ -15,9 +15,8 @@ describe("PlotAllocator", () => {
 
     plots.release("b");
 
-    // Plot 0 is the user's HQ, so the sessions start at 1.
-    const remaining = ["a", "c", "d"].map((id) => plots.indexOf(id));
-    expect(new Set(remaining)).toEqual(new Set([1, 2, 3]));
+    const remaining = ["a", "c", "d"].map((id) => plots.indexOf(id)!);
+    expect(new Set([...remaining, plots.hqIndexOf("dennis")])).toEqual(new Set([0, 1, 2, 3]));
   });
 
   it("gives every user one HQ plot and takes it back with the last session", () => {
@@ -84,11 +83,40 @@ describe("assignPlots", () => {
       { id: "d3", user: "dennis" },
     ];
     const assignment = assignPlots(sessions);
-    const dennisIndexes = ["d1", "d2", "d3"].map((id) => assignment.sessions.get(id)!);
+    const dennisIndexes = [
+      ...["d1", "d2", "d3"].map((id) => assignment.sessions.get(id)!),
+      assignment.hqs.get("dennis")!,
+    ];
     const span = Math.max(...dennisIndexes) - Math.min(...dennisIndexes) + 1;
-    expect(span).toBe(dennisIndexes.length); // no gap, and no other user's plot in between
-    // The HQ stands on the plot right in front of that run.
-    expect(assignment.hqs.get("dennis")).toBe(Math.min(...dennisIndexes) - 1);
+    expect(span).toBe(dennisIndexes.length); // no gap, and no other user's plot in between, the HQ's included
+  });
+
+  it("puts the HQ on the plot nearest the middle of the run, the lower plot on a tie", () => {
+    for (const count of [1, 2, 5, 13]) {
+      const sessions = Array.from({ length: count }, (_, i) => ({ id: `s${i}`, user: "dennis" }));
+      const cells = Array.from({ length: count + 1 }, (_, rank) => plotCell(rank));
+      const midCol = cells.reduce((sum, cell) => sum + cell.col, 0) / cells.length;
+      const midRow = cells.reduce((sum, cell) => sum + cell.row, 0) / cells.length;
+      const distances = cells.map((cell) => (cell.col - midCol) ** 2 + (cell.row - midRow) ** 2);
+
+      expect(assignPlots(sessions).hqs.get("dennis")).toBe(distances.indexOf(Math.min(...distances)));
+    }
+  });
+
+  it("does not put the HQ on the end of a long run", () => {
+    const sessions = Array.from({ length: 13 }, (_, i) => ({ id: `s${i}`, user: "dennis" }));
+    const hq = assignPlots(sessions).hqs.get("dennis")!;
+    expect(hq).toBeGreaterThan(0);
+    expect(hq).toBeLessThan(13);
+  });
+
+  it("gives every session a plot of its own next to the HQ", () => {
+    const sessions = Array.from({ length: 5 }, (_, i) => ({ id: `s${i}`, user: "dennis" }));
+    const assignment = assignPlots(sessions);
+    const hq = assignment.hqs.get("dennis")!;
+    const plots = sessions.map(({ id }) => assignment.sessions.get(id)!);
+    expect(new Set(plots).size).toBe(5);
+    expect(plots).not.toContain(hq);
   });
 
   it("removing a session is allowed to shift the plots that come after it", () => {
@@ -100,8 +128,8 @@ describe("assignPlots", () => {
     const after = assignPlots(sessions.filter((s) => s.id !== "s0"));
 
     expect(new Set([...after.sessions.values(), ...after.hqs.values()])).toEqual(new Set([0, 1, 2, 3, 4]));
-    // s0 sat right behind the HQ, so everything after it is free to have moved down.
-    expect(after.sessions.get("s1")).not.toBe(before.sessions.get("s1"));
+    // The run is one plot shorter, so plots after the gap are free to have moved.
+    expect(after.sessions.get("s4")).not.toBe(before.sessions.get("s4"));
   });
 
   it("still gives a valid, gap free assignment when hashes collide", () => {

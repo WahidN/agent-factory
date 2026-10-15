@@ -652,3 +652,95 @@ body[data-style="ink"] .filter-toggle:focus-visible {
     transition: none;
   }
 }
+
+.enter-card {
+  position: fixed;
+  z-index: 10;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 4px;
+  min-width: 200px;
+  padding: 12px 36px 12px 14px;
+  border-radius: 6px;
+  background: rgba(20, 24, 31, 0.85);
+  color: #eee;
+  font:
+    13px system-ui,
+    sans-serif;
+}
+.enter-card__name {
+  font-weight: 600;
+}
+.enter-card__line,
+.enter-card__agents {
+  color: #a9b1bb;
+  font-size: 12px;
+}
+.enter-card__go {
+  margin-top: 6px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #f2c230;
+  color: #3a2f12;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.enter-card__close {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  border: 0;
+  background: none;
+  color: #a9b1bb;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+#leave-office {
+  position: fixed;
+  z-index: 20;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+#look-hint {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(20, 24, 31, 0.75);
+  color: #eee;
+  font-size: 12px;
+  pointer-events: none;
+}
+#fade {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  background: #14181f;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 350ms ease;
+}
+#fade.on {
+  opacity: 1;
+}
+body.in-office .landmark-labels {
+  display: none;
+}

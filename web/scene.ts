@@ -13,6 +13,10 @@ import { type ViewOptions, viewOptionsFrom } from "./view-options.ts";
 
 export type FrameCallback = (dtSeconds: number, nowMs: number) => void;
 
+// Clear Dutch daylight keeps the diorama legible while the giant meadow
+// plane below guarantees that every visible piece of terrain is grass.
+export const SKY_COLOR = INK_STYLE_ENABLED ? "#797fa3" : "#a9ced7";
+
 export const VIEW_HEIGHT = 120; // world units visible top to bottom at zoom 1
 // How far the camera sits back from the point it looks at. An orthographic
 // view looks the same from any distance, but ground between the camera and
@@ -37,11 +41,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   renderer.toneMappingExposure = 1.08;
 
   const scene = new THREE.Scene();
-  // Clear Dutch daylight keeps the diorama legible while the giant meadow
-  // plane below guarantees that every visible piece of terrain is grass.
-  const skyColor = INK_STYLE_ENABLED ? "#797fa3" : "#a9ced7";
-  scene.background = new THREE.Color(skyColor);
-  const fog = new THREE.Fog(skyColor);
+  scene.background = new THREE.Color(SKY_COLOR);
+  const fog = new THREE.Fog(SKY_COLOR);
   scene.fog = fog;
 
   // Orthographic: parallel edges stay parallel, like the reference render.
@@ -106,7 +107,8 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
 
   // Ambient occlusion darkens corners and gaps, which gives the soft look.
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
   const ao = new GTAOPass(scene, camera, 1, 1);
   ao.updateGtaoMaterial({ radius: 3, distanceExponent: 1.5, thickness: 2, scale: 1.2, samples: 16 });
   ao.blendIntensity = 0.85;
@@ -114,6 +116,9 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
   const inkOutline = INK_STYLE_ENABLED ? new ShaderPass(INK_OUTLINE_SHADER) : null;
   if (inkOutline) composer.addPass(inkOutline);
   composer.addPass(new OutputPass());
+
+  // What the passes draw. The city is the default; the office swaps itself in.
+  let stageCamera: THREE.Camera = camera;
 
   const focusTarget = new THREE.Vector3();
   let focusActive = false;
@@ -189,6 +194,33 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
     if (fit || options.autoFit) fitCamera(halfExtent);
   }
 
+  function sizeStageCamera() {
+    if (!(stageCamera instanceof THREE.PerspectiveCamera)) return;
+    stageCamera.aspect = canvas.clientWidth / canvas.clientHeight;
+    stageCamera.updateProjectionMatrix();
+  }
+
+  // Both passes read their scene and camera on every render, so assigning
+  // them is enough. GTAO bakes the camera type into a shader define, so that
+  // one needs a recompile. The city camera is never touched while the office
+  // is on stage, which is what makes coming back exact.
+  function setStage(stageScene: THREE.Scene, nextCamera: THREE.Camera) {
+    const onCity = stageScene === scene;
+    stageCamera = nextCamera;
+    renderPass.scene = stageScene;
+    renderPass.camera = nextCamera;
+    ao.scene = stageScene;
+    ao.camera = nextCamera;
+    ao.gtaoMaterial.defines.PERSPECTIVE_CAMERA = nextCamera instanceof THREE.PerspectiveCamera ? 1 : 0;
+    ao.gtaoMaterial.needsUpdate = true;
+    sizeStageCamera();
+    controls.enabled = onCity;
+    // A small room seen from a metre away needs its shadows every frame; the
+    // city only redraws them when something moved.
+    renderer.shadowMap.autoUpdate = !onCity;
+    renderer.shadowMap.needsUpdate = true;
+  }
+
   function resize() {
     const { clientWidth: width, clientHeight: height } = canvas;
     renderer.setSize(width, height, false);
@@ -203,6 +235,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
       bottom: -VIEW_HEIGHT / 2,
     });
     camera.updateProjectionMatrix();
+    sizeStageCamera();
     if (focusedHalfExtent !== null) limitZoom(focusedHalfExtent);
     if (options.autoFit && focusedHalfExtent !== null) fitCamera(focusedHalfExtent);
   }
@@ -254,6 +287,7 @@ export function createScene(canvas: HTMLCanvasElement, options: ViewOptions = vi
     camera,
     focus,
     panTo,
+    setStage,
     // Called when the user starts a drag, rotate or zoom.
     onUserInput: (callback: () => void) => userInputCallbacks.add(callback),
     // Sky, fog and light levels for the time of day. Not a per-frame call.

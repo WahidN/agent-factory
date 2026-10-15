@@ -106,7 +106,12 @@ export function setLampGlow(intensity: number) {
 
 // ---------- Canvas textures ----------
 
-function canvasTexture(width: number, height: number, draw: (ctx: CanvasRenderingContext2D) => void, color = true) {
+export function canvasTexture(
+  width: number,
+  height: number,
+  draw: (ctx: CanvasRenderingContext2D) => void,
+  color = true,
+) {
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;

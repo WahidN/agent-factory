@@ -69,8 +69,9 @@ export class RoofSign {
   private letterMaterial: THREE.MeshStandardMaterial | null = null;
 
   // `label` is what the letters spell; an empty one gives an empty group.
-  // `maxWidth` is the width of the roof the letters must fit inside.
-  constructor(label: string, maxWidth: number) {
+  // `maxWidth` is the width of the roof the letters must fit inside. `flat`
+  // gives plain white letters straight on a wall, without the steel frame.
+  constructor(label: string, maxWidth: number, flat = false) {
     this.group = new THREE.Group();
     const text = label.toUpperCase().slice(0, MAX_CHARS).trim();
 
@@ -102,8 +103,10 @@ export class RoofSign {
     // Shrink the whole word at once, never enlarge it.
     const scale = Math.min(1, LETTER_HEIGHT / (high - low), (maxWidth * WIDTH_FRACTION) / width);
 
-    this.letterMaterial = standard("#c9a227", { metalness: 0.85, roughness: 0.35 }); // brushed brass
-    const baseline = FRAME_HEIGHT - low * scale;
+    this.letterMaterial = flat
+      ? standard("#fafaf7", { roughness: 0.4 })
+      : standard("#c9a227", { metalness: 0.85, roughness: 0.35 }); // brushed brass
+    const baseline = (flat ? 0 : FRAME_HEIGHT) - low * scale;
     for (const { geometry, left } of placed) {
       const mesh = new THREE.Mesh(geometry, this.letterMaterial);
       mesh.position.set((left - width / 2) * scale, baseline, (-DEPTH / 2) * scale); // extrusion straddles z = 0
@@ -115,6 +118,8 @@ export class RoofSign {
       mesh.userData.sharedGeometry = true;
       this.group.add(mesh);
     }
+
+    if (flat) return;
 
     // Open scaffold under the letters: a rail at the foot, a rail carrying the
     // letters, posts every couple of units and an X brace per bay. It merges

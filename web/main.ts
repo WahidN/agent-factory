@@ -768,7 +768,8 @@ leaveButton.addEventListener("click", leaveOffice);
 canvas.addEventListener("click", () => {
   if (office && !office.isLocked) office.lock();
 });
-view.onCameraChange(() => enterCard.close());
+// Not on `change`: damping keeps the camera drifting after a click that wobbled a pixel.
+view.onUserInput(() => enterCard.close());
 
 // One Escape does one thing: the milestone dialog and the locked pointer
 // close themselves, then the card, then the office.

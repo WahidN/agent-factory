@@ -74,6 +74,19 @@ describe("step", () => {
     expect(moved.z).toBeCloseTo(-WALK_SPEED * DT, 5);
   });
 
+  it("slides along a thin wall instead of jumping to its far end", () => {
+    // Pushed out against this wall, the walker stands at z 9.05, which rounding
+    // used to count as inside the wall on the next step.
+    const wall: Box = { x: 0, z: 9.5, halfX: 1.7, halfZ: 0.1 };
+    let walker = { x: 0.2, z: 8.4 };
+    for (let i = 0; i < 120; i++) {
+      const next = step(walker, held({ forward: true }), Math.PI - 0.04, DT, room([wall]));
+      expect(Math.abs(next.x - walker.x)).toBeLessThan(WALK_SPEED * DT);
+      walker = next;
+    }
+    expect(walker.z).toBeCloseTo(9.5 - 0.1 - WALKER_RADIUS, 5);
+  });
+
   it("stops against a robot", () => {
     const robot: Box = { x: 0, z: -2, halfX: 0.3, halfZ: 0.3 };
     let walker = { x: 0, z: 0 };

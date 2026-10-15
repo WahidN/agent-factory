@@ -24,6 +24,7 @@ export const EYE_HEIGHT = 1.7;
 // already; this keeps the step short enough to never cross a wall on its own,
 // whatever the caller does.
 const MAX_STEP_SECONDS = 0.1;
+const EDGE = 1e-9; // metres, far below anything you could see
 
 export const NO_KEYS: Keys = { forward: false, back: false, left: false, right: false };
 
@@ -68,7 +69,9 @@ function pushOut(moved: number, other: number, box: Box, along: "x" | "z"): numb
   const half = along === "x" ? box.halfX : box.halfZ;
   const otherCenter = along === "x" ? box.z : box.x;
   const otherHalf = along === "x" ? box.halfZ : box.halfX;
-  if (Math.abs(other - otherCenter) >= otherHalf + WALKER_RADIUS) return moved;
+  // A walker pushed out of a box stands on its edge, which rounding can put a
+  // hair inside. Counted as a hit, that would throw it to the box's far end.
+  if (Math.abs(other - otherCenter) >= otherHalf + WALKER_RADIUS - EDGE) return moved;
   const limit = half + WALKER_RADIUS;
   const offset = moved - center;
   if (Math.abs(offset) >= limit) return moved;

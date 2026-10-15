@@ -78,6 +78,8 @@ export type Zones = {
   roundTable: Spot;
   lunch: { x: number; zs: [number, number]; halfX: number; halfZ: number };
   triangleWindow: Spot;
+  printer: Spot & { halfX: number; halfZ: number };
+  whiteboard: Spot & { halfX: number; halfZ: number };
 };
 
 // Everything at the far end, measured from the far wall.
@@ -94,6 +96,8 @@ export function zoneSpots(deskCount: number): Zones {
     roundTable: { x: -6.5, z: far + 6 },
     lunch: { x: 7.5, zs: [far + 9.2, far + 10.5], halfX: 2.75, halfZ: 0.5 },
     triangleWindow: { x: -6.5, z: far },
+    printer: { x: -3.2, z: far + 14, halfX: 0.33, halfZ: 0.3 },
+    whiteboard: { x: -9.6, z: far + 6, halfX: 0.3, halfZ: 0.95 },
   };
 }
 
@@ -111,6 +115,21 @@ export function meetingRooms(deskCount: number): { z: number; length: number }[]
   const count = Math.max(1, Math.floor((near - far) / ROOM_LENGTH));
   const length = (near - far) / count;
   return Array.from({ length: count }, (_, i) => ({ z: near - length * (i + 0.5), length }));
+}
+
+// A meeting room's table runs down the room, with the doorway in the glass
+// wall at the door end and the screen on the floor at the other end, facing
+// back at the table: the outer wall has the window, the rest is glass.
+export const MEETING_DOOR_WIDTH = 1.1;
+const DOOR_INSET = 1.1;
+const SCREEN_INSET = 0.6;
+
+export function meetingDoorZ(room: { z: number; length: number }): number {
+  return room.z + room.length / 2 - DOOR_INSET;
+}
+
+export function meetingScreenZ(room: { z: number; length: number }): number {
+  return room.z - room.length / 2 + SCREEN_INSET;
 }
 
 // The half-round windows in the long walls, one per meeting room.

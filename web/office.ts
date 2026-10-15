@@ -19,7 +19,10 @@ import {
   deskZone,
   doorSpot,
   GLASS_X,
+  MEETING_DOOR_WIDTH,
+  meetingDoorZ,
   meetingRooms,
+  meetingScreenZ,
   officeRoom,
   planterSpots,
   robotSpot,
@@ -28,6 +31,17 @@ import {
   WALKWAY_HALF,
   zoneSpots,
 } from "./office-layout.ts";
+import {
+  addDishwasher,
+  addEspressoMachine,
+  addKettle,
+  addKeyboardAndMouse,
+  addMeetingScreen,
+  addMicrowave,
+  addPrinter,
+  addToaster,
+  addWhiteboard,
+} from "./office-equipment.ts";
 import { addPlant, addSoil, KINDS } from "./office-plants.ts";
 import { carpetTexture, ceilingTexture, mossNormal, mossTexture, oakTexture } from "./office-textures.ts";
 import { accentFor, MATERIALS, standard, WALL_TINTS } from "./palette.ts";
@@ -44,6 +58,7 @@ const EAVE = 2.4; // where the sloped ceiling meets a long wall
 const RIDGE = 5.5; // the middle of the hall, the highest the ceiling goes
 const WALL = 0.3; // wall thickness, thicker than one walking step
 const GLASS_HEIGHT = 2.6;
+const DOOR_HEIGHT = 2.1;
 const MOSS_X = 3; // the moss wall and the glass beside the door stand this far off the walkway
 
 const DESK_TOP = 0.75;
@@ -377,12 +392,13 @@ export class Office {
     b.box(olive, [MOSS_X - 0.17, 1.05, far + 1.4], [0.08, 2.1, 0.9]);
     b.box(black, [MOSS_X - 0.24, 1.05, far + 1.1], [0.08, 0.04, 0.14]);
 
-    this.glassWall(b, -MOSS_X, centre, length);
-    this.table(b, { x: -6.5, z: centre }, 0.55, 1.2, oak);
+    this.glassWall(b, -MOSS_X, centre, length, meetingDoorZ({ z: centre, length }));
+    this.table(b, { x: -6.5, z: centre }, 1.2, 0.55, oak);
     for (const dz of [-0.6, 0.6]) {
       this.chair(b, { x: -5.6, z: centre + dz }, { x: -6.5, z: centre + dz }, chairFabric);
       this.chair(b, { x: -7.4, z: centre + dz }, { x: -6.5, z: centre + dz }, chairFabric);
     }
+    this.meetingScreen(b, { x: -6.5, z: meetingScreenZ({ z: centre, length }) });
   }
 
   // Along the desk zone, behind glass with black frames, one room per bay.
@@ -390,17 +406,20 @@ export class Office {
     const rooms = meetingRooms(this.deskCount);
     const middle = -(GLASS_X + size.width / 2 - WALL / 2) / 2;
     for (const [i, room] of rooms.entries()) {
-      this.glassWall(b, -GLASS_X, room.z, room.length);
+      this.glassWall(b, -GLASS_X, room.z, room.length, meetingDoorZ(room));
       b.box(glassPane, [middle, GLASS_HEIGHT / 2, room.z + room.length / 2], [3.4, GLASS_HEIGHT, 0.05]);
       b.box(black, [middle, GLASS_HEIGHT / 2, room.z + room.length / 2], [3.4, 0.08, 0.08]);
+      this.room.blockers.push({ x: middle, z: room.z + room.length / 2, halfX: 1.7, halfZ: 0.1 });
       if (i === rooms.length - 1) {
         b.box(glassPane, [middle, GLASS_HEIGHT / 2, room.z - room.length / 2], [3.4, GLASS_HEIGHT, 0.05]);
+        this.room.blockers.push({ x: middle, z: room.z - room.length / 2, halfX: 1.7, halfZ: 0.1 });
       }
-      this.table(b, { x: middle, z: room.z }, 0.55, 1.3, oak);
+      this.table(b, { x: middle, z: room.z }, 1.3, 0.55, oak);
       for (const dz of [-0.6, 0.6]) {
         this.chair(b, { x: middle + 0.9, z: room.z + dz }, { x: middle, z: room.z + dz }, chairFabric);
         this.chair(b, { x: middle - 0.9, z: room.z + dz }, { x: middle, z: room.z + dz }, chairFabric);
       }
+      this.meetingScreen(b, { x: middle, z: meetingScreenZ(room) });
     }
   }
 
@@ -434,7 +453,7 @@ export class Office {
   // and the lunch island in the open floor.
   private buildFarEnd(b: StaticBuilder) {
     const zones = zoneSpots(this.deskCount);
-    const { cabinets, island, bins, stools, roundTable, lunch } = zones;
+    const { cabinets, island, bins, stools, roundTable, lunch, printer, whiteboard } = zones;
 
     this.buildKitchen(b, cabinets);
     b.box(kitchenGrey, [island.x, 0.47, island.z], [island.halfX * 2, 0.94, island.halfZ * 2]);
@@ -457,6 +476,11 @@ export class Office {
       const at = { x: roundTable.x + Math.cos(angle) * 1.55, z: roundTable.z + Math.sin(angle) * 1.55 };
       this.chair(b, at, roundTable, black);
     }
+
+    // A whiteboard beside the round table, and the printer by the walkway.
+    addWhiteboard(b, [whiteboard.x, 0, whiteboard.z]);
+    addPrinter(b, [printer.x, 0, printer.z]);
+    this.room.blockers.push(whiteboard, printer);
 
     // The lunch island: two long tables side by side, chairs down the outer sides.
     for (const [i, z] of lunch.zs.entries()) {
@@ -485,6 +509,7 @@ export class Office {
     b.box(kitchenWhite, [left + 2.25, 1.15, z], [2.5, 2.3, halfZ * 2]);
     b.box(kitchenGrey, [left + 2.25, 1.15, front + 0.005], [0.02, 2.3, 0.02]);
     for (const dx of [-0.1, 0.1]) b.box(black, [left + 2.25 + dx, 1.1, front + 0.03], [0.03, 0.4, 0.03]);
+    addMicrowave(b, [left + 1.6, 1.45, front]);
 
     b.box(kitchenWhite, [counterMiddle, 0.45, z], [counterWidth, 0.9, halfZ * 2]);
     b.box(oak, [counterMiddle, 0.93, z + 0.05], [counterWidth + 0.1, 0.05, halfZ * 2 + 0.1]);
@@ -499,6 +524,15 @@ export class Office {
     b.box(MATERIALS.steel, [sink, 0.96, z + 0.05], [0.8, 0.02, 0.5]);
     b.cylinder(MATERIALS.steel, [sink, 1.1, z - 0.2], [0.02, 0.3, 0.02]);
     b.box(MATERIALS.steel, [sink, 1.25, z - 0.08], [0.02, 0.02, 0.2]);
+    // The dishwasher takes the first door clear of the sink basin, on the hob side.
+    const doorWidth = counterWidth / doors;
+    const dishwasherDoor = Math.ceil((sink + 0.4 - counterLeft) / doorWidth);
+    addDishwasher(b, [counterLeft + (dishwasherDoor + 0.5) * doorWidth, 0, front], doorWidth);
+
+    const counterTop = 0.955;
+    addEspressoMachine(b, [counterLeft + 0.6, counterTop, z]);
+    addKettle(b, [counterLeft + 1.3, counterTop, z]);
+    addToaster(b, [counterLeft + 1.9, counterTop, z]);
 
     const hob = counterLeft + 5.5;
     b.box(black, [hob, 0.96, z + 0.05], [0.7, 0.02, 0.5]);
@@ -517,6 +551,11 @@ export class Office {
     this.room.blockers.push({ x: cabinets.x, z, halfX: cabinets.halfX, halfZ });
   }
 
+  private meetingScreen(b: StaticBuilder, at: { x: number; z: number }) {
+    addMeetingScreen(b, [at.x, 0, at.z]);
+    this.room.blockers.push({ x: at.x, z: at.z, halfX: 0.65, halfZ: 0.25 });
+  }
+
   private stool(b: StaticBuilder, at: { x: number; z: number }) {
     b.cylinder(black, [at.x, 0.68, at.z], [0.2, 0.06, 0.2]);
     b.cylinder(MATERIALS.steel, [at.x, 0.33, at.z], [0.03, 0.66, 0.03]);
@@ -525,7 +564,31 @@ export class Office {
   }
 
   // A glass wall along z with black frames, and the blocker that goes with it.
-  private glassWall(b: StaticBuilder, x: number, z: number, length: number) {
+  // With `doorZ`, a doorway opens there, its sliding door pushed open over the
+  // pane on the -z side. The leaf is on the -x side, where every glass room is.
+  private glassWall(b: StaticBuilder, x: number, z: number, length: number, doorZ?: number) {
+    if (doorZ !== undefined) {
+      const half = MEETING_DOOR_WIDTH / 2;
+      const start = z - length / 2;
+      const end = z + length / 2;
+      this.glassWall(b, x, (start + doorZ - half) / 2, doorZ - half - start);
+      this.glassWall(b, x, (doorZ + half + end) / 2, end - doorZ - half);
+      b.box(black, [x, GLASS_HEIGHT, doorZ], [0.1, 0.08, MEETING_DOOR_WIDTH]);
+      b.box(black, [x, DOOR_HEIGHT, doorZ], [0.1, 0.08, MEETING_DOOR_WIDTH]);
+      b.box(
+        glassPane,
+        [x, (DOOR_HEIGHT + GLASS_HEIGHT) / 2, doorZ],
+        [0.05, GLASS_HEIGHT - DOOR_HEIGHT, MEETING_DOOR_WIDTH],
+      );
+
+      const leaf = doorZ - MEETING_DOOR_WIDTH;
+      b.box(glassPane, [x - 0.08, DOOR_HEIGHT / 2, leaf], [0.03, DOOR_HEIGHT - 0.04, MEETING_DOOR_WIDTH]);
+      for (const edge of [-half, half]) {
+        b.box(black, [x - 0.08, DOOR_HEIGHT / 2, leaf + edge], [0.05, DOOR_HEIGHT, 0.05]);
+      }
+      b.box(black, [x - 0.12, 1.05, leaf + half - 0.1], [0.03, 0.5, 0.03]); // handle
+      return;
+    }
     b.box(glassPane, [x, GLASS_HEIGHT / 2, z], [0.05, GLASS_HEIGHT, length]);
     b.box(black, [x, GLASS_HEIGHT, z], [0.1, 0.08, length]);
     b.box(black, [x, 0.04, z], [0.1, 0.08, length]);
@@ -536,11 +599,16 @@ export class Office {
     this.room.blockers.push({ x, z, halfX: 0.15, halfZ: length / 2 });
   }
 
-  // A table on four legs, `halfX` wide each way from `at`, with its blocker.
+  // A table on two leg panels at its short ends, `halfX` wide each way from
+  // `at`, with its blocker.
   private table(b: StaticBuilder, at: { x: number; z: number }, halfZ: number, halfX: number, top: THREE.Material) {
     b.box(top, [at.x, 0.74, at.z], [halfX * 2, 0.07, halfZ * 2]);
-    for (const sx of [-1, 1]) {
-      b.box(MATERIALS.steel, [at.x + sx * (halfX - 0.15), 0.37, at.z], [0.06, 0.74, halfZ * 2 - 0.2]);
+    for (const side of [-1, 1]) {
+      if (halfX >= halfZ) {
+        b.box(MATERIALS.steel, [at.x + side * (halfX - 0.15), 0.37, at.z], [0.06, 0.74, halfZ * 2 - 0.2]);
+      } else {
+        b.box(MATERIALS.steel, [at.x, 0.37, at.z + side * (halfZ - 0.15)], [halfX * 2 - 0.2, 0.74, 0.06]);
+      }
     }
     this.room.blockers.push({ x: at.x, z: at.z, halfX, halfZ });
   }
@@ -679,6 +747,7 @@ class Desk {
       [LAPTOP.width, LAPTOP.height, 0.02],
       [-0.28, 0, 0],
     ); // lid
+    addKeyboardAndMouse(b, [monitor, DESK_TOP + 0.03, z + 0.1]);
 
     // The chair the robot sits on, on the door side of the desk.
     const seat = robotSpot(this.spot);

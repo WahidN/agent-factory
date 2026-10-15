@@ -154,11 +154,11 @@ Draait er een sessie van je, dan staat er een HQ voor je kavels. Dat is een kant
 
 Ga je met de muis over de toren, dan zie je van wie hij is, hoeveel sessies die gebruiker draait en het tokentotaal. Het plein en de grasvelden eromheen doen niets.
 
-Klik op je eigen HQ en kies 'naar binnen' om het kantoor in te lopen. Het is een lange zolderhal met een schuin plafond, ringlampen, een mosmuur met je naam en een tapijtloper door het midden. Elke sessie heeft een wit bureau met een robot erachter, met plantenbakken tussen de rijen. Aan het eind loopt een keuken langs de achterwand, met een eiland met barkrukken ervoor en een lunch-eiland van twee lange tafels. Langs de zijkant staan glazen vergaderkamers. Je loopt met WASD en kijkt rond met de muis.
+Klik op je eigen HQ en kies 'naar binnen' om het kantoor in te lopen. Het is een lange zolderhal met een schuin plafond, ringlampen, een mosmuur met je naam en een tapijtloper door het midden. Elke sessie heeft een wit bureau met een robot erachter en een toetsenbord en muis erop. Tussen de rijen staan plantenbakken. Aan het eind loopt een keuken langs de achterwand, met een koffiemachine, waterkoker, broodrooster, magnetron en vaatwasser. Ervoor staan een eiland met barkrukken en een lunch-eiland van twee lange tafels. Naast de loper staat een printer en bij de ronde tafel een whiteboard. Langs de zijkant staan glazen vergaderkamers met een deuropening, een tafel in de lengte en een scherm aan het eind. Je loopt met WASD en kijkt rond met de muis.
 
 ![Het kantoor van binnen: de loper, de mosmuur met de naam, glazen vergaderkamers links en bureaus met robots](docs/office-floor.png)
 
-![De keuken en het lunch-eiland aan het eind van de hal](docs/office-kitchen.png)
+![Het eind van de hal: de printer en het whiteboard links, de keuken en het lunch-eiland rechts](docs/office-kitchen.png)
 
 Draai je twee Macs onder dezelfde naam, dan krijg je één HQ, op het hoogste van de twee totalen. Dat is dezelfde regel als in de ladder.
 

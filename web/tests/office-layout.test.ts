@@ -9,7 +9,10 @@ import {
   doorSpot,
   FAR_ZONE,
   HALL_WIDTH,
+  MEETING_DOOR_WIDTH,
+  meetingDoorZ,
   meetingRooms,
+  meetingScreenZ,
   officeRoom,
   PITCH,
   planterSpots,
@@ -125,13 +128,32 @@ describe("zoneSpots", () => {
       const zones = zoneSpots(count);
       const lastDesk = Math.min(...deskSpots(count).map((spot) => spot.z));
       const lunchTables = zones.lunch.zs.map((z) => ({ z }));
-      const spots = [zones.cabinets, zones.island, zones.roundTable, ...zones.bins, ...zones.stools, ...lunchTables];
+      const spots = [
+        zones.cabinets,
+        zones.island,
+        zones.roundTable,
+        zones.printer,
+        zones.whiteboard,
+        ...zones.bins,
+        ...zones.stools,
+        ...lunchTables,
+      ];
       for (const spot of spots) {
         expect(spot.z).toBeGreaterThan(-depth / 2);
         expect(spot.z + 1.7).toBeLessThan(lastDesk - DESK.depth / 2);
       }
+      for (const piece of [zones.printer, zones.whiteboard]) {
+        expect(Math.abs(piece.x) + piece.halfX).toBeLessThan(HALL_WIDTH / 2 - WALKER_RADIUS * 2);
+      }
     });
   }
+
+  it("leaves a way round the round table's chairs past the whiteboard", () => {
+    const { whiteboard, roundTable } = zoneSpots(4);
+    const chairReach = 1.55 + 0.3;
+    const gap = Math.abs(whiteboard.x - roundTable.x) - whiteboard.halfX - chairReach;
+    expect(gap).toBeGreaterThan(WALKER_RADIUS * 2);
+  });
 
   it("keeps the lunch tables clear of the island and its stools", () => {
     const zones = zoneSpots(4);
@@ -146,6 +168,7 @@ describe("zoneSpots", () => {
     expect(zones.lunch.x - zones.lunch.halfX).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
     expect(Math.min(...zones.stools.map((stool) => stool.x))).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
     expect(Math.min(...zones.bins.map((bin) => bin.x))).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
+    expect(Math.abs(zones.printer.x) - zones.printer.halfX).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
   });
 });
 
@@ -158,6 +181,34 @@ describe("meetingRooms", () => {
       const total = rooms.reduce((sum, room) => sum + room.length, 0);
       expect(total).toBeCloseTo(zone.near - zone.far);
     }
+  });
+
+  // The table runs 1.3 each way down the room and the screen is 0.25 deep.
+  it("stands every screen inside its room and clear of the table", () => {
+    for (const count of COUNTS) {
+      for (const room of meetingRooms(count)) {
+        const z = meetingScreenZ(room);
+        expect(z - 0.25).toBeGreaterThan(room.z - room.length / 2);
+        expect(room.z - 1.3 - (z + 0.25)).toBeGreaterThan(WALKER_RADIUS * 2);
+      }
+    }
+  });
+
+  it("opens every doorway between glass on both sides, clear of the table", () => {
+    for (const count of COUNTS) {
+      for (const room of meetingRooms(count)) {
+        const near = meetingDoorZ(room) + MEETING_DOOR_WIDTH / 2;
+        const far = meetingDoorZ(room) - MEETING_DOOR_WIDTH / 2;
+        expect(near).toBeLessThan(room.z + room.length / 2 - 0.3);
+        expect(far - (room.z + 1.3)).toBeGreaterThan(WALKER_RADIUS * 2);
+        // The open door leaf slides over the pane on the table side of the doorway.
+        expect(far - MEETING_DOOR_WIDTH).toBeGreaterThan(room.z - room.length / 2);
+      }
+    }
+  });
+
+  it("makes a doorway you can walk through", () => {
+    expect(MEETING_DOOR_WIDTH).toBeGreaterThan(WALKER_RADIUS * 2 + 0.3);
   });
 });
 

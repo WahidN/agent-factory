@@ -2,8 +2,8 @@
 // They hang off the camera instead of standing in the room, so they are the
 // one thing that never moves relative to what you are looking at.
 //
-// You are a robot like the ones at the desks: the same metal shell, with a
-// cuff in the tint of whoever's floor you are on.
+// They are ordinary human hands: skin, five fingers, and a sleeve in the tint
+// of whoever's floor you are on.
 
 import * as THREE from "three";
 import { standard } from "./palette.ts";
@@ -16,19 +16,35 @@ import { BAKED_MATERIAL } from "./static-builder.ts";
 const AT = { forward: -0.66, side: 0.4, drop: -0.46, scale: 0.5 };
 const STEP_LENGTH = 1.6; // metres per full swing of the arms
 
+const SKIN = "#d8a879";
+const FINGERS = [
+  { x: -0.0375, length: 0.1 }, // pinky
+  { x: -0.0125, length: 0.12 }, // ring
+  { x: 0.0125, length: 0.13 }, // middle
+  { x: 0.0375, length: 0.115 }, // index
+];
+const CURL = 0.35;
+
 // Built along -z, which is where the camera looks: the forearm starts near
 // your eyes and the hand is the end furthest away.
 function handGeometry(tint: string): THREE.BufferGeometry {
   const b = new StaticBuilder();
-  const shell = standard("#c9ced6");
-  const dark = standard("#39414c");
-  const band = standard(tint);
-  b.box(shell, [0, 0, 0.12], [0.1, 0.1, 0.32]); // forearm, running back toward you
-  b.box(band, [0, 0, -0.05], [0.11, 0.11, 0.05]); // cuff in the user's tint
-  b.box(dark, [0, 0, -0.1], [0.1, 0.08, 0.05]); // wrist joint
-  b.box(shell, [0, 0, -0.2], [0.12, 0.08, 0.16]); // palm
-  for (const x of [-0.035, 0.035]) b.box(shell, [x, 0.005, -0.31], [0.045, 0.06, 0.1]); // two fingers
-  b.box(shell, [0.07, -0.02, -0.18], [0.05, 0.05, 0.1], [0, 0.35, 0]); // thumb
+  const skin = standard(SKIN, { roughness: 0.9 });
+  const sleeve = standard(tint);
+  const lengthwise: [number, number, number] = [Math.PI / 2, 0, 0];
+  b.cylinder(sleeve, [0, 0, 0.12], [0.06, 0.32, 0.06], lengthwise); // sleeve, running back toward you
+  b.cylinder(sleeve, [0, 0, -0.04], [0.066, 0.05, 0.066], lengthwise); // cuff
+  b.cylinder(skin, [0, 0, -0.085], [0.045, 0.06, 0.045], lengthwise); // wrist
+  b.box(skin, [0, 0, -0.18], [0.11, 0.035, 0.14]); // palm
+  for (const { x, length } of FINGERS) {
+    const near = length * 0.55;
+    const far = length - near;
+    b.cylinder(skin, [x, 0.003, -0.25 - near / 2], [0.0125, near, 0.0125], lengthwise);
+    const tip = [x, 0.003 - Math.sin(CURL) * far * 0.5, -0.25 - near - Math.cos(CURL) * far * 0.5] as const;
+    b.cylinder(skin, [...tip], [0.0115, far, 0.0115], [Math.PI / 2 - CURL, 0, 0]);
+  }
+  b.box(skin, [0.07, -0.015, -0.175], [0.032, 0.03, 0.08], [0, -0.5, 0]); // thumb base
+  b.box(skin, [0.095, -0.015, -0.225], [0.026, 0.026, 0.06], [0, -0.35, 0]); // thumb tip
   return (b.build().children[0] as THREE.Mesh).geometry;
 }
 

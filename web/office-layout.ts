@@ -21,12 +21,19 @@ export const ROBOT_SEAT = 0.95;
 export const COLUMNS = 4;
 export const PITCH = { x: 3.6, z: 4 };
 
+// The hall is a fixed width and grows only in length, so the walkway down the
+// middle stays the same whatever the number of sessions is.
+export const HALL_WIDTH = 28;
+export const WALKWAY_HALF = 1.6;
+
 // Walkway between the outer desks and the walls.
 export const WALL_GAP = 1.6;
 
-// A whole floor of the tower, not the desks with a margin around them: you
-// walk this room, so it has space that no desk stands in.
-export const ROOM_MIN = { width: 30, depth: 26 };
+// From the door to the first row, and from the last row to the far wall. The
+// door end holds the moss wall, the far end the kitchen and the tables.
+export const DOOR_ZONE = 9;
+export const FAR_ZONE = 16;
+export const MIN_ROWS = 2;
 
 // The same cap the yard puts on warehouses, so one session shows the same
 // number of subagents inside as outside.
@@ -34,31 +41,81 @@ export const MAX_SUBAGENTS = 4;
 
 export type Spot = { x: number; z: number };
 
-export function officeRoom(deskCount: number): { width: number; depth: number } {
-  const columns = Math.min(COLUMNS, Math.max(1, deskCount));
-  const rows = Math.max(1, Math.ceil(deskCount / COLUMNS));
-  return {
-    width: Math.max(ROOM_MIN.width, columns * PITCH.x + 2 * WALL_GAP),
-    depth: Math.max(ROOM_MIN.depth, rows * PITCH.z + 2 * WALL_GAP),
-  };
+// Inner columns first, so one or two sessions sit next to the walkway.
+const COLUMN_XS = [-PITCH.x, PITCH.x, -2 * PITCH.x, 2 * PITCH.x];
+
+function rowCount(deskCount: number): number {
+  return Math.max(MIN_ROWS, Math.ceil(deskCount / COLUMNS));
 }
 
-// The desks, filled from the back wall forward, every row centered in the
-// room. The door is in the +z wall, so the space that is left over is the
-// space you walk into.
+export function officeRoom(deskCount: number): { width: number; depth: number } {
+  return { width: HALL_WIDTH, depth: DOOR_ZONE + rowCount(deskCount) * PITCH.z + FAR_ZONE };
+}
+
+// The desks, filled from the door end toward the kitchen, so the first thing
+// you walk up to is a desk.
 export function deskSpots(deskCount: number): Spot[] {
   const { depth } = officeRoom(deskCount);
   const spots: Spot[] = [];
   for (let i = 0; i < deskCount; i++) {
     const row = Math.floor(i / COLUMNS);
-    const inRow = Math.min(COLUMNS, deskCount - row * COLUMNS);
-    const column = i % COLUMNS;
-    spots.push({
-      x: (column - (inRow - 1) / 2) * PITCH.x,
-      z: -depth / 2 + WALL_GAP + PITCH.z * (row + 0.5),
-    });
+    spots.push({ x: COLUMN_XS[i % COLUMNS], z: depth / 2 - DOOR_ZONE - PITCH.z * (row + 0.5) });
   }
   return spots;
+}
+
+// A planter stands between two rows, in the column of the desk behind it.
+export function planterSpots(deskCount: number): Spot[] {
+  const desks = deskSpots(deskCount);
+  return desks.filter((_desk, i) => i >= COLUMNS).map((desk) => ({ x: desk.x, z: desk.z + PITCH.z / 2 }));
+}
+
+export type Zones = {
+  cabinets: Spot & { halfX: number; halfZ: number };
+  island: Spot & { halfX: number; halfZ: number };
+  bins: Spot[];
+  stools: Spot[];
+  roundTable: Spot;
+  lunch: { x: number; zs: [number, number]; halfX: number; halfZ: number };
+  triangleWindow: Spot;
+};
+
+// Everything at the far end, measured from the far wall.
+export function zoneSpots(deskCount: number): Zones {
+  const far = -officeRoom(deskCount).depth / 2;
+  return {
+    cabinets: { x: 8.5, z: far + 0.4, halfX: 5.5, halfZ: 0.4 },
+    island: { x: 8.5, z: far + 3.2, halfX: 2.6, halfZ: 0.55 },
+    bins: [
+      { x: 3.1, z: far + 3 },
+      { x: 3.75, z: far + 3 },
+    ],
+    stools: [-1.8, -0.6, 0.6, 1.8].map((dx) => ({ x: 8.5 + dx, z: far + 4.2 })),
+    roundTable: { x: -6.5, z: far + 6 },
+    lunch: { x: 7.5, zs: [far + 9.2, far + 10.5], halfX: 2.75, halfZ: 0.5 },
+    triangleWindow: { x: -6.5, z: far },
+  };
+}
+
+// The glass meeting rooms along the desk zone, one per ROOM_LENGTH.
+export const GLASS_X = 10.4;
+const ROOM_LENGTH = 7;
+
+export function deskZone(deskCount: number): { near: number; far: number } {
+  const { depth } = officeRoom(deskCount);
+  return { near: depth / 2 - DOOR_ZONE, far: -depth / 2 + FAR_ZONE };
+}
+
+export function meetingRooms(deskCount: number): { z: number; length: number }[] {
+  const { near, far } = deskZone(deskCount);
+  const count = Math.max(1, Math.floor((near - far) / ROOM_LENGTH));
+  const length = (near - far) / count;
+  return Array.from({ length: count }, (_, i) => ({ z: near - length * (i + 0.5), length }));
+}
+
+// The half-round windows in the long walls, one per meeting room.
+export function sideWindowSpots(deskCount: number): number[] {
+  return meetingRooms(deskCount).map((room) => room.z);
 }
 
 export function robotSpot(desk: Spot): Spot {

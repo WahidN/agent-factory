@@ -17,6 +17,27 @@ const quaternion = new THREE.Quaternion();
 
 export type Vec3 = [number, number, number];
 
+// A box's UVs run 0 to 1 per face. For a textured box they run in metres
+// instead, so one tile covers the same area on a wall and on a floor.
+function metricBox(size: Vec3) {
+  const [x, y, z] = size;
+  const faces: [number, number][] = [
+    [z, y],
+    [z, y],
+    [x, z],
+    [x, z],
+    [x, y],
+    [x, y],
+  ];
+  const geometry = box.clone();
+  const uv = geometry.attributes.uv;
+  for (let i = 0; i < uv.count; i++) {
+    const [width, height] = faces[Math.floor(i / 4)];
+    uv.setXY(i, uv.getX(i) * width, uv.getY(i) * height);
+  }
+  return geometry;
+}
+
 export const BAKED_MATERIAL = INK_STYLE_ENABLED
   ? inkStandardMaterial("#ffffff", { vertexColors: true })
   : new THREE.MeshStandardMaterial({
@@ -80,7 +101,13 @@ export class StaticBuilder {
   }
 
   box(material: THREE.Material, position: Vec3, scale: Vec3, rotation: Vec3 = [0, 0, 0]) {
-    this.add(box, material, position, scale, rotation);
+    if (!(material instanceof THREE.MeshStandardMaterial) || !material.map) {
+      this.add(box, material, position, scale, rotation);
+      return;
+    }
+    const geometry = metricBox(scale);
+    this.add(geometry, material, position, scale, rotation);
+    geometry.dispose();
   }
 
   // Scale x and z are radii, y is height.

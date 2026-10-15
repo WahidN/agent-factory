@@ -2,33 +2,38 @@ import { describe, expect, it } from "vitest";
 import {
   COLUMNS,
   DESK,
+  DOOR_ZONE,
   deskPhase,
   deskSpots,
+  deskZone,
   doorSpot,
+  FAR_ZONE,
+  HALL_WIDTH,
+  meetingRooms,
   officeRoom,
   PITCH,
+  planterSpots,
   robotSpot,
   ROBOT_SEAT,
-  ROOM_MIN,
   subagentSpots,
+  WALKWAY_HALF,
   WALL_GAP,
+  zoneSpots,
 } from "../office-layout.ts";
 import { WALKER_RADIUS } from "../walk.ts";
 
 const COUNTS = [1, 3, 9, 30];
 
 describe("officeRoom", () => {
-  it("never goes below the tower's own footprint", () => {
-    for (const count of [0, 1, 4]) {
-      const room = officeRoom(count);
-      expect(room.width).toBeGreaterThanOrEqual(ROOM_MIN.width);
-      expect(room.depth).toBeGreaterThanOrEqual(ROOM_MIN.depth);
-    }
+  it("keeps the same width and only grows in length", () => {
+    for (const count of [0, 1, 4, 30]) expect(officeRoom(count).width).toBe(HALL_WIDTH);
+    expect(officeRoom(30).depth).toBeGreaterThan(officeRoom(4).depth);
   });
 
   it("grows a row at a time, not a desk at a time", () => {
     expect(officeRoom(4).depth).toBe(officeRoom(1).depth);
-    expect(officeRoom(30).depth).toBeGreaterThan(officeRoom(4).depth);
+    expect(officeRoom(8).depth).toBe(officeRoom(5).depth);
+    expect(officeRoom(9).depth).toBe(officeRoom(8).depth + PITCH.z);
   });
 });
 
@@ -39,20 +44,31 @@ describe("deskSpots", () => {
     expect(rows.size).toBe(3);
   });
 
-  it("centers a short last row", () => {
-    const spots = deskSpots(6);
-    const last = spots.slice(4);
-    expect(last[0].x).toBe(-last[1].x);
+  it("starts with the desks next to the walkway", () => {
+    const [first, second] = deskSpots(2);
+    expect(Math.abs(first.x)).toBe(Math.abs(second.x));
+    expect(first.x).toBe(-second.x);
+    expect(Math.abs(first.x) - DESK.width / 2).toBeGreaterThan(WALKWAY_HALF);
+  });
+
+  it("never puts a desk on the walkway", () => {
+    for (const count of COUNTS) {
+      for (const desk of deskSpots(count)) {
+        expect(Math.abs(desk.x) - DESK.width / 2).toBeGreaterThan(WALKWAY_HALF);
+      }
+    }
   });
 
   for (const count of COUNTS) {
-    it(`keeps ${count} desks, robots and subagents inside the room`, () => {
+    it(`keeps ${count} desks, robots and subagents inside the desk zone`, () => {
       const room = officeRoom(count);
+      const zone = deskZone(count);
       for (const desk of deskSpots(count)) {
         const parts = [desk, robotSpot(desk), ...subagentSpots(desk, 4)];
         for (const part of parts) {
           expect(Math.abs(part.x) + DESK.width / 2).toBeLessThanOrEqual(room.width / 2);
-          expect(Math.abs(part.z) + DESK.depth / 2).toBeLessThanOrEqual(room.depth / 2);
+          expect(part.z + DESK.depth / 2).toBeLessThanOrEqual(zone.near);
+          expect(part.z - DESK.depth / 2).toBeGreaterThanOrEqual(zone.far);
         }
       }
     });
@@ -61,7 +77,7 @@ describe("deskSpots", () => {
   it("leaves a walkway between the rows you can get through", () => {
     const spots = deskSpots(9);
     // Row to row, minus the desk in front and the robot sitting at it.
-    const gap = spots[4].z - spots[0].z - DESK.depth / 2 - ROBOT_SEAT - 0.3;
+    const gap = spots[0].z - spots[4].z - DESK.depth / 2 - ROBOT_SEAT - 0.3;
     expect(gap).toBeGreaterThan(WALKER_RADIUS * 2 + 0.4);
     expect(PITCH.z).toBeGreaterThan(DESK.depth);
   });
@@ -72,6 +88,75 @@ describe("deskSpots", () => {
       const nearest = Math.max(...deskSpots(count).map((spot) => spot.z));
       expect(door.z).toBeGreaterThan(nearest + DESK.depth);
       expect(door.z).toBeLessThan(officeRoom(count).depth / 2);
+    }
+  });
+
+  it("leaves the door end and the far end as long as they are meant to be", () => {
+    for (const count of COUNTS) {
+      const { depth } = officeRoom(count);
+      const zone = deskZone(count);
+      expect(depth / 2 - zone.near).toBe(DOOR_ZONE);
+      expect(zone.far + depth / 2).toBe(FAR_ZONE);
+    }
+  });
+});
+
+describe("planterSpots", () => {
+  it("has none for a single row and one per desk of the later rows", () => {
+    expect(planterSpots(4)).toHaveLength(0);
+    expect(planterSpots(6)).toHaveLength(2);
+  });
+
+  it("stands between two rows, not on a desk or a robot", () => {
+    const desks = deskSpots(8);
+    for (const planter of planterSpots(8)) {
+      for (const desk of desks) {
+        if (desk.x !== planter.x) continue;
+        expect(Math.abs(planter.z - desk.z)).toBeGreaterThan(1.3);
+      }
+    }
+  });
+});
+
+describe("zoneSpots", () => {
+  for (const count of COUNTS) {
+    it(`keeps the far end for ${count} desks inside the room and behind the last row`, () => {
+      const { depth } = officeRoom(count);
+      const zones = zoneSpots(count);
+      const lastDesk = Math.min(...deskSpots(count).map((spot) => spot.z));
+      const lunchTables = zones.lunch.zs.map((z) => ({ z }));
+      const spots = [zones.cabinets, zones.island, zones.roundTable, ...zones.bins, ...zones.stools, ...lunchTables];
+      for (const spot of spots) {
+        expect(spot.z).toBeGreaterThan(-depth / 2);
+        expect(spot.z + 1.7).toBeLessThan(lastDesk - DESK.depth / 2);
+      }
+    });
+  }
+
+  it("keeps the lunch tables clear of the island and its stools", () => {
+    const zones = zoneSpots(4);
+    const nearestTable = Math.min(...zones.lunch.zs);
+    const stoolRow = zones.stools[0].z;
+    expect(nearestTable - zones.lunch.halfZ - 1.1).toBeGreaterThan(stoolRow + 0.5);
+  });
+
+  it("keeps the walkway clear", () => {
+    const zones = zoneSpots(4);
+    expect(zones.island.x - zones.island.halfX).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
+    expect(zones.lunch.x - zones.lunch.halfX).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
+    expect(Math.min(...zones.stools.map((stool) => stool.x))).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
+    expect(Math.min(...zones.bins.map((bin) => bin.x))).toBeGreaterThan(WALKWAY_HALF + WALKER_RADIUS);
+  });
+});
+
+describe("meetingRooms", () => {
+  it("splits the desk zone into rooms that fill it exactly", () => {
+    for (const count of COUNTS) {
+      const zone = deskZone(count);
+      const rooms = meetingRooms(count);
+      expect(rooms.length).toBeGreaterThan(0);
+      const total = rooms.reduce((sum, room) => sum + room.length, 0);
+      expect(total).toBeCloseTo(zone.near - zone.far);
     }
   });
 });

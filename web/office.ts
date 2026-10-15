@@ -12,15 +12,24 @@ import { PointerLockControls } from "three/addons/controls/PointerLockControls.j
 import type { SessionState } from "../server/types.ts";
 import { Hands } from "./hands.ts";
 import {
+  DESK,
+  DOOR_ZONE,
   deskPhase,
   deskSpots,
-  DESK,
+  deskZone,
   doorSpot,
+  GLASS_X,
+  meetingRooms,
   officeRoom,
+  planterSpots,
   robotSpot,
-  type Spot,
+  sideWindowSpots,
   subagentSpots,
+  WALKWAY_HALF,
+  zoneSpots,
 } from "./office-layout.ts";
+import { addPlant, addSoil, KINDS } from "./office-plants.ts";
+import { carpetTexture, ceilingTexture, mossNormal, mossTexture, oakTexture } from "./office-textures.ts";
 import { accentFor, MATERIALS, standard, WALL_TINTS } from "./palette.ts";
 import { wallTintIndexFor } from "./park-layout.ts";
 import { hashString } from "./plots.ts";
@@ -31,9 +40,11 @@ import { SKY_COLOR } from "./scene.ts";
 import { StaticBuilder } from "./static-builder.ts";
 import { type Box, EYE_HEIGHT, HeldKeys, step, type Walker, WALKER_RADIUS } from "./walk.ts";
 
-const CEILING = 3.6; // floor to ceiling, high enough for the name sign on the back wall
+const EAVE = 2.4; // where the sloped ceiling meets a long wall
+const RIDGE = 5.5; // the middle of the hall, the highest the ceiling goes
 const WALL = 0.3; // wall thickness, thicker than one walking step
-const WINDOW = { sill: 1.1, head: 2.6 }; // the band you see the sky through
+const GLASS_HEIGHT = 2.6;
+const MOSS_X = 3; // the moss wall and the glass beside the door stand this far off the walkway
 
 const DESK_TOP = 0.75;
 // `back` is how far the monitor stands from the middle of the desk, away from
@@ -42,21 +53,41 @@ const DESK_TOP = 0.75;
 const MONITOR = { width: 0.6, height: 0.36, offset: 0.5, back: 0.24 };
 const LAPTOP = { width: 0.44, height: 0.28 };
 
+// Everything that hangs from or lines the ceiling stays out of the sun's
+// shadow pass: the one light sits above the roof, so a casting ceiling would
+// black out the room. `separate` keeps the piece out of the merged mesh, which
+// is the only place the flag is read.
+function noShadow(material: THREE.Material): THREE.Material {
+  material.userData.castShadow = false;
+  material.userData.separate = true;
+  return material;
+}
+
 // Shared by every office: plain colours that never change with the user.
-const carpet = standard("#606a78", { roughness: 1 });
-const plant = standard("#3f7048", { roughness: 1 });
-const counter = standard("#b9ac95", { roughness: 0.85 });
-// The door frame stands behind the light that lights the room, which would
-// throw its arch across the whole floor.
-const doorTrim = standard("#3a4048");
-doorTrim.userData.castShadow = false;
-const ceiling = standard("#e8e6df", { roughness: 0.95 });
-const panel = standard("#fffaf0", { emissive: "#fff6e0", emissiveIntensity: 0.9 });
-// The light hangs under the ceiling, so the ceiling is behind it. Casting from
-// it would drop a shadow over the whole floor.
-ceiling.userData.castShadow = false;
-panel.userData.castShadow = false;
-const deskTop = standard("#cfc3ae", { roughness: 0.8 });
+const oakFloor = standard("#ffffff", { roughness: 0.9, map: oakTexture });
+const walkway = standard("#ffffff", { roughness: 1, map: carpetTexture });
+const oak = standard("#ffffff", { roughness: 0.85, map: oakTexture });
+const moss = standard("#ffffff", { roughness: 1, map: mossTexture, normalMap: mossNormal });
+const olive = standard("#6b7a3c", { roughness: 0.8 });
+const kitchenWhite = standard("#f2f1ec", { roughness: 0.7 });
+const kitchenGrey = standard("#85817b", { roughness: 0.8 });
+const black = standard("#1f2126", { roughness: 0.7 });
+const beige = standard("#cdbfa6");
+const ceiling = noShadow(
+  standard("#ffffff", {
+    roughness: 1,
+    map: ceilingTexture,
+    emissive: "#8e8b84",
+    emissiveMap: ceilingTexture,
+    emissiveIntensity: 0.55,
+  }),
+);
+const hardware = noShadow(standard("#1f2126", { roughness: 0.7 }));
+const doorTrim = noShadow(standard("#3a4048"));
+const panel = noShadow(standard("#fffaf0", { emissive: "#fff6e0", emissiveIntensity: 0.9 }));
+const glassPane = noShadow(standard("#cfe6ee", { transparent: true, opacity: 0.28, depthWrite: false }));
+const sky = standard("#9fd0ea", { emissive: "#9fd0ea", emissiveIntensity: 0.8 });
+const deskTop = standard("#f1f1ee", { roughness: 0.6 });
 const chairFabric = standard("#2f3844");
 
 export class Office {
@@ -68,6 +99,7 @@ export class Office {
   private structure = new THREE.Group();
   private sign: RoofSign | null = null;
   private desks: Desk[] = [];
+  private deskCount = 0;
   private keys = new HeldKeys();
   private walker: Walker = { x: 0, z: 0 };
   private room = { halfX: 10, halfZ: 9, blockers: [] as Box[] };
@@ -157,6 +189,7 @@ export class Office {
     this.clear();
     this.builtFor = sessions.map((session) => `${session.id}:${session.subagents}`).join("\n");
 
+    this.deskCount = sessions.length;
     const size = officeRoom(sessions.length);
     this.room = { halfX: size.width / 2 - WALL / 2, halfZ: size.depth / 2 - WALL / 2, blockers: [] };
     const b = new StaticBuilder();
@@ -171,11 +204,7 @@ export class Office {
       desk.build(b);
     }
 
-    // The name in letters against the back wall, the same sign the halls and
-    // the tower outside spell with.
-    this.sign = new RoofSign(this.user, 5.5);
-    this.sign.group.position.set(0, 0, -size.depth / 2 + 0.9);
-    this.structure.add(this.sign.group);
+    for (const at of planterSpots(sessions.length)) this.planter(b, at);
 
     const statics = b.build();
     this.structure.add(statics);
@@ -204,118 +233,347 @@ export class Office {
     this.sun.shadow.camera.updateProjectionMatrix();
   }
 
-  // Floor, ceiling with light panels, four walls with a window band, and a
-  // door frame in the wall you came in through.
+  // The attic hall: oak floor with a carpet walkway, a ceiling that slopes
+  // down to both long walls, gabled end walls, and the roof's ducts and lights.
   private buildShell(b: StaticBuilder, size: { width: number; depth: number }) {
     const { width, depth } = size;
-    b.box(carpet, [0, -0.05, 0], [width, 0.1, depth]);
-    b.box(ceiling, [0, CEILING + 0.05, 0], [width, 0.1, depth]);
-    for (let z = -depth / 2 + 3; z < depth / 2 - 1; z += 4) {
-      b.box(panel, [0, CEILING - 0.06, z], [width * 0.5, 0.06, 0.5]);
+    const half = width / 2;
+    b.box(oakFloor, [0, -0.06, 0], [width, 0.1, depth]);
+    b.box(walkway, [0, -0.05, 0], [WALKWAY_HALF * 2, 0.1, depth]);
+
+    const slope = Math.atan2(RIDGE - EAVE, half);
+    const slopeLength = Math.hypot(half, RIDGE - EAVE) + 0.2;
+    for (const side of [-1, 1]) {
+      b.box(
+        ceiling,
+        [(side * half) / 2, (RIDGE + EAVE) / 2 + 0.06, 0],
+        [slopeLength, 0.12, depth],
+        [0, 0, -side * slope],
+      );
     }
 
-    // A wall in three bands: solid to the sill, glass to the head, solid to
-    // the ceiling. The glass is what makes it read as a floor high up, and the
-    // solid bands are the user's own tint, the one the halls outside wear.
-    const skin = standard(this.tint);
-    // The walls stand between the light and the floor, and a room lit from
-    // inside would otherwise be striped by the shadows of its own walls.
-    skin.userData.castShadow = false;
-    const wall = (length: number, x: number, z: number, turned: boolean) => {
-      const sx = turned ? WALL : length;
-      const sz = turned ? length : WALL;
-      const band = (material: THREE.Material, y: number, height: number) => {
-        b.box(material, [x, y, z], [sx, height, sz]);
-      };
-      band(skin, WINDOW.sill / 2, WINDOW.sill);
-      band(MATERIALS.glass, (WINDOW.sill + WINDOW.head) / 2, WINDOW.head - WINDOW.sill);
-      band(skin, (WINDOW.head + CEILING) / 2, CEILING - WINDOW.head);
-
-      // Mullions and a sill, or the band is a painted stripe instead of a
-      // window you are standing in front of.
-      const mullion: [number, number, number] = turned ? [WALL + 0.04, 0, 0.1] : [0.1, 0, WALL + 0.04];
-      const bays = Math.max(2, Math.round(length / 2.4));
-      for (let i = 1; i < bays; i++) {
-        const along = -length / 2 + (length / bays) * i;
-        const mx = turned ? x : x + along;
-        const mz = turned ? z + along : z;
-        b.box(
-          MATERIALS.frame,
-          [mx, (WINDOW.sill + WINDOW.head) / 2, mz],
-          [mullion[0], WINDOW.head - WINDOW.sill, mullion[2]],
-        );
-      }
-      for (const y of [WINDOW.sill, WINDOW.head]) {
-        b.box(MATERIALS.frame, [x, y, z], [turned ? WALL + 0.04 : length, 0.1, turned ? length : WALL + 0.04]);
-      }
-    };
-
-    wall(width, 0, -depth / 2, false);
-    wall(width, 0, depth / 2, false);
-    wall(depth, -width / 2, 0, true);
-    wall(depth, width / 2, 0, true);
+    // The walls take the user's own tint, the one the halls outside wear.
+    const skin = noShadow(standard(this.tint));
+    for (const side of [-1, 1]) b.box(skin, [side * half, EAVE / 2, 0], [WALL, EAVE, depth]);
+    const gable = new THREE.Shape([
+      new THREE.Vector2(-half, 0),
+      new THREE.Vector2(half, 0),
+      new THREE.Vector2(half, EAVE),
+      new THREE.Vector2(0, RIDGE),
+      new THREE.Vector2(-half, EAVE),
+    ]);
+    const gableGeometry = new THREE.ExtrudeGeometry(gable, { depth: WALL, bevelEnabled: false });
+    for (const side of [-1, 1]) b.add(gableGeometry, skin, [0, 0, side * (depth / 2) - WALL / 2]);
+    gableGeometry.dispose();
 
     // The way you came in, in the +z wall. It does not open: the way out is
     // the control on screen.
-    for (const x of [-1.1, 1.1]) b.box(doorTrim, [x, 1.15, depth / 2], [0.16, 2.3, WALL + 0.1]);
-    b.box(doorTrim, [0, 2.35, depth / 2], [2.4, 0.16, WALL + 0.1]);
+    for (const x of [-1.1, 1.1]) b.box(doorTrim, [x, 1.15, depth / 2 - WALL / 2], [0.16, 2.3, 0.12]);
+    b.box(doorTrim, [0, 2.35, depth / 2 - WALL / 2], [2.4, 0.16, 0.12]);
 
-    this.buildFurniture(b, size);
+    this.buildCeilingHardware(b, size);
+    this.buildWindows(b, size);
+    this.buildDoorEnd(b, size);
+    this.buildMeetingRooms(b, size);
+    this.buildSlatPartition(b);
+    this.buildFarEnd(b);
   }
 
-  // What stands between the door and the desks. A floor for one session is
-  // still a whole floor of the tower, so without this you walk into an empty
-  // hall. It is the same handful of boxes whatever the desk count is.
-  private buildFurniture(b: StaticBuilder, size: { width: number; depth: number }) {
-    const { width, depth } = size;
-    const front = depth / 2 - 3.4;
-
-    // Reception counter, to the left of the door as you come in.
-    const desk = { x: -width / 2 + 3.2, z: front };
-    b.box(counter, [desk.x, 0.52, desk.z], [3, 1.04, 0.7]);
-    b.box(MATERIALS.white, [desk.x, 1.07, desk.z], [3.2, 0.06, 0.9]);
-    this.room.blockers.push({ x: desk.x, z: desk.z, halfX: 1.6, halfZ: 0.45 });
-
-    // Coffee corner against the other wall, with a plant beside it.
-    const bar = { x: width / 2 - 2.4, z: front };
-    b.box(counter, [bar.x, 0.45, bar.z], [2.2, 0.9, 0.6]);
-    b.box(MATERIALS.darkSteel, [bar.x - 0.6, 1.08, bar.z], [0.4, 0.36, 0.34]); // the machine
-    b.box(MATERIALS.white, [bar.x + 0.5, 0.98, bar.z], [0.5, 0.16, 0.3]); // a tray of cups
-    this.room.blockers.push({ x: bar.x, z: bar.z, halfX: 1.1, halfZ: 0.4 });
-
-    // A meeting table in the middle of the open floor, between the door and
-    // the desks. Without it the walk in is a long empty carpet.
-    const table = { x: 0, z: depth / 2 - 7 };
-    b.box(deskTop, [table.x, 0.74, table.z], [2.6, 0.07, 1.3]);
-    for (const sx of [-1, 1]) {
-      b.box(MATERIALS.steel, [table.x + sx * 1.1, 0.37, table.z], [0.08, 0.74, 1.1]);
+  // Ducts down the ridge, a track with spots on either side of it, and ring
+  // lights hung on wires.
+  private buildCeilingHardware(b: StaticBuilder, size: { width: number; depth: number }) {
+    const { depth } = size;
+    b.cylinder(hardware, [0, 4.6, 0], [0.36, depth - 2, 0.36], [Math.PI / 2, 0, 0]);
+    for (let z = -depth / 2 + 4; z < depth / 2 - 2; z += 8) {
+      b.cylinder(hardware, [0, 4.6, z], [0.3, 4, 0.3], [0, 0, Math.PI / 2]);
     }
-    this.room.blockers.push({ x: table.x, z: table.z, halfX: 1.3, halfZ: 0.65 });
-    for (const sx of [-0.8, 0.8]) {
-      for (const sz of [-1.1, 1.1]) {
-        b.box(chairFabric, [table.x + sx, 0.45, table.z + sz], [0.44, 0.07, 0.44]);
-        b.box(chairFabric, [table.x + sx, 0.75, table.z + sz * 1.25], [0.44, 0.52, 0.07]);
-        for (const lx of [-0.16, 0.16]) {
-          for (const lz of [-0.16, 0.16]) {
-            b.box(MATERIALS.steel, [table.x + sx + lx, 0.22, table.z + sz + lz], [0.05, 0.45, 0.05]);
-          }
-        }
-        this.room.blockers.push({ x: table.x + sx, z: table.z + sz, halfX: 0.3, halfZ: 0.3 });
+
+    for (const x of [-2.6, 2.6]) {
+      b.box(hardware, [x, 4.82, 0], [0.06, 0.06, depth - 2]);
+      for (let z = -depth / 2 + 2; z < depth / 2 - 1; z += 2.5) {
+        b.box(hardware, [x, 4.62, z], [0.12, 0.26, 0.12]);
       }
     }
 
-    // A plant in each corner and one either side of the meeting table, so the
-    // floor is not one flat carpet with furniture pushed to the walls.
-    const pots: Spot[] = [];
-    for (const x of [-width / 2 + 1.4, width / 2 - 1.4]) {
-      for (const z of [-depth / 2 + 1.4, depth / 2 - 1.4]) pots.push({ x, z });
+    const ring = new THREE.TorusGeometry(1, 0.035, 8, 40);
+    let index = 0;
+    for (let z = -depth / 2 + 3.5; z < depth / 2 - 2; z += 7) {
+      const x = index % 2 === 0 ? -5.4 : 5.4;
+      const radius = 1.4;
+      b.add(ring, panel, [x, 3.4, z], [radius, radius, radius], [Math.PI / 2, 0, 0]);
+      for (const wire of [-1, 1]) {
+        b.box(hardware, [x + wire * radius * 0.7, 3.9, z], [0.01, 1, 0.01]);
+      }
+      index++;
     }
-    pots.push({ x: -4.2, z: table.z }, { x: 4.2, z: table.z });
-    for (const pot of pots) {
-      b.cylinder(MATERIALS.concrete, [pot.x, 0.25, pot.z], [0.28, 0.5, 0.28]);
-      b.cone(plant, [pot.x, 1.1, pot.z], [0.55, 1.3, 0.55]);
-      this.room.blockers.push({ x: pot.x, z: pot.z, halfX: 0.3, halfZ: 0.3 });
+    ring.dispose();
+  }
+
+  // Sky in a triangle at the far end and a half-round window in every
+  // meeting room's wall, both sides.
+  private buildWindows(b: StaticBuilder, size: { width: number; depth: number }) {
+    const { width, depth } = size;
+    const { triangleWindow } = zoneSpots(this.deskCount);
+    const base = 1;
+    const top = 3.6;
+    const span = 1.8;
+    const pane = new THREE.Shape([
+      new THREE.Vector2(-span, 0),
+      new THREE.Vector2(span, 0),
+      new THREE.Vector2(0, top - base),
+    ]);
+    const paneGeometry = new THREE.ShapeGeometry(pane);
+    const faceZ = -depth / 2 + WALL / 2 + 0.02;
+    b.add(paneGeometry, sky, [triangleWindow.x, base, faceZ]);
+    paneGeometry.dispose();
+    const slant = Math.atan2(top - base, span);
+    const slantLength = Math.hypot(span, top - base);
+    b.box(black, [triangleWindow.x, base, faceZ + 0.02], [span * 2 + 0.12, 0.12, 0.06]);
+    for (const side of [-1, 1]) {
+      b.box(
+        black,
+        [triangleWindow.x + (side * span) / 2, (base + top) / 2, faceZ + 0.02],
+        [slantLength, 0.1, 0.06],
+        [0, 0, side * slant],
+      );
     }
+    b.box(black, [triangleWindow.x, (base + top) / 2 - 0.2, faceZ + 0.02], [0.08, top - base - 0.4, 0.06]);
+
+    const radius = 1.7;
+    const lift = 0.5;
+    const disc = new THREE.CircleGeometry(radius, 24, 0, Math.PI);
+    const rim = new THREE.RingGeometry(radius, radius + 0.12, 24, 1, 0, Math.PI);
+    for (const side of [-1, 1]) {
+      const x = side * (width / 2 - WALL / 2 - 0.02);
+      const turn: [number, number, number] = [0, -side * (Math.PI / 2), 0];
+      for (const z of sideWindowSpots(this.deskCount)) {
+        b.add(disc, sky, [x, lift, z], [1, 1, 1], turn);
+        b.add(rim, black, [x - side * 0.01, lift, z], [1, 1, 1], turn);
+        b.box(black, [x, lift, z], [0.06, 0.12, radius * 2 + 0.24]);
+      }
+    }
+    disc.dispose();
+    rim.dispose();
+  }
+
+  // Beside the door: the moss wall with the user's name, a screen and an
+  // olive door, and a glass meeting room on the other side of the walkway.
+  private buildDoorEnd(b: StaticBuilder, size: { width: number; depth: number }) {
+    const { depth } = size;
+    const near = depth / 2 - 1;
+    const far = depth / 2 - DOOR_ZONE;
+    const length = near - far;
+    const centre = (near + far) / 2;
+    b.box(moss, [MOSS_X, GLASS_HEIGHT / 2, centre], [0.3, GLASS_HEIGHT, length]);
+    this.room.blockers.push({ x: MOSS_X, z: centre, halfX: 0.2, halfZ: length / 2 });
+
+    this.sign = new RoofSign(this.user, 5.5, true);
+    this.sign.group.rotation.y = -Math.PI / 2;
+    this.sign.group.position.set(MOSS_X - 0.2, 0.9, near - 2.7);
+    this.structure.add(this.sign.group);
+
+    b.box(black, [MOSS_X - 0.16, 1.4, far + 3], [0.05, 1.2, 0.75]);
+    b.box(MATERIALS.glass, [MOSS_X - 0.19, 1.4, far + 3], [0.02, 1.1, 0.65]);
+    b.box(olive, [MOSS_X - 0.17, 1.05, far + 1.4], [0.08, 2.1, 0.9]);
+    b.box(black, [MOSS_X - 0.24, 1.05, far + 1.1], [0.08, 0.04, 0.14]);
+
+    this.glassWall(b, -MOSS_X, centre, length);
+    this.table(b, { x: -6.5, z: centre }, 0.55, 1.2, oak);
+    for (const dz of [-0.6, 0.6]) {
+      this.chair(b, { x: -5.6, z: centre + dz }, { x: -6.5, z: centre + dz }, chairFabric);
+      this.chair(b, { x: -7.4, z: centre + dz }, { x: -6.5, z: centre + dz }, chairFabric);
+    }
+  }
+
+  // Along the desk zone, behind glass with black frames, one room per bay.
+  private buildMeetingRooms(b: StaticBuilder, size: { width: number; depth: number }) {
+    const rooms = meetingRooms(this.deskCount);
+    const middle = -(GLASS_X + size.width / 2 - WALL / 2) / 2;
+    for (const [i, room] of rooms.entries()) {
+      this.glassWall(b, -GLASS_X, room.z, room.length);
+      b.box(glassPane, [middle, GLASS_HEIGHT / 2, room.z + room.length / 2], [3.4, GLASS_HEIGHT, 0.05]);
+      b.box(black, [middle, GLASS_HEIGHT / 2, room.z + room.length / 2], [3.4, 0.08, 0.08]);
+      if (i === rooms.length - 1) {
+        b.box(glassPane, [middle, GLASS_HEIGHT / 2, room.z - room.length / 2], [3.4, GLASS_HEIGHT, 0.05]);
+      }
+      this.table(b, { x: middle, z: room.z }, 0.55, 1.3, oak);
+      for (const dz of [-0.6, 0.6]) {
+        this.chair(b, { x: middle + 0.9, z: room.z + dz }, { x: middle, z: room.z + dz }, chairFabric);
+        this.chair(b, { x: middle - 0.9, z: room.z + dz }, { x: middle, z: room.z + dz }, chairFabric);
+      }
+    }
+  }
+
+  // Wooden posts and vertical slats with a diagonal brace in every bay, along
+  // the desk zone on the side opposite the meeting rooms.
+  private buildSlatPartition(b: StaticBuilder) {
+    const { near, far } = deskZone(this.deskCount);
+    const bays = Math.max(1, Math.round((near - far) / 3.5));
+    const bay = (near - far) / bays;
+    const height = GLASS_HEIGHT - 0.2;
+    for (let i = 0; i <= bays; i++) b.box(oak, [GLASS_X, height / 2, near - bay * i], [0.3, height, 0.3]);
+    for (let i = 0; i < bays; i++) {
+      const centre = near - bay * (i + 0.5);
+      for (let k = -Math.floor(bay / 0.3 / 2) + 1; k < bay / 0.3 / 2; k++) {
+        b.box(oak, [GLASS_X, height / 2, centre + k * 0.3], [0.14, height - 0.3, 0.06]);
+      }
+      const slant = Math.atan2(height - 0.3, bay);
+      for (const side of [-1, 1]) {
+        b.box(
+          oak,
+          [GLASS_X + 0.1, height / 2, centre],
+          [0.08, 0.08, Math.hypot(bay, height - 0.3)],
+          [side * slant, 0, 0],
+        );
+      }
+    }
+    this.room.blockers.push({ x: GLASS_X, z: (near + far) / 2, halfX: 0.25, halfZ: (near - far) / 2 });
+  }
+
+  // The kitchen along the far wall, the round table under the triangle window
+  // and the lunch island in the open floor.
+  private buildFarEnd(b: StaticBuilder) {
+    const zones = zoneSpots(this.deskCount);
+    const { cabinets, island, bins, stools, roundTable, lunch } = zones;
+
+    this.buildKitchen(b, cabinets);
+    b.box(kitchenGrey, [island.x, 0.47, island.z], [island.halfX * 2, 0.94, island.halfZ * 2]);
+    b.box(oak, [island.x, 0.96, island.z], [island.halfX * 2 + 0.1, 0.05, island.halfZ * 2 + 0.1]);
+    this.room.blockers.push({ x: island.x, z: island.z, halfX: island.halfX, halfZ: island.halfZ });
+    for (const stool of stools) this.stool(b, stool);
+    for (const bin of bins) {
+      b.box(black, [bin.x, 0.45, bin.z], [0.55, 0.9, 0.5]);
+      this.room.blockers.push({ x: bin.x, z: bin.z, halfX: 0.3, halfZ: 0.28 });
+    }
+
+    // Round table with four chairs, a plant in the middle.
+    b.cylinder(black, [roundTable.x, 0.72, roundTable.z], [1.1, 0.05, 1.1]);
+    b.cylinder(black, [roundTable.x, 0.36, roundTable.z], [0.08, 0.72, 0.08]);
+    b.cylinder(black, [roundTable.x, 0.02, roundTable.z], [0.5, 0.04, 0.5]);
+    b.cylinder(MATERIALS.concrete, [roundTable.x, 0.85, roundTable.z], [0.12, 0.2, 0.12]);
+    addPlant(b, [roundTable.x, 0.95, roundTable.z], KINDS.rubber, 7, 0.5);
+    this.room.blockers.push({ x: roundTable.x, z: roundTable.z, halfX: 1.1, halfZ: 1.1 });
+    for (const angle of [0.78, 2.36, 3.93, 5.5]) {
+      const at = { x: roundTable.x + Math.cos(angle) * 1.55, z: roundTable.z + Math.sin(angle) * 1.55 };
+      this.chair(b, at, roundTable, black);
+    }
+
+    // The lunch island: two long tables side by side, chairs down the outer sides.
+    for (const [i, z] of lunch.zs.entries()) {
+      const side = i === 0 ? -1 : 1;
+      this.table(b, { x: lunch.x, z }, lunch.halfZ, lunch.halfX, oak);
+      for (const dx of [-2, -0.7, 0.7, 2]) {
+        this.chair(b, { x: lunch.x + dx, z: z + side * 1.05 }, { x: lunch.x + dx, z }, beige);
+      }
+    }
+  }
+
+  // Fridge, pantry, a run of cabinets with a wood top, sink, hob and hood,
+  // and wall cabinets, all in one row against the far wall.
+  private buildKitchen(b: StaticBuilder, cabinets: { x: number; z: number; halfX: number; halfZ: number }) {
+    const { z, halfZ } = cabinets;
+    const front = z + halfZ;
+    const left = cabinets.x - cabinets.halfX;
+    const counterLeft = left + 3.5;
+    const counterWidth = cabinets.halfX * 2 - 3.5;
+    const counterMiddle = counterLeft + counterWidth / 2;
+
+    b.box(MATERIALS.steel, [left + 0.55, 0.975, z], [0.95, 1.95, halfZ * 2]);
+    b.box(black, [left + 0.55, 1.3, front + 0.005], [0.95, 0.02, 0.02]);
+    for (const y of [1.0, 1.7]) b.box(black, [left + 0.9, y, front + 0.03], [0.03, 0.4, 0.03]);
+
+    b.box(kitchenWhite, [left + 2.25, 1.15, z], [2.5, 2.3, halfZ * 2]);
+    b.box(kitchenGrey, [left + 2.25, 1.15, front + 0.005], [0.02, 2.3, 0.02]);
+    for (const dx of [-0.1, 0.1]) b.box(black, [left + 2.25 + dx, 1.1, front + 0.03], [0.03, 0.4, 0.03]);
+
+    b.box(kitchenWhite, [counterMiddle, 0.45, z], [counterWidth, 0.9, halfZ * 2]);
+    b.box(oak, [counterMiddle, 0.93, z + 0.05], [counterWidth + 0.1, 0.05, halfZ * 2 + 0.1]);
+    const doors = Math.round(counterWidth / 0.75);
+    for (let i = 0; i < doors; i++) {
+      const x = counterLeft + i * (counterWidth / doors);
+      if (i > 0) b.box(kitchenGrey, [x, 0.45, front + 0.005], [0.02, 0.8, 0.02]);
+      b.box(black, [x + 0.62, 0.78, front + 0.03], [0.03, 0.12, 0.03]);
+    }
+
+    const sink = counterLeft + 3;
+    b.box(MATERIALS.steel, [sink, 0.96, z + 0.05], [0.8, 0.02, 0.5]);
+    b.cylinder(MATERIALS.steel, [sink, 1.1, z - 0.2], [0.02, 0.3, 0.02]);
+    b.box(MATERIALS.steel, [sink, 1.25, z - 0.08], [0.02, 0.02, 0.2]);
+
+    const hob = counterLeft + 5.5;
+    b.box(black, [hob, 0.96, z + 0.05], [0.7, 0.02, 0.5]);
+    for (const dx of [-0.17, 0.17]) {
+      for (const dz of [-0.12, 0.12]) b.cylinder(kitchenGrey, [hob + dx, 0.975, z + 0.05 + dz], [0.09, 0.01, 0.09]);
+    }
+    b.box(MATERIALS.steel, [hob, 2.1, z - 0.05], [0.9, 0.25, 0.65]);
+
+    b.box(kitchenGrey, [counterMiddle, 1.4, z - 0.23], [counterWidth, 0.9, 0.04]);
+    const wallCabinet = (from: number, to: number) => {
+      b.box(kitchenWhite, [(from + to) / 2, 1.95, z - 0.03], [to - from, 0.8, 0.4]);
+      for (let x = from + 0.75; x < to - 0.1; x += 0.75) b.box(kitchenGrey, [x, 1.95, z + 0.18], [0.02, 0.8, 0.02]);
+    };
+    wallCabinet(counterLeft, hob - 0.55);
+    wallCabinet(hob + 0.55, left + cabinets.halfX * 2 - 0.1);
+    this.room.blockers.push({ x: cabinets.x, z, halfX: cabinets.halfX, halfZ });
+  }
+
+  private stool(b: StaticBuilder, at: { x: number; z: number }) {
+    b.cylinder(black, [at.x, 0.68, at.z], [0.2, 0.06, 0.2]);
+    b.cylinder(MATERIALS.steel, [at.x, 0.33, at.z], [0.03, 0.66, 0.03]);
+    b.cylinder(black, [at.x, 0.02, at.z], [0.18, 0.04, 0.18]);
+    this.room.blockers.push({ x: at.x, z: at.z, halfX: 0.22, halfZ: 0.22 });
+  }
+
+  // A glass wall along z with black frames, and the blocker that goes with it.
+  private glassWall(b: StaticBuilder, x: number, z: number, length: number) {
+    b.box(glassPane, [x, GLASS_HEIGHT / 2, z], [0.05, GLASS_HEIGHT, length]);
+    b.box(black, [x, GLASS_HEIGHT, z], [0.1, 0.08, length]);
+    b.box(black, [x, 0.04, z], [0.1, 0.08, length]);
+    const bays = Math.max(1, Math.round(length / 1.6));
+    for (let i = 0; i <= bays; i++) {
+      b.box(black, [x, GLASS_HEIGHT / 2, z - length / 2 + (length / bays) * i], [0.1, GLASS_HEIGHT, 0.08]);
+    }
+    this.room.blockers.push({ x, z, halfX: 0.15, halfZ: length / 2 });
+  }
+
+  // A table on four legs, `halfX` wide each way from `at`, with its blocker.
+  private table(b: StaticBuilder, at: { x: number; z: number }, halfZ: number, halfX: number, top: THREE.Material) {
+    b.box(top, [at.x, 0.74, at.z], [halfX * 2, 0.07, halfZ * 2]);
+    for (const sx of [-1, 1]) {
+      b.box(MATERIALS.steel, [at.x + sx * (halfX - 0.15), 0.37, at.z], [0.06, 0.74, halfZ * 2 - 0.2]);
+    }
+    this.room.blockers.push({ x: at.x, z: at.z, halfX, halfZ });
+  }
+
+  // A chair at `at` with its back turned from `toward`, and its blocker.
+  private chair(
+    b: StaticBuilder,
+    at: { x: number; z: number },
+    toward: { x: number; z: number },
+    fabric: THREE.Material,
+  ) {
+    const dx = toward.x - at.x;
+    const dz = toward.z - at.z;
+    const along = Math.hypot(dx, dz) || 1;
+    b.box(fabric, [at.x, 0.45, at.z], [0.44, 0.07, 0.44]);
+    const turn = Math.atan2(dx, dz);
+    b.box(fabric, [at.x - (dx / along) * 0.22, 0.75, at.z - (dz / along) * 0.22], [0.44, 0.52, 0.07], [0, turn, 0]);
+    for (const lx of [-0.16, 0.16]) {
+      for (const lz of [-0.16, 0.16]) b.box(MATERIALS.steel, [at.x + lx, 0.22, at.z + lz], [0.05, 0.45, 0.05]);
+    }
+    this.room.blockers.push({ x: at.x, z: at.z, halfX: 0.3, halfZ: 0.3 });
+  }
+
+  // A wooden planter with plants, standing between two rows of desks.
+  private planter(b: StaticBuilder, at: { x: number; z: number }) {
+    b.box(oak, [at.x, 0.375, at.z], [1.6, 0.75, 0.5]);
+    addSoil(b, [at.x, 0.76, at.z], [1.5, 0.04, 0.4]);
+    const kinds = [KINDS.bushy, KINDS.rubber, KINDS.fern];
+    const seed = Math.abs(Math.round(at.x * 7 + at.z * 13));
+    for (const [i, dx] of [-0.5, 0, 0.5].entries()) {
+      addPlant(b, [at.x + dx, 0.77, at.z], kinds[(seed + i) % 3], seed + i);
+    }
+    this.room.blockers.push({ x: at.x, z: at.z, halfX: 0.8, halfZ: 0.25 });
   }
 
   private clear() {

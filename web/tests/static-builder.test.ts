@@ -70,4 +70,16 @@ describe("StaticBuilder", () => {
     expect(mesh.geometry.boundingBox!.min.toArray()).toEqual([4, 0, -1]);
     expect(mesh.geometry.boundingBox!.max.toArray()).toEqual([6, 2, 1]);
   });
+
+  it("gives a textured box UVs in metres", () => {
+    const builder = new StaticBuilder();
+    const floor = new THREE.MeshStandardMaterial({ map: new THREE.Texture() });
+    builder.box(floor, [0, 0, 0], [8, 0.1, 4]);
+
+    const uv = meshesOf(builder.build())[0].geometry.attributes.uv;
+    const us = Array.from({ length: uv.count }, (_, i) => uv.getX(i));
+    const vs = Array.from({ length: uv.count }, (_, i) => uv.getY(i));
+    expect(Math.max(...us)).toBeCloseTo(8);
+    expect(Math.max(...vs)).toBeCloseTo(4);
+  });
 });
